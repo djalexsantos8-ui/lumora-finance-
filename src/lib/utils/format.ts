@@ -43,3 +43,41 @@ export const SUPPORTED_CURRENCIES = [
   { code: 'EUR', label: '€ — Euro' },
   { code: 'PYG', label: '₲ — Guarani' },
 ]
+
+// ─── Budget ──────────────────────────────────────────────────────────────────
+
+export const BUDGET_STATUS_LABELS: Record<string, string> = {
+  draft:    'Rascunho',
+  sent:     'Enviado',
+  approved: 'Aprovado',
+  rejected: 'Rejeitado',
+  expired:  'Expirado',
+}
+
+export const BUDGET_STATUS_NEXT_ACTIONS: Record<string, { label: string; next: string }[]> = {
+  draft:    [{ label: 'Marcar como Enviado', next: 'sent' }],
+  sent:     [{ label: 'Marcar como Aprovado', next: 'approved' }, { label: 'Marcar como Rejeitado', next: 'rejected' }],
+  approved: [],
+  rejected: [{ label: 'Reabrir como Rascunho', next: 'draft' }],
+  expired:  [{ label: 'Reabrir como Rascunho', next: 'draft' }],
+}
+
+export const BUDGET_ITEM_CATEGORY_LABELS: Record<string, string> = {
+  team:          'Equipe',
+  food:          'Alimentação',
+  transport:     'Transporte',
+  accommodation: 'Hospedagem',
+  equipment:     'Equipamentos',
+  own_work:      'Trabalho Próprio',
+  other:         'Outros',
+}
+
+export const BUDGET_ITEM_CATEGORIES = [
+  ['team',          'Equipe'],
+  ['equipment',     'Equipamentos'],
+  ['transport',     'Transporte'],
+  ['accommodation', 'Hospedagem'],
+  ['food',          'Alimentação'],
+  ['own_work',      'Trabalho Próprio'],
+  ['other',         'Outros'],
+] as const
