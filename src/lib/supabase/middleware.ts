@@ -57,16 +57,33 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  // Subscription guard: bloqueia acesso se assinatura está pausada ou inadimplente
+  // Access guard: verifica admin_grant OU subscription ativa
   if (user && !isPublicRoute && !isBypassRoute) {
+
+    // 1. Verificar admin_grant ativo (override manual — bypassa subscription)
+    const now = new Date().toISOString()
+    const { data: grant } = await supabase
+      .from('admin_grants')
+      .select('id, expires_at')
+      .eq('user_id', user.id)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .limit(1)
+      .maybeSingle()
+
+    if (grant) {
+      // Grant ativo encontrado — acesso liberado independente da subscription
+      return supabaseResponse
+    }
+
+    // 2. Verificar status da subscription
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('status')
       .eq('user_id', user.id)
       .single()
 
-    const blockedStatuses = ['paused', 'past_due', 'canceled']
-    if (subscription && blockedStatuses.includes(subscription.status)) {
+    const allowedStatuses = ['trialing', 'active']
+    if (!subscription || !allowedStatuses.includes(subscription.status)) {
       return NextResponse.redirect(new URL('/upgrade', request.url))
     }
   }
