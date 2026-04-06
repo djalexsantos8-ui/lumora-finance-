@@ -1,20 +1,38 @@
-import PagePlaceholder from '@/components/page-placeholder'
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import FreelancerList from './freelancer-list'
+import type { Freelancer } from '@/types/freelancer'
 
-export const metadata = { title: 'Freelancers — Lumora Finance' }
+export const metadata = { title: 'Profissionais — Lumora Finance' }
 
-export default function FreelancersPage() {
+export default async function FreelancersPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  // Busca workspace do usuário
+  const { data: member } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .limit(1)
+    .single()
+
+  if (!member) redirect('/dashboard')
+
+  // Busca freelancers ativos do workspace, ordenados por nome
+  const { data: freelancers } = await supabase
+    .from('freelancers')
+    .select('*')
+    .eq('workspace_id', member.workspace_id)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+
   return (
-    <PagePlaceholder
-      icon={
-        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      }
-      title="Catálogo de Freelancers"
-      description="Cadastre sua equipe de profissionais com funções e valores de diária para usar rapidamente ao montar orçamentos. Em construção."
-      badge="Em construção"
-      badgeColor="gold"
-    />
+    <div className="min-h-full p-6 md:p-8">
+      <FreelancerList freelancers={(freelancers ?? []) as Freelancer[]} />
+    </div>
   )
 }
