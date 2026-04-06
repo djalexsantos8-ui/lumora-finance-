@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 // Cliente para uso em Server Components, Route Handlers e Server Actions
@@ -27,9 +28,18 @@ export async function createClient() {
   )
 }
 
-// Cliente admin com service_role — APENAS para operações server-side privilegiadas
+// Cliente admin sem cookies — para webhooks e operações server-to-server
 // NUNCA expor essa chave no frontend
-export async function createAdminClient() {
+export function createAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SECRET_KEY!,
+    { auth: { persistSession: false } }
+  )
+}
+
+// Cliente admin com cookies — para Server Components e Route Handlers autenticados
+export async function createAdminClientWithCookies() {
   const cookieStore = await cookies()
 
   return createServerClient(

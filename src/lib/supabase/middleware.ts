@@ -29,14 +29,18 @@ export async function updateSession(request: NextRequest) {
   // Renova a sessão do usuário (obrigatório para manter auth funcional)
   const { data: { user } } = await supabase.auth.getUser()
 
+  const pathname = request.nextUrl.pathname
+
   // Rotas públicas (não exigem login)
   const publicRoutes = ['/login', '/signup', '/forgot-password']
-  const isPublicRoute = publicRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  )
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
+
+  // Rotas excluídas do subscription guard (acessíveis mesmo com acesso bloqueado)
+  const bypassRoutes = ['/upgrade', '/api/stripe', '/api/auth']
+  const isBypassRoute = bypassRoutes.some(route => pathname.startsWith(route))
 
   // Rota raiz redireciona para login ou dashboard
-  if (request.nextUrl.pathname === '/') {
+  if (pathname === '/') {
     if (user) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
@@ -51,6 +55,20 @@ export async function updateSession(request: NextRequest) {
   // Usuário logado tentando acessar rota de auth
   if (user && isPublicRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Subscription guard: bloqueia acesso se assinatura está pausada ou inadimplente
+  if (user && !isPublicRoute && !isBypassRoute) {
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('status')
+      .eq('user_id', user.id)
+      .single()
+
+    const blockedStatuses = ['paused', 'past_due', 'canceled']
+    if (subscription && blockedStatuses.includes(subscription.status)) {
+      return NextResponse.redirect(new URL('/upgrade', request.url))
+    }
   }
 
   return supabaseResponse
