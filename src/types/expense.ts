@@ -77,18 +77,38 @@ export interface Expense {
 // ─── Custo fixo recorrente ────────────────────────────────────────────────────
 
 export interface FixedCost {
-  id:            string
-  workspace_id:  string
-  description:   string
-  category:      FixedCostCategory
-  amount:        number
-  currency:      string
-  billing_day:   number        // 1–31
-  is_active:     boolean
-  is_deductible: boolean
-  notes:         string | null
-  deleted_at:    string | null
-  created_at:    string
+  id:                    string
+  workspace_id:          string
+  description:           string
+  category:              FixedCostCategory
+  amount:                number
+  currency:              string
+  billing_day:           number        // 1–31 (legado)
+  is_active:             boolean
+  is_deductible:         boolean
+  notes:                 string | null
+  // Tipo (migration 015)
+  is_recurring:          boolean       // recorrente sem fim definido
+  is_installment:        boolean       // parcelado com N parcelas
+  // Parcelamento (migration 015)
+  installments_total:    number | null
+  installment_index:     number | null
+  parent_fixed_cost_id:  string | null
+  // Período (migration 015)
+  start_date:            string | null  // YYYY-MM-DD
+  end_date:              string | null  // YYYY-MM-DD — null = sem fim
+  // Multimoeda (migration 015)
+  exchange_rate:         number | null
+  amount_brl:            number | null
+  iof_applied:           boolean
+  iof_amount:            number | null
+  // Pagamento parcelas (migration 015)
+  is_paid:               boolean
+  paid_at:               string | null
+  paid_amount:           number | null
+  discount_amount:       number | null
+  deleted_at:            string | null
+  created_at:            string
 }
 
 // ─── Tipos de retorno das Server Actions ──────────────────────────────────────
