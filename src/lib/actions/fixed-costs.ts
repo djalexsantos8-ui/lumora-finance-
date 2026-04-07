@@ -53,6 +53,7 @@ export async function createRecurringCost(fields: {
   const payload = {
     workspace_id:   workspaceId,
     created_by:     user.id,
+    name:           fields.description.trim(),
     description:    fields.description.trim(),
     category:       fields.category,
     amount:         Math.round(fields.amount * 100) / 100,
@@ -131,6 +132,7 @@ export async function createInstallmentCost(fields: {
       id:                    i === 0 ? parentId : randomUUID(),
       workspace_id:          workspaceId,
       created_by:            user.id,
+      name:                  fields.description.trim(),
       description:           fields.description.trim(),
       category:              fields.category,
       amount:                Math.round(fields.amount_per * 100) / 100,
@@ -195,6 +197,7 @@ export async function createFixedCost(fields: {
     .insert({
       workspace_id:   workspaceId,
       created_by:     user.id,
+      name:           fields.description.trim(),
       description:    fields.description.trim(),
       category:       fields.category,
       amount:         Math.round(fields.amount * 100) / 100,
