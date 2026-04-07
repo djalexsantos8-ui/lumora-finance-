@@ -11,6 +11,8 @@ import {
   deleteInstallmentGroup,
   getFixedCostInstallments,
   settleSelectedFixedCosts,
+  payMonthlyRecurring,
+  payNextInstallment,
 } from '@/lib/actions/fixed-costs'
 import {
   FIXED_COST_CATEGORIES,
@@ -52,6 +54,14 @@ function today(): string {
   return new Date().toLocaleDateString('en-CA')
 }
 
+/** Retorna true se last_paid_date pertence ao mês/ano atual */
+function isPaidThisMonth(lastPaidDate: string | null | undefined): boolean {
+  if (!lastPaidDate) return false
+  const now = new Date()
+  const [y, m] = lastPaidDate.split('-').map(Number)
+  return y === now.getFullYear() && m === (now.getMonth() + 1)
+}
+
 /** Gera preview de datas para parcelamento */
 function previewDates(startDate: string, n: number): string[] {
   const [y, m, d] = startDate.split('-').map(Number)
@@ -75,6 +85,9 @@ export function FixedCostsClient({ initialItems }: Props) {
   const [showForm,   setShowForm]   = useState(false)
   const [toast,      setToast]      = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const [isPending,  startTransition] = useTransition()
+
+  // Pay actions in-flight
+  const [payingId, setPayingId] = useState<string | null>(null)
 
   // Settle modal
   const [settleModal, setSettleModal] = useState<{
@@ -221,6 +234,39 @@ export function FixedCostsClient({ initialItems }: Props) {
       showToast('success', 'Custo encerrado.')
     } else if (!res.success) {
       showToast('error', res.error)
+    }
+  }
+
+  // ── Pay monthly ───────────────────────────────────────────────────────────
+
+  async function handlePayMonthly(id: string) {
+    setPayingId(id)
+    const res = await payMonthlyRecurring(id)
+    setPayingId(null)
+    if (res.success && res.data) {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, last_paid_date: res.data!.last_paid_date } : i))
+      showToast('success', 'Pagamento do mês registrado!')
+    } else if (!res.success) {
+      showToast('error', res.error)
+    }
+  }
+
+  // ── Pay next installment ──────────────────────────────────────────────────
+
+  async function handlePayNextInstallment(parentId: string) {
+    setPayingId(parentId)
+    const res = await payNextInstallment(parentId)
+    setPayingId(null)
+    if (res.success) {
+      setItems(prev => prev.map(i => {
+        const isTarget = (i.parent_fixed_cost_id ?? i.id) === parentId
+          && !i.is_paid
+          && i.installment_index === res.paidIndex
+        return isTarget ? { ...i, is_paid: true, paid_at: new Date().toISOString() } : i
+      }))
+      showToast('success', `Parcela ${res.paidIndex} paga!`)
+    } else {
+      showToast('error', res.error ?? 'Erro ao pagar parcela.')
     }
   }
 
@@ -565,12 +611,32 @@ export function FixedCostsClient({ initialItems }: Props) {
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">Ded.</span>
                     )}
 
-                    {/* Valor */}
-                    <span className="text-sm font-bold text-white shrink-0 tabular-nums">
-                      {formatCurrency(Number(item.amount_brl ?? item.amount), item.currency)}/mês
-                    </span>
+                    {/* Valor + status de pagamento */}
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-bold text-white tabular-nums">
+                        {formatCurrency(Number(item.amount_brl ?? item.amount), item.currency)}/mês
+                      </span>
+                      <p className={`text-[10px] mt-0.5 font-semibold ${
+                        isPaidThisMonth(item.last_paid_date)
+                          ? 'text-emerald-400'
+                          : item.is_active ? 'text-amber-500' : 'text-[#525252]'
+                      }`}>
+                        {isPaidThisMonth(item.last_paid_date) ? '✓ Pago' : item.is_active ? 'Pendente' : '—'}
+                      </p>
+                    </div>
 
-                    {/* Encerrar */}
+                    {/* Pagar mês — ação primária */}
+                    {item.is_active && !isPaidThisMonth(item.last_paid_date) && (
+                      <button
+                        onClick={() => handlePayMonthly(item.id)}
+                        disabled={payingId === item.id}
+                        className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] transition-colors shrink-0">
+                        {payingId === item.id ? <Spinner /> : null}
+                        Pagar mês
+                      </button>
+                    )}
+
+                    {/* Encerrar — ação secundária */}
                     {item.is_active && (
                       <button onClick={() => handleEndRecurring(item.id, item.description)}
                         className="text-[10px] font-semibold px-2 py-1 rounded border border-[#3a3a3a] text-[#525252] hover:border-red-500/40 hover:text-red-400 transition-colors shrink-0">
@@ -668,12 +734,23 @@ export function FixedCostsClient({ initialItems }: Props) {
                           <p className="text-[10px] text-[#525252]">{formatCurrency(Number(first.amount), first.currency)}/parc</p>
                         </div>
 
-                        {/* Quitar */}
+                        {/* Pagar próxima parcela — ação primária */}
+                        {!allPaid && (
+                          <button
+                            onClick={() => handlePayNextInstallment(parentId)}
+                            disabled={payingId === parentId}
+                            className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] transition-colors shrink-0">
+                            {payingId === parentId ? <Spinner /> : null}
+                            Pagar parcela
+                          </button>
+                        )}
+
+                        {/* Quitar múltiplas — ação secundária */}
                         {!allPaid && (
                           <button
                             onClick={() => openSettleModal(parentId)}
-                            disabled={loadingSettle}
-                            className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg bg-[#D4A853]/10 border border-[#D4A853]/30 text-[#D4A853] hover:bg-[#D4A853]/20 disabled:opacity-50 transition-colors shrink-0">
+                            disabled={loadingSettle || payingId === parentId}
+                            className="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg bg-transparent border border-[#3a3a3a] text-[#525252] hover:border-[#D4A853]/40 hover:text-[#D4A853] disabled:opacity-50 transition-colors shrink-0">
                             {loadingSettle ? <Spinner /> : null}
                             Quitar
                           </button>
@@ -850,11 +927,17 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 // ─── Category Badge ───────────────────────────────────────────────────────────
 
 const FIXED_CATEGORY_COLORS: Record<FixedCostCategory, string> = {
-  software:  'bg-cyan-500/10 text-cyan-400',
-  internet:  'bg-blue-500/10 text-blue-400',
-  equipment: 'bg-purple-500/10 text-purple-400',
-  workspace: 'bg-amber-500/10 text-amber-400',
-  other:     'bg-[#1c1c1c] text-[#525252]',
+  software:     'bg-cyan-500/10 text-cyan-400',
+  subscription: 'bg-violet-500/10 text-violet-400',
+  internet:     'bg-blue-500/10 text-blue-400',
+  phone:        'bg-sky-500/10 text-sky-400',
+  equipment:    'bg-purple-500/10 text-purple-400',
+  workspace:    'bg-amber-500/10 text-amber-400',
+  housing:      'bg-orange-500/10 text-orange-400',
+  transport:    'bg-teal-500/10 text-teal-400',
+  taxes:        'bg-red-500/10 text-red-400',
+  services:     'bg-emerald-500/10 text-emerald-400',
+  other:        'bg-[#1c1c1c] text-[#525252]',
 }
 
 function CategoryBadge({ category }: { category: FixedCostCategory }) {

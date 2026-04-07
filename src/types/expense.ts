@@ -25,17 +25,29 @@ export const EXPENSE_CATEGORIES = Object.entries(
 
 export type FixedCostCategory =
   | 'software'
+  | 'subscription'
   | 'internet'
+  | 'phone'
   | 'equipment'
   | 'workspace'
+  | 'housing'
+  | 'transport'
+  | 'taxes'
+  | 'services'
   | 'other'
 
 export const FIXED_COST_CATEGORY_LABELS: Record<FixedCostCategory, string> = {
-  software:  'Software',
-  internet:  'Internet/Tel.',
-  equipment: 'Equipamento',
-  workspace: 'Espaço',
-  other:     'Outros',
+  software:     'Software',
+  subscription: 'Assinaturas',
+  internet:     'Internet',
+  phone:        'Telefonia',
+  equipment:    'Equipamentos',
+  workspace:    'Espaço',
+  housing:      'Moradia',
+  transport:    'Transporte',
+  taxes:        'Impostos',
+  services:     'Serviços',
+  other:        'Outros',
 }
 
 export const FIXED_COST_CATEGORIES = Object.entries(
@@ -107,6 +119,8 @@ export interface FixedCost {
   paid_at:               string | null
   paid_amount:           number | null
   discount_amount:       number | null
+  // Pagamento mensal recorrente (migration 018)
+  last_paid_date:        string | null  // YYYY-MM-DD — último pagamento mensal
   deleted_at:            string | null
   created_at:            string
 }

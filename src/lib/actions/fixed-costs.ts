@@ -362,6 +362,78 @@ export async function settleSelectedFixedCosts(
   return { success: true, count: n }
 }
 
+// ─── PAY MONTHLY RECURRING ────────────────────────────────────────────────────
+// Registra pagamento do mês atual para um custo recorrente.
+// Armazena last_paid_date = hoje. UI usa isso para mostrar "Pago este mês".
+
+export async function payMonthlyRecurring(
+  id: string
+): Promise<FixedCostActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const today = new Date().toLocaleDateString('en-CA')
+
+  const { data, error } = await supabase
+    .from('fixed_costs')
+    .update({ last_paid_date: today })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[fixed-costs/pay-monthly]', error)
+    return { success: false, error: error.message ?? 'Erro ao registrar pagamento.' }
+  }
+
+  revalidatePath('/fixed-costs')
+  return { success: true, data }
+}
+
+// ─── PAY NEXT INSTALLMENT ─────────────────────────────────────────────────────
+// Quita a próxima parcela não paga de um grupo (ação rápida, sem desconto).
+
+export async function payNextInstallment(
+  parentId: string
+): Promise<{ success: boolean; paidIndex?: number; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  // Busca a primeira parcela não paga do grupo
+  const { data: next, error: fetchErr } = await supabase
+    .from('fixed_costs')
+    .select('id, installment_index, amount')
+    .eq('parent_fixed_cost_id', parentId)
+    .eq('is_paid', false)
+    .is('deleted_at', null)
+    .order('installment_index', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (fetchErr) {
+    console.error('[fixed-costs/pay-next-installment]', fetchErr)
+    return { success: false, error: 'Erro ao buscar parcela.' }
+  }
+  if (!next) return { success: false, error: 'Nenhuma parcela pendente.' }
+
+  const now = new Date().toISOString()
+  const { error: updateErr } = await supabase
+    .from('fixed_costs')
+    .update({ is_paid: true, paid_at: now, paid_amount: Number(next.amount) })
+    .eq('id', next.id)
+
+  if (updateErr) {
+    console.error('[fixed-costs/pay-next-installment]', updateErr)
+    return { success: false, error: updateErr.message ?? 'Erro ao quitar parcela.' }
+  }
+
+  revalidatePath('/fixed-costs')
+  return { success: true, paidIndex: next.installment_index ?? undefined }
+}
+
 // ─── DELETE (soft) ────────────────────────────────────────────────────────────
 
 export async function deleteFixedCost(id: string): Promise<FixedCostActionResult> {
