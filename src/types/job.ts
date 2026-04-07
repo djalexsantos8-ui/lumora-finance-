@@ -61,6 +61,12 @@ export interface Job {
   amount_paid:       number
   notes:             string | null
   budget_id:         string | null
+  // Analytics (migration 014)
+  job_date_start:    string | null   // YYYY-MM-DD — início do período
+  job_date_end:      string | null   // YYYY-MM-DD — fim do período
+  is_multi_day:      boolean         // true = período, false = 1 dia
+  lead_source:       string | null   // Origem do lead (texto livre)
+  client_segment:    string | null   // Segmento do cliente (texto livre)
   deleted_at:        string | null
   created_at:        string
   updated_at:        string

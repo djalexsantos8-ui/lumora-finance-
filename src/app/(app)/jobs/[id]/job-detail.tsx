@@ -107,6 +107,13 @@ export default function JobDetail({
   const [clientDraft,  setClientDraft]  = useState(job.client_name)
   const [dateDraft,    setDateDraft]    = useState(job.job_date)
 
+  // Analytics fields (migration 014)
+  const [isMultiDay,      setIsMultiDay]      = useState(job.is_multi_day ?? false)
+  const [dateStartDraft,  setDateStartDraft]  = useState(job.job_date_start ?? job.job_date ?? '')
+  const [dateEndDraft,    setDateEndDraft]    = useState(job.job_date_end ?? '')
+  const [leadSourceDraft, setLeadSourceDraft] = useState(job.lead_source ?? '')
+  const [segmentDraft,    setSegmentDraft]    = useState(job.client_segment ?? '')
+
   // Payment form
   const [showPayForm,   setShowPayForm]   = useState(false)
   const [payAmount,     setPayAmount]     = useState('')
@@ -580,6 +587,103 @@ export default function JobDetail({
                 <option key={v} value={v} className="bg-[#141414] text-white">{l}</option>
               ))}
             </select>
+          </InfoRow>
+
+          {/* ── Período do job ────────────────────────────────────────────── */}
+          <InfoRow label="Período do job">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    const newVal = !isMultiDay
+                    setIsMultiDay(newVal)
+                    const res = await updateJob(job.id, {
+                      is_multi_day:   newVal,
+                      job_date_start: dateStartDraft || job.job_date,
+                      job_date_end:   newVal ? (dateEndDraft || null) : null,
+                    })
+                    if (res.success && res.data) setJob(res.data)
+                  }}
+                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isMultiDay ? 'bg-[#D4A853]' : 'bg-[#3a3a3a]'}`}
+                >
+                  <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${isMultiDay ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </button>
+                <span className="text-xs text-[#888]">{isMultiDay ? 'Múltiplos dias' : '1 dia'}</span>
+              </div>
+              {isMultiDay ? (
+                <div className="flex items-center gap-1.5">
+                  <input type="date" value={dateStartDraft}
+                    onChange={e => setDateStartDraft(e.target.value)}
+                    onBlur={async () => {
+                      const res = await updateJob(job.id, { job_date_start: dateStartDraft || null })
+                      if (res.success && res.data) setJob(res.data)
+                    }}
+                    className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
+                  <span className="text-xs text-[#555]">até</span>
+                  <input type="date" value={dateEndDraft}
+                    onChange={e => setDateEndDraft(e.target.value)}
+                    onBlur={async () => {
+                      const res = await updateJob(job.id, { job_date_end: dateEndDraft || null })
+                      if (res.success && res.data) setJob(res.data)
+                    }}
+                    className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
+                </div>
+              ) : (
+                <input type="date" value={dateStartDraft}
+                  onChange={e => setDateStartDraft(e.target.value)}
+                  onBlur={async () => {
+                    const res = await updateJob(job.id, { job_date_start: dateStartDraft || null })
+                    if (res.success && res.data) setJob(res.data)
+                  }}
+                  className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
+              )}
+            </div>
+          </InfoRow>
+
+          {/* ── Origem do lead ────────────────────────────────────────────── */}
+          <InfoRow label="Origem do lead">
+            <>
+              <input
+                type="text"
+                list="lead-source-list"
+                value={leadSourceDraft}
+                onChange={e => setLeadSourceDraft(e.target.value)}
+                onBlur={async () => {
+                  const res = await updateJob(job.id, { lead_source: leadSourceDraft || null })
+                  if (res.success && res.data) setJob(res.data)
+                }}
+                placeholder="Como te encontraram?"
+                className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-full transition-colors hover:border-[#3a3a3a]"
+              />
+              <datalist id="lead-source-list">
+                {['Instagram','Indicação','WhatsApp','Prospecção ativa','Cliente recorrente','Google','Agência','Outro'].map(v => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+            </>
+          </InfoRow>
+
+          {/* ── Segmento do cliente ───────────────────────────────────────── */}
+          <InfoRow label="Segmento">
+            <>
+              <input
+                type="text"
+                list="segment-list"
+                value={segmentDraft}
+                onChange={e => setSegmentDraft(e.target.value)}
+                onBlur={async () => {
+                  const res = await updateJob(job.id, { client_segment: segmentDraft || null })
+                  if (res.success && res.data) setJob(res.data)
+                }}
+                placeholder="Tipo de cliente"
+                className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-full transition-colors hover:border-[#3a3a3a]"
+              />
+              <datalist id="segment-list">
+                {['Automotivo','Corporativo','Imobiliário','Evento','Casamento','Restaurante','Moda','Fitness','Influencer','Agência','Produto','Financeiro','Educacional','Outro'].map(v => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+            </>
           </InfoRow>
         </div>
       </div>

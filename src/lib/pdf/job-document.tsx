@@ -316,6 +316,16 @@ export default function JobDocument({
   const today   = todayFormatted()
   const jobDate = formatDate(job.job_date)
 
+  // Período: multi-day mostra "Período: X a Y", single mostra "Data: X"
+  const isMultiDay   = (job as Job & { is_multi_day?: boolean }).is_multi_day
+  const dateStart    = (job as Job & { job_date_start?: string | null }).job_date_start
+  const dateEnd      = (job as Job & { job_date_end?: string | null }).job_date_end
+  const periodLabel  = isMultiDay && dateStart
+    ? `Período: ${formatDate(dateStart)} a ${formatDate(dateEnd ?? '')}`
+    : dateStart
+      ? `Data: ${formatDate(dateStart)}`
+      : jobDate !== '—' ? `Data: ${jobDate}` : null
+
   const slug = (job.title || 'job')
     .toLowerCase()
     .normalize('NFD')
@@ -338,8 +348,8 @@ export default function JobDocument({
             <Text style={S.headerLabel}>COBRANÇA DE JOB</Text>
             <Text style={S.jobTitle}>{job.title || 'Job sem título'}</Text>
             <Text style={S.clientName}>{job.client_name || 'Cliente não informado'}</Text>
-            {jobDate !== '—' && (
-              <Text style={S.jobDateLine}>Data do job: {jobDate}</Text>
+            {periodLabel && (
+              <Text style={S.jobDateLine}>{periodLabel}</Text>
             )}
           </View>
           <View style={S.headerRight}>

@@ -85,6 +85,12 @@ export async function updateJob(
     status?:            JobStatus
     notes?:             string
     budget_id?:         string | null
+    // Analytics (migration 014)
+    job_date_start?:    string | null
+    job_date_end?:      string | null
+    is_multi_day?:      boolean
+    lead_source?:       string | null
+    client_segment?:    string | null
   }
 ): Promise<JobActionResult> {
   const supabase = await createClient()
@@ -124,6 +130,16 @@ export async function updateJob(
     payload.notes = fields.notes.trim() || null
   if ('budget_id' in fields)
     payload.budget_id = fields.budget_id ?? null
+  if ('job_date_start' in fields)
+    payload.job_date_start = fields.job_date_start ?? null
+  if ('job_date_end' in fields)
+    payload.job_date_end = fields.job_date_end ?? null
+  if (fields.is_multi_day !== undefined)
+    payload.is_multi_day = fields.is_multi_day
+  if ('lead_source' in fields)
+    payload.lead_source = fields.lead_source?.trim() || null
+  if ('client_segment' in fields)
+    payload.client_segment = fields.client_segment?.trim() || null
 
   if (Object.keys(payload).length === 0)
     return { success: false, error: 'Nenhum campo para atualizar.' }
