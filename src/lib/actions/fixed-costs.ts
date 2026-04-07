@@ -50,24 +50,19 @@ export async function createRecurringCost(fields: {
     ? parseInt(fields.start_date.split('-')[2], 10)
     : 1
 
-  // INSERT com campos básicos (garantidamente presentes na schema cache)
-  const insertPayload: Record<string, unknown> = {
-    workspace_id:  workspaceId,
-    description:   fields.description.trim(),
-    category:      fields.category,
-    amount:        Math.round(fields.amount * 100) / 100,
-    currency:      fields.currency ?? 'BRL',
-    billing_day:   billingDay,
-    is_active:     true,
-    is_deductible: fields.is_deductible,
-    notes:         fields.notes?.trim() || null,
-  }
-
-  // Campos da migration 015 — adicionados apenas se a coluna existir no schema
-  // PostgREST valida colunas contra seu schema cache; se a cache ainda não
-  // foi atualizada, esses campos causariam erro. Tentamos primeiro com tudo.
-  try {
-    Object.assign(insertPayload, {
+  const { data, error } = await supabase
+    .from('fixed_costs')
+    .insert({
+      workspace_id:   workspaceId,
+      created_by:     user.id,
+      description:    fields.description.trim(),
+      category:       fields.category,
+      amount:         Math.round(fields.amount * 100) / 100,
+      currency:       fields.currency ?? 'BRL',
+      billing_day:    billingDay,
+      is_active:      true,
+      is_deductible:  fields.is_deductible,
+      notes:          fields.notes?.trim() || null,
       is_recurring:   true,
       is_installment: false,
       start_date:     fields.start_date,
@@ -77,44 +72,12 @@ export async function createRecurringCost(fields: {
       iof_applied:    fields.iof_applied ?? false,
       iof_amount:     fields.iof_amount ?? null,
     })
-  } catch { /* ignore */ }
-
-  const { data, error } = await supabase
-    .from('fixed_costs')
-    .insert(insertPayload)
     .select()
     .single()
 
   if (error) {
-    // Se falhou com os novos campos, tenta com apenas os campos originais
-    if (error.message?.includes('column') || error.message?.includes('schema')) {
-      const { data: data2, error: error2 } = await supabase
-        .from('fixed_costs')
-        .insert({
-          workspace_id:  workspaceId,
-          description:   fields.description.trim(),
-          category:      fields.category,
-          amount:        Math.round(fields.amount * 100) / 100,
-          currency:      fields.currency ?? 'BRL',
-          billing_day:   billingDay,
-          is_active:     true,
-          is_deductible: fields.is_deductible,
-          notes:         fields.notes?.trim() || null,
-        })
-        .select()
-        .single()
-
-      if (error2) {
-        console.error('[fixed-costs/create-recurring-fallback]', error2)
-        return { success: false, error: `Erro ao criar: ${error2.message}` }
-      }
-
-      revalidatePath('/fixed-costs')
-      return { success: true, data: data2 }
-    }
-
     console.error('[fixed-costs/create-recurring]', error)
-    return { success: false, error: `Erro ao criar: ${error.message}` }
+    return { success: false, error: 'Erro ao criar custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -163,6 +126,7 @@ export async function createInstallmentCost(fields: {
     return {
       id:                    i === 0 ? parentId : randomUUID(),
       workspace_id:          workspaceId,
+      created_by:            user.id,
       description:           fields.description.trim(),
       category:              fields.category,
       amount:                Math.round(fields.amount_per * 100) / 100,
@@ -225,16 +189,17 @@ export async function createFixedCost(fields: {
   const { data, error } = await supabase
     .from('fixed_costs')
     .insert({
-      workspace_id:  workspaceId,
-      description:   fields.description.trim(),
-      category:      fields.category,
-      amount:        Math.round(fields.amount * 100) / 100,
-      currency:      fields.currency ?? 'BRL',
-      billing_day:   billingDay,
-      is_active:     fields.is_active ?? true,
-      is_deductible: fields.is_deductible,
-      notes:         fields.notes?.trim() || null,
-      is_recurring:  true,
+      workspace_id:   workspaceId,
+      created_by:     user.id,
+      description:    fields.description.trim(),
+      category:       fields.category,
+      amount:         Math.round(fields.amount * 100) / 100,
+      currency:       fields.currency ?? 'BRL',
+      billing_day:    billingDay,
+      is_active:      fields.is_active ?? true,
+      is_deductible:  fields.is_deductible,
+      notes:          fields.notes?.trim() || null,
+      is_recurring:   true,
       is_installment: false,
     })
     .select()

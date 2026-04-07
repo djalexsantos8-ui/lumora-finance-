@@ -489,7 +489,7 @@ export function FixedCostsClient({ initialItems }: Props) {
                 <input type="checkbox" checked={fDed} onChange={e => setFDed(e.target.checked)}
                   disabled={isPending}
                   className="w-4 h-4 rounded border-[#3a3a3a] bg-[#0a0a0a] accent-[#D4A853]" />
-                <span className="text-xs text-[#a3a3a3]">Dedutível</span>
+                <span className="text-xs text-[#a3a3a3]">Pode abater no imposto</span>
               </label>
             </div>
 
