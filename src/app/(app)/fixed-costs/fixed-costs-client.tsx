@@ -13,6 +13,8 @@ import {
   settleSelectedFixedCosts,
   payMonthlyRecurring,
   payNextInstallment,
+  unpayInstallment,
+  unpayMonthlyRecurring,
 } from '@/lib/actions/fixed-costs'
 import {
   FIXED_COST_CATEGORIES,
@@ -87,7 +89,8 @@ export function FixedCostsClient({ initialItems }: Props) {
   const [isPending,  startTransition] = useTransition()
 
   // Pay actions in-flight
-  const [payingId, setPayingId] = useState<string | null>(null)
+  const [payingId,  setPayingId]  = useState<string | null>(null)
+  const [undoingId, setUndoingId] = useState<string | null>(null)
 
   // Settle modal
   const [settleModal, setSettleModal] = useState<{
@@ -267,6 +270,36 @@ export function FixedCostsClient({ initialItems }: Props) {
       showToast('success', `Parcela ${res.paidIndex} paga!`)
     } else {
       showToast('error', res.error ?? 'Erro ao pagar parcela.')
+    }
+  }
+
+  // ── Undo installment payment ──────────────────────────────────────────────
+
+  async function handleUndoInstallment(id: string) {
+    setUndoingId(id)
+    const res = await unpayInstallment(id)
+    setUndoingId(null)
+    if (res.success && res.data) {
+      setItems(prev => prev.map(i =>
+        i.id === id ? { ...i, is_paid: false, paid_at: null, paid_amount: null, discount_amount: null } : i
+      ))
+      showToast('success', 'Pagamento desfeito com sucesso.')
+    } else if (!res.success) {
+      showToast('error', res.error)
+    }
+  }
+
+  // ── Undo monthly recurring payment ───────────────────────────────────────
+
+  async function handleUndoMonthly(id: string) {
+    setUndoingId(id)
+    const res = await unpayMonthlyRecurring(id)
+    setUndoingId(null)
+    if (res.success && res.data) {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, last_paid_date: null } : i))
+      showToast('success', 'Pagamento desfeito com sucesso.')
+    } else if (!res.success) {
+      showToast('error', res.error)
     }
   }
 
@@ -636,6 +669,17 @@ export function FixedCostsClient({ initialItems }: Props) {
                       </button>
                     )}
 
+                    {/* Desfazer pagamento do mês */}
+                    {item.is_active && isPaidThisMonth(item.last_paid_date) && (
+                      <button
+                        onClick={() => handleUndoMonthly(item.id)}
+                        disabled={undoingId === item.id}
+                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded border border-[#2a2a2a] text-[#525252] hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-50 transition-colors shrink-0">
+                        {undoingId === item.id ? <Spinner /> : <UndoIcon />}
+                        Desfazer
+                      </button>
+                    )}
+
                     {/* Encerrar — ação secundária */}
                     {item.is_active && (
                       <button onClick={() => handleEndRecurring(item.id, item.description)}
@@ -773,15 +817,21 @@ export function FixedCostsClient({ initialItems }: Props) {
                             <span className="text-[#525252] w-8 shrink-0">{item.installment_index}/{item.installments_total}</span>
                             <span className="text-[#525252] shrink-0">{formatDate(item.start_date)}</span>
                             <div className="flex-1" />
-                            {item.is_paid && (
-                              <span className="text-emerald-400 shrink-0">✓ Pago</span>
-                            )}
                             {item.discount_amount && item.discount_amount > 0 && (
                               <span className="text-amber-400 shrink-0">-{formatCurrency(item.discount_amount, item.currency)}</span>
                             )}
                             <span className={`font-semibold shrink-0 tabular-nums ${item.is_paid ? 'text-[#525252]' : 'text-white'}`}>
                               {formatCurrency(Number(item.paid_amount ?? item.amount), item.currency)}
                             </span>
+                            {item.is_paid && (
+                              <button
+                                onClick={() => handleUndoInstallment(item.id)}
+                                disabled={undoingId === item.id}
+                                title="Desfazer pagamento"
+                                className="flex items-center gap-0.5 text-[10px] text-emerald-400 hover:text-amber-400 disabled:opacity-50 transition-colors shrink-0">
+                                {undoingId === item.id ? <Spinner /> : <><UndoIcon /> Desfazer</>}
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -955,6 +1005,15 @@ function TrashIcon() {
     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
         d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  )
+}
+
+function UndoIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
     </svg>
   )
 }

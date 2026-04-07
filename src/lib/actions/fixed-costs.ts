@@ -362,6 +362,60 @@ export async function settleSelectedFixedCosts(
   return { success: true, count: n }
 }
 
+// ─── UNPAY INSTALLMENT ───────────────────────────────────────────────────────
+// Desfaz o pagamento de uma parcela individual (reverte is_paid para false).
+
+export async function unpayInstallment(
+  id: string
+): Promise<FixedCostActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const { data, error } = await supabase
+    .from('fixed_costs')
+    .update({ is_paid: false, paid_at: null, paid_amount: null, discount_amount: null })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[fixed-costs/unpay-installment]', error)
+    return { success: false, error: error.message ?? 'Erro ao desfazer pagamento.' }
+  }
+
+  revalidatePath('/fixed-costs')
+  return { success: true, data }
+}
+
+// ─── UNPAY MONTHLY RECURRING ─────────────────────────────────────────────────
+// Desfaz o pagamento do mês atual de um custo recorrente (limpa last_paid_date).
+
+export async function unpayMonthlyRecurring(
+  id: string
+): Promise<FixedCostActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const { data, error } = await supabase
+    .from('fixed_costs')
+    .update({ last_paid_date: null })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[fixed-costs/unpay-monthly]', error)
+    return { success: false, error: error.message ?? 'Erro ao desfazer pagamento.' }
+  }
+
+  revalidatePath('/fixed-costs')
+  return { success: true, data }
+}
+
 // ─── PAY MONTHLY RECURRING ────────────────────────────────────────────────────
 // Registra pagamento do mês atual para um custo recorrente.
 // Armazena last_paid_date = hoje. UI usa isso para mostrar "Pago este mês".
