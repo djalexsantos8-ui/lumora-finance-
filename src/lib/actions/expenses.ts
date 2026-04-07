@@ -124,16 +124,19 @@ export async function createExpense(fields: {
   const totalRounded = Math.round(baseAmount * n * 100) / 100
   const lastAmount   = Math.round((fields.amount - totalRounded + baseAmount) * 100) / 100
 
-  // UUID gerado em JS para ser o id da 1ª parcela (e parent das demais)
-  const parentId = crypto.randomUUID()
+  // Gera TODOS os UUIDs antes do insert.
+  // Crítico: o PostgREST usa as chaves do 1º objeto como lista de colunas
+  // para todo o batch. Se só o 1º tiver "id" e os demais não, o SQL gerado
+  // manda NULL nos demais — violando o NOT NULL de id.
+  const allIds   = Array.from({ length: n }, () => crypto.randomUUID())
+  const parentId = allIds[0]
 
   const allRecords = Array.from({ length: n }, (_, i) => {
-    const idx        = i + 1
-    const isFirst    = i === 0
-    const isLast     = idx === n
+    const idx     = i + 1
+    const isFirst = i === 0
+    const isLast  = idx === n
     return {
-      // 1ª parcela usa o parentId como seu próprio id
-      ...(isFirst ? { id: parentId } : {}),
+      id:                 allIds[i],   // id explícito em TODOS os records
       workspace_id:       workspaceId,
       description:        `${description} (${idx}/${n})`,
       category:           fields.category,
@@ -145,7 +148,6 @@ export async function createExpense(fields: {
       is_installment:     true,
       installments_total: n,
       installment_index:  idx,
-      // 1ª parcela é a raiz (null); demais apontam para ela
       parent_expense_id:  isFirst ? null : parentId,
     }
   })
