@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatCurrency } from '@/lib/utils/format'
-import { createExpense, deleteExpense, markExpensePaid } from '@/lib/actions/expenses'
+import { createExpense, deleteExpense, markExpensePaid, getInstallmentsRemaining, settleInstallments } from '@/lib/actions/expenses'
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
@@ -82,6 +82,12 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   const [payModal,     setPayModal]     = useState<{ id: string; original: number; isMulti: boolean } | null>(null)
   const [payCustomAmt, setPayCustomAmt] = useState('')
   const [payingModal,  setPayingModal]  = useState(false)
+
+  // Quitação de parcelas restantes
+  const [settleModal,   setSettleModal]   = useState<{ parentId: string; count: number; total: number } | null>(null)
+  const [settlePaidAmt, setSettlePaidAmt] = useState('')
+  const [settling,      setSettling]      = useState(false)
+  const [loadingSettle, setLoadingSettle] = useState(false)
 
   // ── Busca cotação automática ─────────────────────────────────────────────────
 
@@ -281,6 +287,43 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     } else {
       setErrorMsg(res.error)
     }
+  }
+
+  // ── Quitar parcelas restantes ────────────────────────────────────────────────
+
+  async function handleOpenSettle(expense: Expense) {
+    setLoadingSettle(true)
+    const res = await getInstallmentsRemaining(expense.id)
+    setLoadingSettle(false)
+    if (!res.success) { setErrorMsg(res.error ?? 'Erro ao buscar parcelas.'); return }
+    setSettleModal({ parentId: res.parentId!, count: res.count!, total: res.total! })
+    setSettlePaidAmt('')
+  }
+
+  async function handleSettle() {
+    if (!settleModal) return
+    const customRaw = settlePaidAmt ? parseFloat(settlePaidAmt.replace(',', '.')) : null
+    const paidAmt   = customRaw && customRaw > 0 && customRaw < settleModal.total ? customRaw : undefined
+
+    setSettling(true)
+    const res = await settleInstallments(settleModal.parentId, paidAmt)
+    setSettling(false)
+
+    if (!res.success) { setErrorMsg(res.error ?? 'Erro ao quitar parcelas.'); return }
+
+    // Atualiza otimisticamente todas as parcelas do grupo na lista atual
+    const now = new Date().toISOString()
+    setExpenses(prev => prev.map(e => {
+      const inGroup = e.id === settleModal.parentId || e.parent_expense_id === settleModal.parentId
+      if (inGroup && !e.is_paid) {
+        return { ...e, is_paid: true, paid_at: now, paid_amount: Number(e.amount) }
+      }
+      return e
+    }))
+
+    setSettleModal(null); setSettlePaidAmt('')
+    setSuccessMsg({ text: `${res.count} parcela${(res.count ?? 0) !== 1 ? 's' : ''} quitada${(res.count ?? 0) !== 1 ? 's' : ''} com sucesso ✓` })
+    setTimeout(() => setSuccessMsg(null), 5000)
   }
 
   const isEmpty = expenses.length === 0 && !showForm
@@ -756,20 +799,108 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                       </p>
                     )}
 
-                    <button
-                      onClick={() => {
-                        setPayModal({ id: expense.id, original: displayAmt, isMulti })
-                        setPayCustomAmt('')
-                      }}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#3a3a3a] text-[#a3a3a3] hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/8 transition-all"
-                    >
-                      {expense.is_paid ? 'Editar pagamento' : 'Quitar despesa'}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => {
+                          setPayModal({ id: expense.id, original: displayAmt, isMulti })
+                          setPayCustomAmt('')
+                        }}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#3a3a3a] text-[#a3a3a3] hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/8 transition-all"
+                      >
+                        {expense.is_paid
+                          ? 'Editar pagamento'
+                          : expense.is_installment ? 'Quitar esta parcela' : 'Quitar despesa'}
+                      </button>
+
+                      {/* Quitar todas restantes — só para parcelados em aberto */}
+                      {expense.is_installment && !expense.is_paid && (
+                        <button
+                          onClick={() => handleOpenSettle(expense)}
+                          disabled={loadingSettle}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#D4A853]/30 text-[#D4A853] hover:bg-[#D4A853]/10 disabled:opacity-50 transition-all"
+                        >
+                          {loadingSettle ? <Spinner /> : (
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          )}
+                          Quitar todas restantes
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Modal de quitação de parcelas restantes ──────────────────────────── */}
+      {settleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center gap-2 mb-1">
+              <svg className="w-4 h-4 text-[#D4A853]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <p className="text-sm font-bold text-white">Quitar parcelas restantes</p>
+            </div>
+            <p className="text-xs text-[#525252] mb-5">
+              <span className="text-white font-semibold">{settleModal.count}</span> parcela{settleModal.count !== 1 ? 's' : ''} em aberto
+              {' '}· total de <span className="text-white font-semibold">{formatCurrency(settleModal.total, 'BRL')}</span>
+            </p>
+
+            <div className="mb-4">
+              <label className={labelCls}>
+                Valor total pago (R$) <span className="text-[#3a3a3a] normal-case font-normal">— vazio = valor original</span>
+              </label>
+              <input
+                autoFocus
+                type="text"
+                placeholder={String(settleModal.total.toFixed(2)).replace('.', ',')}
+                value={settlePaidAmt}
+                onChange={e => setSettlePaidAmt(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleSettle()
+                  if (e.key === 'Escape') { setSettleModal(null); setSettlePaidAmt('') }
+                }}
+                className={`${inputCls} text-right`}
+              />
+              {/* Preview desconto */}
+              {(() => {
+                const raw = parseFloat(settlePaidAmt.replace(',', '.'))
+                if (!isNaN(raw) && raw > 0 && raw < settleModal.total) {
+                  const discount = settleModal.total - raw
+                  return (
+                    <p className="text-[10px] text-amber-400 mt-1.5">
+                      Desconto de {formatCurrency(discount, 'BRL')} será aplicado na última parcela
+                    </p>
+                  )
+                }
+                return null
+              })()}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSettle}
+                disabled={settling}
+                className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] font-semibold text-xs px-4 py-2 rounded-lg transition-colors flex-1 justify-center"
+              >
+                {settling ? <Spinner /> : null}
+                {settling ? 'Quitando...' : `Quitar ${settleModal.count} parcela${settleModal.count !== 1 ? 's' : ''}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSettleModal(null); setSettlePaidAmt('') }}
+                disabled={settling}
+                className="text-xs text-[#525252] hover:text-white transition-colors px-3 py-2"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

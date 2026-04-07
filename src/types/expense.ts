@@ -68,6 +68,8 @@ export interface Expense {
   amount_brl:          number | null   // valor final em BRL (com ou sem IOF)
   iof_applied:         boolean
   iof_amount:          number | null   // valor do IOF em BRL
+  // Quitação (migration 013)
+  discount_amount:     number | null   // desconto aplicado na última parcela ao quitar antecipado
   deleted_at:          string | null
   created_at:          string
 }
