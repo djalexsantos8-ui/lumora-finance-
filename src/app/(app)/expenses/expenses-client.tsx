@@ -33,6 +33,11 @@ function formatExpenseDate(iso: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+function toMonthLabel(yyyyMM: string): string {
+  const [y, m] = yyyyMM.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+}
+
 export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Props) {
   const router = useRouter()
 
@@ -40,6 +45,10 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   const [showForm,    setShowForm]     = useState(false)
   const [isPending,   startTransition] = useTransition()
   const [deletingId,  setDeletingId]   = useState<string | null>(null)
+
+  // Feedback de sucesso/erro
+  const [successMsg,  setSuccessMsg]   = useState<{ text: string; targetMonth?: string } | null>(null)
+  const [errorMsg,    setErrorMsg]     = useState<string | null>(null)
 
   // Form state
   const [fCat,         setFCat]         = useState<ExpenseCategory>('other')
@@ -81,6 +90,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO())
     setFDed(false); setFNotes(''); setFInstallment(false); setFQty('2'); setFAmtMode('total')
     setShowForm(false)
+    setErrorMsg(null)
   }
 
   function handleSubmit() {
@@ -92,6 +102,9 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     const amount = fInstallment && fAmtMode === 'per' ? rawAmt * qty : rawAmt
 
     startTransition(async () => {
+      setErrorMsg(null)
+      setSuccessMsg(null)
+
       const res = await createExpense({
         description:        fDesc,
         category:           fCat,
@@ -103,26 +116,52 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
         installments_total: fInstallment ? qty : undefined,
       })
 
-      if (res.success) {
-        const [py, pm] = monthParam.split('-')
-
-        if ('installments' in res && res.installments) {
-          // Filtra as parcelas que caem no mês atual
-          const inMonth = res.installments.filter(e => {
-            const [ey, em] = e.expense_date.split('-')
-            return ey === py && em === pm
-          })
-          if (inMonth.length > 0) {
-            setExpenses(prev => [...inMonth, ...prev])
-          }
-        } else if (res.data) {
-          const [ey, em] = fDate.split('-')
-          if (ey === py && em === pm) {
-            setExpenses(prev => [res.data!, ...prev])
-          }
-        }
-        resetForm()
+      if (!res.success) {
+        setErrorMsg(res.error ?? 'Erro ao salvar despesa. Tente novamente.')
+        return
       }
+
+      // ── Sucesso ──────────────────────────────────────────────────────────
+      const [py, pm] = monthParam.split('-')
+
+      if ('installments' in res && res.installments) {
+        const n = res.installments.length
+        // Parcelas do mês atual → adiciona à lista
+        const inMonth = res.installments.filter(e => {
+          const [ey, em] = e.expense_date.split('-')
+          return ey === py && em === pm
+        })
+        if (inMonth.length > 0) setExpenses(prev => [...inMonth, ...prev])
+
+        // Mês da 1ª parcela para o aviso
+        const firstMonth = fDate.slice(0, 7) // YYYY-MM
+        const isSameMonth = firstMonth === monthParam
+
+        setSuccessMsg({
+          text: `${n} parcela${n !== 1 ? 's' : ''} lançada${n !== 1 ? 's' : ''} com sucesso`,
+          targetMonth: isSameMonth ? undefined : firstMonth,
+        })
+      } else if (res.data) {
+        const expMonth  = fDate.slice(0, 7)
+        const isSameMonth = expMonth === monthParam
+
+        if (isSameMonth) {
+          setExpenses(prev => [res.data!, ...prev])
+        }
+
+        setSuccessMsg({
+          text: 'Despesa salva com sucesso',
+          targetMonth: isSameMonth ? undefined : expMonth,
+        })
+      }
+
+      // Limpa formulário mas mantém a mensagem de sucesso visível
+      setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO())
+      setFDed(false); setFNotes(''); setFInstallment(false); setFQty('2'); setFAmtMode('total')
+      setShowForm(false)
+
+      // Auto-esconde a mensagem de sucesso após 6s (se não houver navegação pendente)
+      setTimeout(() => setSuccessMsg(null), 6000)
     })
   }
 
@@ -165,6 +204,62 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
           {expenses.length} despesa{expenses.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {/* ── Banner de sucesso ────────────────────────────────────────────────── */}
+      {successMsg && (
+        <div className="flex items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <div>
+              <p className="text-sm font-semibold text-emerald-400">{successMsg.text}</p>
+              {successMsg.targetMonth && (
+                <p className="text-xs text-emerald-400/70 mt-0.5">
+                  Lançado em {toMonthLabel(successMsg.targetMonth)}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {successMsg.targetMonth && (
+              <button
+                onClick={() => {
+                  setSuccessMsg(null)
+                  router.push(`/expenses?month=${successMsg.targetMonth}`)
+                }}
+                className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 border border-emerald-500/40 hover:border-emerald-400/60 px-2.5 py-1 rounded-lg transition-colors"
+              >
+                Ver em {toMonthLabel(successMsg.targetMonth).split(' ')[0]}
+              </button>
+            )}
+            <button onClick={() => setSuccessMsg(null)}
+              className="text-emerald-400/50 hover:text-emerald-400 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Banner de erro ────────────────────────────────────────────────────── */}
+      {errorMsg && (
+        <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm font-semibold text-red-400">{errorMsg}</p>
+          </div>
+          <button onClick={() => setErrorMsg(null)}
+            className="text-red-400/50 hover:text-red-400 transition-colors shrink-0">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* ── Card de total ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 mb-6">
@@ -340,6 +435,15 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
               />
             </div>
           </div>
+
+          {errorMsg && (
+            <div className="flex items-center gap-2 mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+              <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-red-400">{errorMsg}</p>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <button
