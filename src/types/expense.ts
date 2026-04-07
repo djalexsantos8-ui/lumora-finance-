@@ -59,6 +59,10 @@ export interface Expense {
   installments_total:  number | null
   installment_index:   number | null
   parent_expense_id:   string | null
+  // Pagamento (migration 010)
+  is_paid:             boolean
+  paid_amount:         number | null
+  paid_at:             string | null
   deleted_at:          string | null
   created_at:          string
 }

@@ -170,6 +170,59 @@ export async function createExpense(fields: {
   }
 }
 
+// ─── MARK PAID ───────────────────────────────────────────────────────────────
+// paidAmount: opcional. Se omitido, usa o valor original da despesa.
+
+export async function markExpensePaid(
+  id: string,
+  paidAmount?: number
+): Promise<ExpenseActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+
+  // Busca o amount original para usar como fallback
+  const { data: original, error: fetchErr } = await supabase
+    .from('expenses')
+    .select('amount, workspace_id')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .single()
+
+  if (fetchErr || !original)
+    return { success: false, error: 'Despesa não encontrada.' }
+
+  if (original.workspace_id !== workspaceId)
+    return { success: false, error: 'Não autorizado.' }
+
+  const finalAmount = (paidAmount !== undefined && paidAmount > 0)
+    ? Math.round(paidAmount * 100) / 100
+    : Math.round(Number(original.amount) * 100) / 100
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({
+      is_paid:     true,
+      paid_amount: finalAmount,
+      paid_at:     new Date().toISOString(),
+    })
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[expenses/mark-paid]', JSON.stringify(error))
+    return { success: false, error: translateSupabaseError(error) }
+  }
+
+  revalidatePath('/expenses')
+  return { success: true, data }
+}
+
 // ─── DELETE (soft) ────────────────────────────────────────────────────────────
 
 export async function deleteExpense(id: string): Promise<ExpenseActionResult> {
