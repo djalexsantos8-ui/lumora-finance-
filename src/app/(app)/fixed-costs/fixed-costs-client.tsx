@@ -15,6 +15,7 @@ import {
   payNextInstallment,
   unpayInstallment,
   unpayMonthlyRecurring,
+  updateFixedCost,
 } from '@/lib/actions/fixed-costs'
 import {
   FIXED_COST_CATEGORIES,
@@ -91,6 +92,15 @@ export function FixedCostsClient({ initialItems }: Props) {
   // Pay actions in-flight
   const [payingId,  setPayingId]  = useState<string | null>(null)
   const [undoingId, setUndoingId] = useState<string | null>(null)
+
+  // Edit modal
+  const [editItem,    setEditItem]    = useState<FixedCost | null>(null)
+  const [editSaving,  setEditSaving]  = useState(false)
+  const [editDesc,    setEditDesc]    = useState('')
+  const [editCat,     setEditCat]     = useState<FixedCostCategory>('software')
+  const [editAmt,     setEditAmt]     = useState('')
+  const [editDay,     setEditDay]     = useState('')
+  const [editStart,   setEditStart]   = useState('')
 
   // Settle modal
   const [settleModal, setSettleModal] = useState<{
@@ -298,6 +308,37 @@ export function FixedCostsClient({ initialItems }: Props) {
     if (res.success && res.data) {
       setItems(prev => prev.map(i => i.id === id ? { ...i, last_paid_date: null } : i))
       showToast('success', 'Pagamento desfeito com sucesso.')
+    } else if (!res.success) {
+      showToast('error', res.error)
+    }
+  }
+
+  // ── Edit ─────────────────────────────────────────────────────────────────
+
+  function openEditModal(item: FixedCost) {
+    setEditItem(item)
+    setEditDesc(item.description)
+    setEditCat(item.category as FixedCostCategory)
+    setEditAmt(String(item.amount))
+    setEditDay(String(item.billing_day ?? ''))
+    setEditStart(item.start_date ?? '')
+  }
+
+  async function handleEditSave() {
+    if (!editItem) return
+    setEditSaving(true)
+    const res = await updateFixedCost(editItem.id, {
+      description: editDesc,
+      category:    editCat,
+      amount:      parseFloat(editAmt.replace(',', '.')) || editItem.amount,
+      billing_day: parseInt(editDay, 10) || editItem.billing_day ?? undefined,
+      start_date:  editStart || null,
+    })
+    setEditSaving(false)
+    if (res.success && res.data) {
+      setItems(prev => prev.map(i => i.id === editItem.id ? { ...i, ...res.data } : i))
+      setEditItem(null)
+      showToast('success', 'Custo atualizado.')
     } else if (!res.success) {
       showToast('error', res.error)
     }
@@ -680,6 +721,13 @@ export function FixedCostsClient({ initialItems }: Props) {
                       </button>
                     )}
 
+                    {/* Editar — ação secundária */}
+                    <button onClick={() => openEditModal(item)}
+                      title="Editar custo"
+                      className="p-1 rounded text-[#3a3a3a] hover:text-[#D4A853] transition-colors shrink-0">
+                      <PencilIcon />
+                    </button>
+
                     {/* Encerrar — ação secundária */}
                     {item.is_active && (
                       <button onClick={() => handleEndRecurring(item.id, item.description)}
@@ -860,6 +908,89 @@ export function FixedCostsClient({ initialItems }: Props) {
         </div>
       )}
 
+      {/* ── Edit Modal ─────────────────────────────────────────────────────── */}
+      {editItem && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl w-full max-w-sm sm:max-w-md">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-[#1c1c1c]">
+              <div>
+                <p className="text-sm font-bold text-white">Editar custo fixo</p>
+                <p className="text-[10px] text-[#525252] mt-0.5 truncate max-w-[220px]">{editItem.description}</p>
+              </div>
+              <button onClick={() => setEditItem(null)}
+                className="text-[#525252] hover:text-white p-1 rounded transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Fields */}
+            <div className="px-5 py-4 space-y-3">
+              {/* Descrição */}
+              <div>
+                <label className={labelCls}>Descrição</label>
+                <input autoFocus type="text" value={editDesc}
+                  onChange={e => setEditDesc(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleEditSave(); if (e.key === 'Escape') setEditItem(null) }}
+                  disabled={editSaving} className={inputCls} />
+              </div>
+
+              {/* Categoria */}
+              <div>
+                <label className={labelCls}>Categoria</label>
+                <select value={editCat} onChange={e => setEditCat(e.target.value as FixedCostCategory)}
+                  disabled={editSaving} className={inputCls}>
+                  {FIXED_COST_CATEGORIES.map(([v, l]) => (
+                    <option key={v} value={v} className="bg-[#141414]">{l}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Valor */}
+                <div>
+                  <label className={labelCls}>Valor mensal</label>
+                  <input type="text" inputMode="decimal" placeholder="0,00"
+                    value={editAmt} onChange={e => setEditAmt(e.target.value)}
+                    disabled={editSaving} className={`${inputCls} text-right`} />
+                </div>
+
+                {/* Dia de vencimento */}
+                <div>
+                  <label className={labelCls}>Dia de cobrança</label>
+                  <input type="number" min={1} max={31} placeholder="1"
+                    value={editDay} onChange={e => setEditDay(e.target.value)}
+                    disabled={editSaving} className={inputCls} />
+                </div>
+              </div>
+
+              {/* Data de início */}
+              <div>
+                <label className={labelCls}>Início da cobrança</label>
+                <input type="date" value={editStart} onChange={e => setEditStart(e.target.value)}
+                  disabled={editSaving} className={inputCls} />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 px-5 pb-5">
+              <button onClick={handleEditSave}
+                disabled={editSaving || !editDesc.trim()}
+                className="flex-1 flex items-center justify-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] font-bold text-sm py-2.5 rounded-xl transition-colors">
+                {editSaving ? <Spinner /> : null}
+                {editSaving ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+              <button onClick={() => setEditItem(null)} disabled={editSaving}
+                className="px-4 text-xs text-[#525252] hover:text-white transition-colors">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Settle Modal ───────────────────────────────────────────────────── */}
       {settleModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -999,6 +1130,15 @@ function CategoryBadge({ category }: { category: FixedCostCategory }) {
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
+
+function PencilIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+    </svg>
+  )
+}
 
 function TrashIcon() {
   return (

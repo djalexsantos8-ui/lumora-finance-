@@ -488,6 +488,89 @@ export async function payNextInstallment(
   return { success: true, paidIndex: next.installment_index ?? undefined }
 }
 
+// ─── UPDATE FIXED COST ───────────────────────────────────────────────────────
+// Atualiza campos editáveis e grava histórico para campos que mudaram de valor.
+
+export async function updateFixedCost(
+  id: string,
+  fields: {
+    description?: string
+    category?:    FixedCostCategory
+    amount?:      number
+    billing_day?: number
+    start_date?:  string | null
+  }
+): Promise<FixedCostActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+
+  // Busca estado atual para diff de histórico
+  const { data: current, error: fetchErr } = await supabase
+    .from('fixed_costs')
+    .select('id,description,category,amount,billing_day,start_date')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .single()
+
+  if (fetchErr || !current) return { success: false, error: 'Custo não encontrado.' }
+
+  // Monta payload apenas com campos fornecidos
+  const payload: Record<string, unknown> = {}
+  if (fields.description !== undefined) payload.description = fields.description.trim()
+  if (fields.description !== undefined) payload.name        = fields.description.trim()
+  if (fields.category    !== undefined) payload.category    = fields.category
+  if (fields.amount      !== undefined) payload.amount      = Math.round(fields.amount * 100) / 100
+  if (fields.billing_day !== undefined) payload.billing_day = Math.max(1, Math.min(31, fields.billing_day))
+  if (fields.start_date  !== undefined) payload.start_date  = fields.start_date
+
+  const { data, error } = await supabase
+    .from('fixed_costs')
+    .update(payload)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[fixed-costs/update]', error)
+    return { success: false, error: error.message ?? 'Erro ao atualizar.' }
+  }
+
+  // Grava histórico dos campos que mudaram
+  const historyRows: {
+    cost_id: string; workspace_id: string; changed_by: string
+    field: string; old_value: string | null; new_value: string | null
+  }[] = []
+
+  if (fields.description !== undefined && fields.description.trim() !== current.description) {
+    historyRows.push({ cost_id: id, workspace_id: workspaceId, changed_by: user.id,
+      field: 'description', old_value: current.description, new_value: fields.description.trim() })
+  }
+  if (fields.category !== undefined && fields.category !== current.category) {
+    historyRows.push({ cost_id: id, workspace_id: workspaceId, changed_by: user.id,
+      field: 'category', old_value: current.category, new_value: fields.category })
+  }
+  if (fields.amount !== undefined && Math.abs(fields.amount - Number(current.amount)) > 0.001) {
+    historyRows.push({ cost_id: id, workspace_id: workspaceId, changed_by: user.id,
+      field: 'amount', old_value: String(current.amount), new_value: String(fields.amount) })
+  }
+  if (fields.billing_day !== undefined && fields.billing_day !== current.billing_day) {
+    historyRows.push({ cost_id: id, workspace_id: workspaceId, changed_by: user.id,
+      field: 'billing_day', old_value: String(current.billing_day), new_value: String(fields.billing_day) })
+  }
+
+  if (historyRows.length > 0) {
+    await supabase.from('fixed_cost_history').insert(historyRows)
+  }
+
+  revalidatePath('/fixed-costs')
+  return { success: true, data }
+}
+
 // ─── DELETE (soft) ────────────────────────────────────────────────────────────
 
 export async function deleteFixedCost(id: string): Promise<FixedCostActionResult> {
