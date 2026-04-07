@@ -20,7 +20,7 @@ function formatDate(iso: string | null | undefined): string {
   return `${d}/${m}/${y}`
 }
 
-function pct(n: number, color = true): JSX.Element {
+function pct(n: number, color = true) {
   const positive = n >= 0
   return (
     <span className={color ? (positive ? 'text-emerald-400' : 'text-red-400') : 'text-white'}>
