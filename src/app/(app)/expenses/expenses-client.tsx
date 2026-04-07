@@ -36,22 +36,35 @@ function formatExpenseDate(iso: string) {
 export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Props) {
   const router = useRouter()
 
-  const [expenses,    setExpenses]    = useState<Expense[]>(initialExpenses)
-  const [showForm,    setShowForm]    = useState(false)
+  const [expenses,    setExpenses]     = useState<Expense[]>(initialExpenses)
+  const [showForm,    setShowForm]     = useState(false)
   const [isPending,   startTransition] = useTransition()
-  const [deletingId,  setDeletingId]  = useState<string | null>(null)
+  const [deletingId,  setDeletingId]   = useState<string | null>(null)
 
   // Form state
-  const [fCat,   setFCat]   = useState<ExpenseCategory>('other')
-  const [fDesc,  setFDesc]  = useState('')
-  const [fAmt,   setFAmt]   = useState('')
-  const [fDate,  setFDate]  = useState(todayISO)
-  const [fDed,   setFDed]   = useState(false)
-  const [fNotes, setFNotes] = useState('')
+  const [fCat,         setFCat]         = useState<ExpenseCategory>('other')
+  const [fDesc,        setFDesc]        = useState('')
+  const [fAmt,         setFAmt]         = useState('')
+  const [fDate,        setFDate]        = useState(todayISO)
+  const [fDed,         setFDed]         = useState(false)
+  const [fNotes,       setFNotes]       = useState('')
+  const [fInstallment, setFInstallment] = useState(false)
+  const [fQty,         setFQty]         = useState('2')          // nº de parcelas
+  const [fAmtMode,     setFAmtMode]     = useState<'total' | 'per'>('total')  // modo de valor
 
   // Totals
   const totalMonth = expenses.reduce((s, e) => s + Number(e.amount), 0)
   const currency   = expenses[0]?.currency ?? 'BRL'
+
+  // Valor da parcela exibido no preview
+  const previewInstallment = (() => {
+    const raw   = parseFloat(fAmt.replace(',', '.'))
+    const qty   = parseInt(fQty, 10)
+    if (isNaN(raw) || raw <= 0 || isNaN(qty) || qty < 2) return null
+    const per   = fAmtMode === 'total' ? raw / qty : raw
+    const total = fAmtMode === 'per'   ? raw * qty : raw
+    return { per, total, qty }
+  })()
 
   // ── Month navigation ─────────────────────────────────────────────────────────
 
@@ -65,29 +78,48 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   // ── Add expense ──────────────────────────────────────────────────────────────
 
   function resetForm() {
-    setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO()); setFDed(false); setFNotes('')
+    setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO())
+    setFDed(false); setFNotes(''); setFInstallment(false); setFQty('2'); setFAmtMode('total')
     setShowForm(false)
   }
 
   function handleSubmit() {
-    const amount = parseFloat(fAmt.replace(',', '.'))
-    if (!fDesc.trim() || isNaN(amount) || amount <= 0) return
+    const rawAmt = parseFloat(fAmt.replace(',', '.'))
+    if (!fDesc.trim() || isNaN(rawAmt) || rawAmt <= 0) return
+
+    // Normaliza: sempre envia valor TOTAL para a action
+    const qty    = parseInt(fQty, 10)
+    const amount = fInstallment && fAmtMode === 'per' ? rawAmt * qty : rawAmt
 
     startTransition(async () => {
       const res = await createExpense({
-        description:   fDesc,
-        category:      fCat,
+        description:        fDesc,
+        category:           fCat,
         amount,
-        expense_date:  fDate,
-        is_deductible: fDed,
-        notes:         fNotes || undefined,
+        expense_date:       fDate,
+        is_deductible:      fDed,
+        notes:              fNotes || undefined,
+        is_installment:     fInstallment,
+        installments_total: fInstallment ? qty : undefined,
       })
-      if (res.success && res.data) {
-        // Só adiciona ao estado local se a data está no mês atual exibido
+
+      if (res.success) {
         const [py, pm] = monthParam.split('-')
-        const [ey, em] = fDate.split('-')
-        if (ey === py && em === pm) {
-          setExpenses(prev => [res.data!, ...prev])
+
+        if ('installments' in res && res.installments) {
+          // Filtra as parcelas que caem no mês atual
+          const inMonth = res.installments.filter(e => {
+            const [ey, em] = e.expense_date.split('-')
+            return ey === py && em === pm
+          })
+          if (inMonth.length > 0) {
+            setExpenses(prev => [...inMonth, ...prev])
+          }
+        } else if (res.data) {
+          const [ey, em] = fDate.split('-')
+          if (ey === py && em === pm) {
+            setExpenses(prev => [res.data!, ...prev])
+          }
         }
         resetForm()
       }
@@ -158,6 +190,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
         <div className="bg-[#141414] border border-[#D4A853]/30 rounded-xl p-4 mb-4">
           <p className="text-xs font-semibold text-[#D4A853] mb-3 tracking-wide">NOVA DESPESA</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+
             {/* Categoria */}
             <div>
               <label className={labelCls}>Categoria</label>
@@ -171,7 +204,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
 
             {/* Data */}
             <div>
-              <label className={labelCls}>Data</label>
+              <label className={labelCls}>Data {fInstallment ? 'da 1ª parcela' : ''}</label>
               <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
                 disabled={isPending} className={inputCls} />
             </div>
@@ -191,9 +224,61 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
               />
             </div>
 
+            {/* Toggle parcelado */}
+            <div className="sm:col-span-2">
+              <button
+                type="button"
+                onClick={() => setFInstallment(v => !v)}
+                disabled={isPending}
+                className="flex items-center gap-2 text-xs text-[#a3a3a3] hover:text-white transition-colors"
+              >
+                <span
+                  className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors"
+                  style={{ backgroundColor: fInstallment ? '#D4A853' : '#2a2a2a' }}
+                >
+                  <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${fInstallment ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </span>
+                Compra parcelada
+              </button>
+            </div>
+
+            {/* Campos de parcelamento */}
+            {fInstallment && (
+              <>
+                {/* Nº de parcelas */}
+                <div>
+                  <label className={labelCls}>Número de parcelas</label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={60}
+                    placeholder="Ex: 10"
+                    value={fQty}
+                    onChange={e => setFQty(e.target.value)}
+                    disabled={isPending}
+                    className={inputCls}
+                  />
+                </div>
+
+                {/* Modo: total ou por parcela */}
+                <div>
+                  <label className={labelCls}>Informar</label>
+                  <select value={fAmtMode} onChange={e => setFAmtMode(e.target.value as 'total' | 'per')}
+                    disabled={isPending} className={inputCls}>
+                    <option value="total" className="bg-[#141414]">Valor total da compra</option>
+                    <option value="per"   className="bg-[#141414]">Valor de cada parcela</option>
+                  </select>
+                </div>
+              </>
+            )}
+
             {/* Valor */}
             <div>
-              <label className={labelCls}>Valor (R$)</label>
+              <label className={labelCls}>
+                {fInstallment
+                  ? fAmtMode === 'total' ? 'Valor total (R$)' : 'Valor por parcela (R$)'
+                  : 'Valor (R$)'}
+              </label>
               <input
                 type="text"
                 placeholder="0,00"
@@ -205,18 +290,40 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
               />
             </div>
 
-            {/* Dedutível */}
+            {/* Preview de parcelas */}
+            {fInstallment && previewInstallment && (
+              <div className="sm:col-span-2 bg-[#D4A853]/8 border border-[#D4A853]/20 rounded-lg px-3 py-2">
+                <p className="text-[11px] text-[#D4A853]">
+                  {previewInstallment.qty}× de{' '}
+                  <span className="font-bold">{formatCurrency(previewInstallment.per, 'BRL')}</span>
+                  {' '}= total de{' '}
+                  <span className="font-bold">{formatCurrency(previewInstallment.total, 'BRL')}</span>
+                </p>
+                <p className="text-[10px] text-[#525252] mt-0.5">
+                  As próximas parcelas serão lançadas automaticamente nos meses seguintes
+                </p>
+              </div>
+            )}
+
+            {/* Pode abater no imposto */}
             <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={fDed}
-                  onChange={e => setFDed(e.target.checked)}
-                  disabled={isPending}
-                  className="w-4 h-4 rounded border-[#3a3a3a] bg-[#0a0a0a] accent-[#D4A853]"
-                />
-                <span className="text-xs text-[#a3a3a3]">Dedutível</span>
-              </label>
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={fDed}
+                    onChange={e => setFDed(e.target.checked)}
+                    disabled={isPending}
+                    className="w-4 h-4 rounded border-[#3a3a3a] bg-[#0a0a0a] accent-[#D4A853]"
+                  />
+                  <span className="text-xs text-[#a3a3a3]">Pode abater no imposto</span>
+                </label>
+                {fDed && (
+                  <p className="text-[10px] text-[#525252] mt-1 ml-6">
+                    Ex: softwares, equipamentos e despesas profissionais
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Notas (opcional) */}
@@ -241,7 +348,11 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
               className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] font-semibold text-xs px-4 py-2 rounded-lg transition-colors"
             >
               {isPending ? <Spinner /> : null}
-              {isPending ? 'Salvando...' : 'Confirmar'}
+              {isPending
+                ? 'Salvando...'
+                : fInstallment && previewInstallment
+                  ? `Lançar ${previewInstallment.qty} parcelas`
+                  : 'Confirmar'}
             </button>
             <button
               type="button"
@@ -303,10 +414,17 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 )}
               </div>
 
-              {/* Dedutível */}
+              {/* Badge parcela */}
+              {expense.is_installment && expense.installment_index && expense.installments_total && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 shrink-0 tabular-nums">
+                  {expense.installment_index}/{expense.installments_total}
+                </span>
+              )}
+
+              {/* Pode abater no imposto */}
               {expense.is_deductible && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
-                  Ded.
+                  Abate imp.
                 </span>
               )}
 

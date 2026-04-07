@@ -45,17 +45,22 @@ export const FIXED_COST_CATEGORIES = Object.entries(
 // ─── Despesa variável ─────────────────────────────────────────────────────────
 
 export interface Expense {
-  id:            string
-  workspace_id:  string
-  description:   string
-  category:      ExpenseCategory
-  amount:        number
-  currency:      string
-  expense_date:  string        // YYYY-MM-DD
-  is_deductible: boolean
-  notes:         string | null
-  deleted_at:    string | null
-  created_at:    string
+  id:                  string
+  workspace_id:        string
+  description:         string
+  category:            ExpenseCategory
+  amount:              number
+  currency:            string
+  expense_date:        string        // YYYY-MM-DD
+  is_deductible:       boolean
+  notes:               string | null
+  // Parcelamento (migration 007)
+  is_installment:      boolean
+  installments_total:  number | null
+  installment_index:   number | null
+  parent_expense_id:   string | null
+  deleted_at:          string | null
+  created_at:          string
 }
 
 // ─── Custo fixo recorrente ────────────────────────────────────────────────────
