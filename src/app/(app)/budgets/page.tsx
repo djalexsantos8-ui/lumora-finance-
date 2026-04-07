@@ -14,17 +14,13 @@ export default async function BudgetsPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: member, error: memberError } = await supabase
+  const { data: member } = await supabase
     .from('workspace_members')
     .select('workspace_id')
     .eq('user_id', user.id)
     .eq('status', 'active')
     .limit(1)
     .maybeSingle()
-
-  console.log('[budgets] user.id:', user.id)
-  console.log('[budgets] member:', JSON.stringify(member))
-  console.log('[budgets] memberError:', JSON.stringify(memberError))
 
   if (!member) redirect('/dashboard')
 
