@@ -33,9 +33,8 @@ export function DashboardClient({ data }: Props) {
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview',   label: 'Visão Geral'  },
-    { id: 'commercial', label: 'Comercial'    },
-    { id: 'financial',  label: 'Financeiro'   },
-    { id: 'insights',   label: 'Insights'     },
+    { id: 'commercial', label: 'Comercial'  },
+    { id: 'financial',  label: 'Financeiro' },
   ]
 
   const currentMonth = new Date().toLocaleDateString('pt-BR', {
@@ -113,7 +112,6 @@ export function DashboardClient({ data }: Props) {
       {tab === 'overview'   && <OverviewTab   data={overview} />}
       {tab === 'commercial' && <CommercialTab data={commercial} />}
       {tab === 'financial'  && <FinancialTab  data={financial} />}
-      {tab === 'insights'   && <InsightsTab   data={insights} />}
     </div>
   )
 }
