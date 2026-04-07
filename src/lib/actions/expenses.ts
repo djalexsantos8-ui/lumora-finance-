@@ -257,11 +257,19 @@ export async function markExpensePaid(
 // Retorna quantas parcelas ainda estão em aberto e o total em BRL.
 
 export async function getInstallmentsRemaining(expenseId: string): Promise<{
-  success:    boolean
-  parentId?:  string
-  count?:     number
-  total?:     number
-  error?:     string
+  success:        boolean
+  parentId?:      string
+  count?:         number
+  total?:         number
+  installments?:  {
+    id:                string
+    amount:            number
+    amount_brl:        number | null
+    currency:          string
+    expense_date:      string
+    installment_index: number | null
+  }[]
+  error?:         string
 }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -277,23 +285,106 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
     .is('deleted_at', null)
     .single()
 
-  if (refErr || !ref)                          return { success: false, error: 'Despesa não encontrada.' }
-  if (ref.workspace_id !== workspaceId)        return { success: false, error: 'Não autorizado.' }
+  if (refErr || !ref)                    return { success: false, error: 'Despesa não encontrada.' }
+  if (ref.workspace_id !== workspaceId)  return { success: false, error: 'Não autorizado.' }
 
   const parentId = ref.parent_expense_id ?? ref.id
 
   const { data: unpaid, error: fetchErr } = await supabase
     .from('expenses')
-    .select('id, amount')
+    .select('id, amount, amount_brl, currency, expense_date, installment_index')
     .or(`id.eq.${parentId},parent_expense_id.eq.${parentId}`)
     .eq('is_paid', false)
     .is('deleted_at', null)
+    .order('installment_index', { ascending: true })
 
-  if (fetchErr)                                return { success: false, error: translateSupabaseError(fetchErr) }
-  if (!unpaid || unpaid.length === 0)          return { success: false, error: 'Nenhuma parcela em aberto.' }
+  if (fetchErr)                          return { success: false, error: translateSupabaseError(fetchErr) }
+  if (!unpaid || unpaid.length === 0)    return { success: false, error: 'Nenhuma parcela em aberto.' }
 
-  const total = Math.round(unpaid.reduce((s, e) => s + Number(e.amount), 0) * 100) / 100
-  return { success: true, parentId, count: unpaid.length, total }
+  const total = Math.round(
+    unpaid.reduce((s, e) => s + Number(e.amount_brl ?? e.amount), 0) * 100
+  ) / 100
+
+  return {
+    success: true,
+    parentId,
+    count:   unpaid.length,
+    total,
+    installments: unpaid.map(e => ({
+      id:                e.id,
+      amount:            Number(e.amount),
+      amount_brl:        e.amount_brl  != null ? Number(e.amount_brl)  : null,
+      currency:          e.currency,
+      expense_date:      e.expense_date,
+      installment_index: e.installment_index,
+    })),
+  }
+}
+
+// ─── SETTLE SELECTED INSTALLMENTS ────────────────────────────────────────────
+// Quita apenas as parcelas com os IDs informados.
+// Se paidTotal < soma dos valores, o desconto vai para a última parcela.
+
+export async function settleSelectedInstallments(
+  ids:        string[],
+  paidTotal?: number
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  if (!ids || ids.length === 0) return { success: false, error: 'Nenhuma parcela selecionada.' }
+
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+
+  // Busca as parcelas selecionadas e valida workspace
+  const { data: selected, error: fetchErr } = await supabase
+    .from('expenses')
+    .select('id, amount, installment_index, workspace_id')
+    .in('id', ids)
+    .eq('is_paid', false)
+    .is('deleted_at', null)
+    .order('installment_index', { ascending: true })
+
+  if (fetchErr)                              return { success: false, error: translateSupabaseError(fetchErr) }
+  if (!selected || selected.length === 0)   return { success: false, error: 'Nenhuma parcela em aberto encontrada.' }
+  if (selected.some(e => e.workspace_id !== workspaceId))
+                                             return { success: false, error: 'Não autorizado.' }
+
+  const n             = selected.length
+  const totalOriginal = selected.reduce((s, e) => s + Number(e.amount), 0)
+  const effectivePaid = (paidTotal && paidTotal > 0 && paidTotal <= totalOriginal)
+    ? paidTotal
+    : totalOriginal
+
+  const now        = new Date().toISOString()
+  const sumNonLast = selected.slice(0, -1).reduce((s, e) => s + Number(e.amount), 0)
+  const paidLast   = Math.max(0, Math.round((effectivePaid - sumNonLast) * 100) / 100)
+  const discLast   = Math.max(0, Math.round((Number(selected[n - 1].amount) - paidLast) * 100) / 100)
+
+  const results = await Promise.all(
+    selected.map((e, i) => {
+      const isLast  = i === n - 1
+      const paidAmt = isLast ? paidLast : Math.round(Number(e.amount) * 100) / 100
+      const discAmt = isLast && discLast > 0.005 ? discLast : null
+      return supabase
+        .from('expenses')
+        .update({
+          is_paid:         true,
+          paid_at:         now,
+          paid_amount:     paidAmt,
+          discount_amount: discAmt,
+        })
+        .eq('id', e.id)
+    })
+  )
+
+  const firstError = results.find(r => r.error)
+  if (firstError?.error) return { success: false, error: translateSupabaseError(firstError.error) }
+
+  revalidatePath('/expenses')
+  return { success: true, count: selected.length }
 }
 
 // ─── SETTLE INSTALLMENTS ──────────────────────────────────────────────────────
