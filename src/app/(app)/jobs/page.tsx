@@ -57,8 +57,8 @@ export default async function JobsPage() {
 
   const list = (jobs ?? []) as Job[]
 
-  // Totalizadores do mês
-  const totalBruto    = list.reduce((s, j) => s + Number(j.total_value), 0)
+  // Totalizadores do mês — usa revenue_total quando disponível (novo), total_value como fallback (legado)
+  const totalBruto    = list.reduce((s, j) => s + (Number(j.revenue_total) || Number(j.total_value)), 0)
   const totalRecebido = list.reduce((s, j) => s + Number(j.amount_paid), 0)
   const totalPendente = list.reduce((s, j) => s + getAmountDue(j), 0)
 
