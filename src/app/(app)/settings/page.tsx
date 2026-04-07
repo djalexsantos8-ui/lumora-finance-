@@ -19,7 +19,7 @@ export default async function SettingsPage() {
     .eq('user_id', user.id)
     .eq('status', 'active')
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (!member) redirect('/dashboard')
 

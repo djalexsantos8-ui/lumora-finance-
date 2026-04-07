@@ -15,7 +15,7 @@ async function getWorkspaceId(userId: string): Promise<string | null> {
     .eq('user_id', userId)
     .eq('status', 'active')
     .limit(1)
-    .single()
+    .maybeSingle()
   return data?.workspace_id ?? null
 }
 
