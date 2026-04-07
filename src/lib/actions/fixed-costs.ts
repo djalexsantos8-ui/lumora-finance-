@@ -50,34 +50,38 @@ export async function createRecurringCost(fields: {
     ? parseInt(fields.start_date.split('-')[2], 10)
     : 1
 
+  const payload = {
+    workspace_id:   workspaceId,
+    created_by:     user.id,
+    description:    fields.description.trim(),
+    category:       fields.category,
+    amount:         Math.round(fields.amount * 100) / 100,
+    currency:       fields.currency ?? 'BRL',
+    billing_day:    billingDay,
+    is_active:      true,
+    is_deductible:  fields.is_deductible,
+    notes:          fields.notes?.trim() || null,
+    is_recurring:   true,
+    is_installment: false,
+    start_date:     fields.start_date,
+    end_date:       null as null,
+    exchange_rate:  fields.exchange_rate ?? null,
+    amount_brl:     fields.amount_brl ?? null,
+    iof_applied:    fields.iof_applied ?? false,
+    iof_amount:     fields.iof_amount ?? null,
+  }
+
+  console.log('[fixed-costs/create-recurring] payload:', JSON.stringify(payload))
+
   const { data, error } = await supabase
     .from('fixed_costs')
-    .insert({
-      workspace_id:   workspaceId,
-      created_by:     user.id,
-      description:    fields.description.trim(),
-      category:       fields.category,
-      amount:         Math.round(fields.amount * 100) / 100,
-      currency:       fields.currency ?? 'BRL',
-      billing_day:    billingDay,
-      is_active:      true,
-      is_deductible:  fields.is_deductible,
-      notes:          fields.notes?.trim() || null,
-      is_recurring:   true,
-      is_installment: false,
-      start_date:     fields.start_date,
-      end_date:       null,
-      exchange_rate:  fields.exchange_rate ?? null,
-      amount_brl:     fields.amount_brl ?? null,
-      iof_applied:    fields.iof_applied ?? false,
-      iof_amount:     fields.iof_amount ?? null,
-    })
+    .insert(payload)
     .select()
     .single()
 
   if (error) {
-    console.error('[fixed-costs/create-recurring]', error)
-    return { success: false, error: 'Erro ao criar custo fixo.' }
+    console.error('[fixed-costs/create-recurring] error:', JSON.stringify(error))
+    return { success: false, error: error.message ?? 'Erro ao criar custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
