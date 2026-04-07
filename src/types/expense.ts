@@ -63,6 +63,11 @@ export interface Expense {
   is_paid:             boolean
   paid_amount:         number | null
   paid_at:             string | null
+  // Multimoeda (migration 011)
+  exchange_rate:       number | null   // 1 moeda = X BRL, fixado na criação
+  amount_brl:          number | null   // valor final em BRL (com ou sem IOF)
+  iof_applied:         boolean
+  iof_amount:          number | null   // valor do IOF em BRL
   deleted_at:          string | null
   created_at:          string
 }

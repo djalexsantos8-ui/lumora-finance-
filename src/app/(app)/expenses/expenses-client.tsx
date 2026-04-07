@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatCurrency } from '@/lib/utils/format'
 import { createExpense, deleteExpense, markExpensePaid } from '@/lib/actions/expenses'
@@ -36,6 +36,13 @@ function toMonthLabel(yyyyMM: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 }
 
+// Formata valor em moeda original — lida com 'OTHER' (sem símbolo Intl)
+function formatAmount(amount: number, currency: string): string {
+  if (currency === 'OTHER') return amount.toFixed(2)
+  try { return formatCurrency(amount, currency) }
+  catch { return `${amount.toFixed(2)} ${currency}` }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Props) {
@@ -50,7 +57,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   const [successMsg, setSuccessMsg] = useState<{ text: string; targetMonth?: string } | null>(null)
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null)
 
-  // Form state
+  // Form — campos base
   const [fCat,         setFCat]         = useState<ExpenseCategory>('other')
   const [fDesc,        setFDesc]        = useState('')
   const [fAmt,         setFAmt]         = useState('')
@@ -61,18 +68,59 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   const [fQty,         setFQty]         = useState('2')
   const [fAmtMode,     setFAmtMode]     = useState<'total' | 'per'>('total')
 
+  // Form — multimoeda
+  const [fCurrency,     setFCurrency]     = useState('BRL')
+  const [fExchangeRate, setFExchangeRate] = useState<number | null>(null)
+  const [fManualRate,   setFManualRate]   = useState('')
+  const [fIof,          setFIof]          = useState(false)
+  const [loadingRate,   setLoadingRate]   = useState(false)
+  const [rateError,     setRateError]     = useState(false)
+
   // Pagamento
   const [expandedId,   setExpandedId]   = useState<string | null>(null)
   const [payingId,     setPayingId]     = useState<string | null>(null)
-  const [payModal,     setPayModal]     = useState<{ id: string; original: number; currentPaid: number | null } | null>(null)
+  const [payModal,     setPayModal]     = useState<{ id: string; original: number; isMulti: boolean } | null>(null)
   const [payCustomAmt, setPayCustomAmt] = useState('')
   const [payingModal,  setPayingModal]  = useState(false)
 
-  // Totals
-  const totalMonth  = expenses.reduce((s, e) => s + Number(e.amount), 0)
-  const totalPaid   = expenses.filter(e => e.is_paid).reduce((s, e) => s + Number(e.paid_amount ?? e.amount), 0)
-  const totalUnpaid = totalMonth - expenses.filter(e => e.is_paid).reduce((s, e) => s + Number(e.amount), 0)
-  const currency    = expenses[0]?.currency ?? 'BRL'
+  // ── Busca cotação automática ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (fCurrency === 'BRL' || fCurrency === 'OTHER') {
+      setFExchangeRate(null)
+      setFIof(false)
+      setRateError(false)
+      return
+    }
+    let cancelled = false
+    setLoadingRate(true)
+    setRateError(false)
+    fetch(`/api/exchange-rate?currency=${fCurrency}`)
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        if (d.rate) { setFExchangeRate(d.rate); setRateError(false) }
+        else        { setFExchangeRate(null); setRateError(true) }
+      })
+      .catch(() => { if (!cancelled) { setFExchangeRate(null); setRateError(true) } })
+      .finally(() => { if (!cancelled) setLoadingRate(false) })
+    return () => { cancelled = true }
+  }, [fCurrency])
+
+  // ── Derivados ────────────────────────────────────────────────────────────────
+
+  // Taxa efetiva: auto-buscada para USD/EUR, manual para OTHER
+  const effectiveRate = fCurrency === 'OTHER'
+    ? (parseFloat(fManualRate.replace(',', '.')) || null)
+    : fExchangeRate
+
+  // Totais sempre em BRL (usa amount_brl quando disponível)
+  const totalMonth  = expenses.reduce((s, e) => s + Number(e.amount_brl ?? e.amount), 0)
+  const totalPaid   = expenses.filter(e => e.is_paid).reduce((s, e) => {
+    const base = e.amount_brl ?? e.amount
+    return s + Number(e.paid_amount ?? base)
+  }, 0)
+  const totalUnpaid = expenses.filter(e => !e.is_paid).reduce((s, e) => s + Number(e.amount_brl ?? e.amount), 0)
 
   // Preview parcelamento
   const previewInstallment = (() => {
@@ -83,6 +131,23 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     const total = fAmtMode === 'per'   ? raw * qty : raw
     return { per, total, qty }
   })()
+
+  // Preview conversão BRL
+  const previewBRL = (() => {
+    if (fCurrency === 'BRL' || !effectiveRate) return null
+    const raw = parseFloat(fAmt.replace(',', '.'))
+    if (isNaN(raw) || raw <= 0) return null
+    const qty = parseInt(fQty, 10)
+    const amt = fInstallment && fAmtMode === 'per' && !isNaN(qty) ? raw * qty : raw
+    const brl = amt * effectiveRate
+    const iof = fIof ? brl * 0.0638 : 0
+    const total = brl + iof
+    const perInstallment = fInstallment && !isNaN(qty) && qty >= 2 ? total / qty : null
+    return { brl, iof, total, perInstallment }
+  })()
+
+  const canSubmit = Boolean(fDesc.trim() && fAmt && !isPending &&
+    (fCurrency === 'BRL' || effectiveRate != null))
 
   // ── Month navigation ─────────────────────────────────────────────────────────
 
@@ -98,6 +163,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
   function resetForm() {
     setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO())
     setFDed(false); setFNotes(''); setFInstallment(false); setFQty('2'); setFAmtMode('total')
+    setFCurrency('BRL'); setFExchangeRate(null); setFManualRate(''); setFIof(false)
+    setRateError(false)
     setShowForm(false); setErrorMsg(null)
   }
 
@@ -110,11 +177,17 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     startTransition(async () => {
       setErrorMsg(null); setSuccessMsg(null)
       const res = await createExpense({
-        description: fDesc, category: fCat, amount,
-        expense_date: fDate, is_deductible: fDed,
-        notes: fNotes || undefined,
-        is_installment: fInstallment,
+        description:        fDesc,
+        category:           fCat,
+        amount,
+        currency:           fCurrency,
+        expense_date:       fDate,
+        is_deductible:      fDed,
+        notes:              fNotes || undefined,
+        is_installment:     fInstallment,
         installments_total: fInstallment ? qty : undefined,
+        exchange_rate:      effectiveRate ?? undefined,
+        iof_applied:        fCurrency !== 'BRL' ? fIof : undefined,
       })
 
       if (!res.success) { setErrorMsg(res.error); return }
@@ -137,8 +210,10 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
         setSuccessMsg({ text: 'Despesa salva com sucesso', targetMonth: isSameMonth ? undefined : expMonth })
       }
 
+      // Reset form
       setFCat('other'); setFDesc(''); setFAmt(''); setFDate(todayISO())
       setFDed(false); setFNotes(''); setFInstallment(false); setFQty('2'); setFAmtMode('total')
+      setFCurrency('BRL'); setFExchangeRate(null); setFManualRate(''); setFIof(false)
       setShowForm(false)
       setTimeout(() => setSuccessMsg(null), 6000)
     })
@@ -154,16 +229,21 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     if (res.success) setExpenses(prev => prev.filter(e => e.id !== id))
   }
 
-  // ── Pagamento rápido (sem modal) ─────────────────────────────────────────────
+  // ── Pagamento rápido ─────────────────────────────────────────────────────────
 
   async function handleQuickPay(expense: Expense) {
     setPayingId(expense.id)
-    const res = await markExpensePaid(expense.id)
+    // Para despesas em moeda estrangeira, pagar o valor em BRL
+    const paidAmt = expense.currency !== 'BRL' && expense.amount_brl != null
+      ? Number(expense.amount_brl)
+      : undefined
+    const res = await markExpensePaid(expense.id, paidAmt)
     setPayingId(null)
     if (res.success) {
+      const stored = paidAmt ?? Number(expense.amount_brl ?? expense.amount)
       setExpenses(prev => prev.map(e =>
         e.id === expense.id
-          ? { ...e, is_paid: true, paid_amount: Number(expense.amount), paid_at: new Date().toISOString() }
+          ? { ...e, is_paid: true, paid_amount: stored, paid_at: new Date().toISOString() }
           : e
       ))
       setSuccessMsg({ text: 'Despesa marcada como paga ✓' })
@@ -173,7 +253,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     }
   }
 
-  // ── Pagamento pelo modal (com valor customizado) ──────────────────────────────
+  // ── Pagamento pelo modal ──────────────────────────────────────────────────────
 
   async function handleModalPay() {
     if (!payModal) return
@@ -280,11 +360,11 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
       <div className="grid grid-cols-2 gap-3 mb-6">
         <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
           <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-1">TOTAL DO MÊS</p>
-          <p className="text-xl font-bold text-white">{formatCurrency(totalMonth, currency)}</p>
+          <p className="text-xl font-bold text-white">{formatCurrency(totalMonth, 'BRL')}</p>
           {totalPaid > 0 && (
             <p className="text-[10px] text-emerald-400 mt-1">
-              {formatCurrency(totalPaid, currency)} pago
-              {totalUnpaid > 0 && <span className="text-[#525252]"> · {formatCurrency(totalUnpaid, currency)} em aberto</span>}
+              {formatCurrency(totalPaid, 'BRL')} pago
+              {totalUnpaid > 0 && <span className="text-[#525252]"> · {formatCurrency(totalUnpaid, 'BRL')} em aberto</span>}
             </p>
           )}
         </div>
@@ -306,6 +386,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
         <div className="bg-[#141414] border border-[#D4A853]/30 rounded-xl p-4 mb-4">
           <p className="text-xs font-semibold text-[#D4A853] mb-3 tracking-wide">NOVA DESPESA</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+
+            {/* Categoria */}
             <div>
               <label className={labelCls}>Categoria</label>
               <select value={fCat} onChange={e => setFCat(e.target.value as ExpenseCategory)}
@@ -315,11 +397,15 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 ))}
               </select>
             </div>
+
+            {/* Data */}
             <div>
               <label className={labelCls}>Data {fInstallment ? 'da 1ª parcela' : ''}</label>
               <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
                 disabled={isPending} className={inputCls} />
             </div>
+
+            {/* Descrição */}
             <div className="sm:col-span-2">
               <label className={labelCls}>Descrição</label>
               <input autoFocus type="text" placeholder="Ex: Adobe Creative Cloud, almoço cliente..."
@@ -327,6 +413,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); if (e.key === 'Escape') resetForm() }}
                 disabled={isPending} className={inputCls} />
             </div>
+
+            {/* Toggle parcelado */}
             <div className="sm:col-span-2">
               <button type="button" onClick={() => setFInstallment(v => !v)} disabled={isPending}
                 className="flex items-center gap-2 text-xs text-[#a3a3a3] hover:text-white transition-colors">
@@ -337,6 +425,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 Compra parcelada
               </button>
             </div>
+
+            {/* Qtd parcelas + modo de valor */}
             {fInstallment && (
               <>
                 <div>
@@ -354,25 +444,108 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 </div>
               </>
             )}
+
+            {/* Moeda */}
+            <div>
+              <label className={labelCls}>Moeda</label>
+              <select
+                value={fCurrency}
+                onChange={e => { setFCurrency(e.target.value); setFManualRate(''); setFIof(false) }}
+                disabled={isPending}
+                className={inputCls}
+              >
+                <option value="BRL" className="bg-[#141414]">BRL — Real</option>
+                <option value="USD" className="bg-[#141414]">USD — Dólar</option>
+                <option value="EUR" className="bg-[#141414]">EUR — Euro</option>
+                <option value="OTHER" className="bg-[#141414]">Outra moeda</option>
+              </select>
+            </div>
+
+            {/* Valor */}
             <div>
               <label className={labelCls}>
-                {fInstallment ? (fAmtMode === 'total' ? 'Valor total (R$)' : 'Valor por parcela (R$)') : 'Valor (R$)'}
+                {fInstallment
+                  ? (fAmtMode === 'total' ? `Valor total (${fCurrency})` : `Valor por parcela (${fCurrency})`)
+                  : `Valor (${fCurrency})`}
               </label>
               <input type="text" placeholder="0,00" value={fAmt} onChange={e => setFAmt(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
                 disabled={isPending} className={`${inputCls} text-right`} />
             </div>
-            {fInstallment && previewInstallment && (
+
+            {/* Cotação automática (USD/EUR) */}
+            {(fCurrency === 'USD' || fCurrency === 'EUR') && (
+              <div className="sm:col-span-2 flex items-center gap-2 min-h-[24px]">
+                {loadingRate ? (
+                  <><Spinner /><span className="text-xs text-[#525252]">Buscando cotação...</span></>
+                ) : rateError ? (
+                  <span className="text-xs text-red-400">Não foi possível obter cotação automática.</span>
+                ) : fExchangeRate ? (
+                  <span className="text-xs text-[#a3a3a3]">
+                    Cotação: <span className="font-semibold text-white">1 {fCurrency} = {formatCurrency(fExchangeRate, 'BRL')}</span>
+                    <span className="text-[#525252] ml-2 text-[10px]">· ao vivo</span>
+                  </span>
+                ) : null}
+              </div>
+            )}
+
+            {/* Cotação manual (OTHER) */}
+            {fCurrency === 'OTHER' && (
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Cotação manual (1 unidade = R$)</label>
+                <input type="text" placeholder="0,0000" value={fManualRate}
+                  onChange={e => setFManualRate(e.target.value)}
+                  disabled={isPending} className={`${inputCls} text-right`} />
+              </div>
+            )}
+
+            {/* Toggle IOF */}
+            {fCurrency !== 'BRL' && effectiveRate && (
+              <div className="sm:col-span-2">
+                <button type="button" onClick={() => setFIof(v => !v)} disabled={isPending}
+                  className="flex items-center gap-2 text-xs text-[#a3a3a3] hover:text-white transition-colors">
+                  <span className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors"
+                    style={{ backgroundColor: fIof ? '#D4A853' : '#2a2a2a' }}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${fIof ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
+                  Incluir IOF (6,38%) — cartão internacional
+                </button>
+              </div>
+            )}
+
+            {/* Preview conversão BRL */}
+            {previewBRL && (
+              <div className="sm:col-span-2 bg-blue-500/8 border border-blue-500/20 rounded-lg px-3 py-2">
+                <p className="text-[11px] text-blue-400">
+                  ≈ <span className="font-bold">{formatCurrency(previewBRL.total, 'BRL')}</span> em BRL
+                  {previewBRL.iof > 0 && (
+                    <span className="text-[#525252] ml-1.5">
+                      (câmbio {formatCurrency(previewBRL.brl, 'BRL')} + IOF {formatCurrency(previewBRL.iof, 'BRL')})
+                    </span>
+                  )}
+                </p>
+                {fInstallment && previewBRL.perInstallment && (
+                  <p className="text-[10px] text-[#525252] mt-0.5">
+                    ≈ {formatCurrency(previewBRL.perInstallment, 'BRL')} por parcela
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Preview parcelamento */}
+            {fInstallment && previewInstallment && !previewBRL && (
               <div className="sm:col-span-2 bg-[#D4A853]/8 border border-[#D4A853]/20 rounded-lg px-3 py-2">
                 <p className="text-[11px] text-[#D4A853]">
-                  {previewInstallment.qty}× de <span className="font-bold">{formatCurrency(previewInstallment.per, 'BRL')}</span>
-                  {' '}= total de <span className="font-bold">{formatCurrency(previewInstallment.total, 'BRL')}</span>
+                  {previewInstallment.qty}× de <span className="font-bold">{formatAmount(previewInstallment.per, fCurrency)}</span>
+                  {' '}= total de <span className="font-bold">{formatAmount(previewInstallment.total, fCurrency)}</span>
                 </p>
                 <p className="text-[10px] text-[#525252] mt-0.5">
                   As próximas parcelas serão lançadas automaticamente nos meses seguintes
                 </p>
               </div>
             )}
+
+            {/* Checkbox dedutível */}
             <div className="flex items-end pb-2">
               <div>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -386,8 +559,10 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 )}
               </div>
             </div>
+
+            {/* Notas */}
             <div className="sm:col-span-2">
-              <label className={labelCls}>Notas <span className="text-[#3a3a3a]">(opcional)</span></label>
+              <label className={labelCls}>Notas <span className="text-[#3a3a3a] normal-case font-normal">(opcional)</span></label>
               <input type="text" placeholder="Observações..." value={fNotes}
                 onChange={e => setFNotes(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
@@ -395,6 +570,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
             </div>
           </div>
 
+          {/* Erro inline */}
           {errorMsg && (
             <div className="flex items-center gap-2 mb-3 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
               <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -405,10 +581,14 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
           )}
 
           <div className="flex gap-2">
-            <button onClick={handleSubmit} disabled={isPending || !fDesc.trim() || !fAmt}
+            <button onClick={handleSubmit} disabled={!canSubmit}
               className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 text-[#0a0a0a] font-semibold text-xs px-4 py-2 rounded-lg transition-colors">
               {isPending ? <Spinner /> : null}
-              {isPending ? 'Salvando...' : fInstallment && previewInstallment ? `Lançar ${previewInstallment.qty} parcelas` : 'Confirmar'}
+              {isPending
+                ? 'Salvando...'
+                : fInstallment && previewInstallment
+                  ? `Lançar ${previewInstallment.qty} parcelas`
+                  : 'Confirmar'}
             </button>
             <button type="button" onClick={resetForm} disabled={isPending}
               className="text-xs text-[#525252] hover:text-white transition-colors px-3 py-2">
@@ -440,10 +620,14 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
       ) : (
         <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl overflow-hidden">
           {expenses.map((expense, idx) => {
-            const isExpanded = expandedId === expense.id
-            const isPaying   = payingId === expense.id
-            const discount   = expense.is_paid && expense.paid_amount != null
-              ? Number(expense.amount) - Number(expense.paid_amount)
+            const isExpanded   = expandedId === expense.id
+            const isPaying     = payingId === expense.id
+            const isMulti      = expense.currency !== 'BRL'
+            const displayAmt   = isMulti && expense.amount_brl != null
+              ? Number(expense.amount_brl)
+              : Number(expense.amount)
+            const discount     = expense.is_paid && expense.paid_amount != null
+              ? displayAmt - Number(expense.paid_amount)
               : 0
 
             return (
@@ -484,10 +668,19 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                     </span>
                   )}
 
-                  {/* Valor */}
-                  <span className={`text-sm font-bold shrink-0 tabular-nums ${expense.is_paid ? 'text-[#525252] line-through' : 'text-white'}`}>
-                    {formatCurrency(Number(expense.amount), expense.currency)}
-                  </span>
+                  {/* Valor — moeda original + BRL quando multimoeda */}
+                  <div className="text-right shrink-0">
+                    <span className={`text-sm font-bold tabular-nums ${expense.is_paid ? 'text-[#525252] line-through' : 'text-white'}`}>
+                      {isMulti
+                        ? formatAmount(Number(expense.amount), expense.currency)
+                        : formatCurrency(Number(expense.amount), 'BRL')}
+                    </span>
+                    {isMulti && expense.amount_brl != null && (
+                      <p className="text-[10px] text-[#525252] tabular-nums">
+                        ≈ {formatCurrency(Number(expense.amount_brl), 'BRL')}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Botão pagar / badge pago */}
                   {expense.is_paid ? (
@@ -523,6 +716,19 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 {/* ── Painel de detalhe expandido ─────────────────────────── */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-1 bg-[#0f0f0f] border-t border-[#1c1c1c]">
+
+                    {/* Info de câmbio */}
+                    {isMulti && expense.exchange_rate != null && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-[10px] text-[#525252]">
+                          Cotação fixada: 1 {expense.currency} = {formatCurrency(Number(expense.exchange_rate), 'BRL')}
+                          {expense.iof_applied && (
+                            <span className="text-amber-400 ml-2">· IOF {formatCurrency(Number(expense.iof_amount ?? 0), 'BRL')}</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+
                     <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-3">PAGAMENTO</p>
 
                     {expense.is_paid ? (
@@ -536,21 +742,23 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                           </span>
                         </div>
                         <p className="text-xs text-[#a3a3a3] ml-5">
-                          Valor pago: <span className="font-bold text-white">{formatCurrency(Number(expense.paid_amount ?? expense.amount), expense.currency)}</span>
+                          Valor pago: <span className="font-bold text-white">{formatCurrency(Number(expense.paid_amount ?? displayAmt), 'BRL')}</span>
                         </p>
                         {discount > 0.005 && (
                           <p className="text-xs text-amber-400 ml-5">
-                            Desconto: {formatCurrency(discount, expense.currency)}
+                            Desconto: {formatCurrency(discount, 'BRL')}
                           </p>
                         )}
                       </div>
                     ) : (
-                      <p className="text-xs text-[#525252] mb-3">Em aberto · {formatCurrency(Number(expense.amount), expense.currency)}</p>
+                      <p className="text-xs text-[#525252] mb-3">
+                        Em aberto · {formatCurrency(displayAmt, 'BRL')}
+                      </p>
                     )}
 
                     <button
                       onClick={() => {
-                        setPayModal({ id: expense.id, original: Number(expense.amount), currentPaid: expense.paid_amount != null ? Number(expense.paid_amount) : null })
+                        setPayModal({ id: expense.id, original: displayAmt, isMulti })
                         setPayCustomAmt('')
                       }}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#3a3a3a] text-[#a3a3a3] hover:border-emerald-500/50 hover:text-emerald-400 hover:bg-emerald-500/8 transition-all"
@@ -571,21 +779,26 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
           <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <p className="text-sm font-bold text-white mb-1">Quitar despesa</p>
             <p className="text-xs text-[#525252] mb-5">
-              Valor original: <span className="text-white font-semibold">{formatCurrency(payModal.original, 'BRL')}</span>
+              Valor em BRL: <span className="text-white font-semibold">{formatCurrency(payModal.original, 'BRL')}</span>
+              {payModal.isMulti && <span className="text-[#525252] ml-1">(convertido)</span>}
             </p>
 
             <div className="mb-4">
-              <label className={labelCls}>Valor pago (R$) <span className="text-[#3a3a3a] normal-case font-normal">— deixe vazio para usar o valor original</span></label>
+              <label className={labelCls}>
+                Valor pago (R$) <span className="text-[#3a3a3a] normal-case font-normal">— deixe vazio para usar o valor original</span>
+              </label>
               <input
                 autoFocus
                 type="text"
                 placeholder={String(payModal.original.toFixed(2)).replace('.', ',')}
                 value={payCustomAmt}
                 onChange={e => setPayCustomAmt(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleModalPay(); if (e.key === 'Escape') { setPayModal(null); setPayCustomAmt('') } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleModalPay()
+                  if (e.key === 'Escape') { setPayModal(null); setPayCustomAmt('') }
+                }}
                 className={`${inputCls} text-right`}
               />
-              {/* Preview do desconto */}
               {(() => {
                 const raw = parseFloat(payCustomAmt.replace(',', '.'))
                 if (!isNaN(raw) && raw > 0 && raw < payModal.original) {

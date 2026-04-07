@@ -54,13 +54,16 @@ function translateSupabaseError(err: { code?: string; message?: string } | null)
 export async function createExpense(fields: {
   description:         string
   category:            ExpenseCategory
-  amount:              number          // se parcelado: valor TOTAL
+  amount:              number          // se parcelado: valor TOTAL na moeda original
   currency?:           string
   expense_date:        string          // YYYY-MM-DD — data da 1ª parcela
   is_deductible:       boolean
   notes?:              string
   is_installment?:     boolean
   installments_total?: number          // nº de parcelas (2–60)
+  // Multimoeda (migration 011)
+  exchange_rate?:      number          // 1 moeda = X BRL — fixado no momento da criação
+  iof_applied?:        boolean         // se IOF (6,38%) deve ser somado
 }): Promise<ExpenseActionResult & { installments?: Expense[] }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -83,15 +86,32 @@ export async function createExpense(fields: {
   const notes       = fields.notes?.trim() || null
   const description = fields.description.trim()
 
+  // ── Helpers multimoeda ───────────────────────────────────────────────────
+  const rate    = fields.exchange_rate ?? null
+  const iofRate = (fields.iof_applied && rate) ? 0.0638 : 0
+
+  function computeBRL(amt: number): { amount_brl: number | null; iof_amount: number | null } {
+    if (!rate) return { amount_brl: null, iof_amount: null }
+    const brl = amt * rate
+    const iof = iofRate > 0 ? Math.round(brl * iofRate * 100) / 100 : null
+    return {
+      amount_brl: Math.round(brl * (1 + iofRate) * 100) / 100,
+      iof_amount: iof,
+    }
+  }
+
   // ── Caso simples ─────────────────────────────────────────────────────────
   if (!isInstallment) {
+    const simpleAmt = Math.round(fields.amount * 100) / 100
+    const { amount_brl, iof_amount } = computeBRL(simpleAmt)
+
     const { data, error } = await supabase
       .from('expenses')
       .insert({
         workspace_id:       workspaceId,
         description,
         category:           fields.category,
-        amount:             Math.round(fields.amount * 100) / 100,
+        amount:             simpleAmt,
         currency,
         expense_date:       fields.expense_date,
         is_deductible:      fields.is_deductible,
@@ -100,6 +120,10 @@ export async function createExpense(fields: {
         installments_total: null,
         installment_index:  null,
         parent_expense_id:  null,
+        exchange_rate:      rate,
+        amount_brl,
+        iof_applied:        fields.iof_applied ?? false,
+        iof_amount,
       })
       .select()
       .single()
@@ -132,15 +156,17 @@ export async function createExpense(fields: {
   const parentId = allIds[0]
 
   const allRecords = Array.from({ length: n }, (_, i) => {
-    const idx     = i + 1
-    const isFirst = i === 0
-    const isLast  = idx === n
+    const idx      = i + 1
+    const isFirst  = i === 0
+    const isLast   = idx === n
+    const parcelAmt = isLast ? lastAmount : baseAmount
+    const { amount_brl: parcelBrl, iof_amount: parcelIof } = computeBRL(parcelAmt)
     return {
       id:                 allIds[i],   // id explícito em TODOS os records
       workspace_id:       workspaceId,
       description:        `${description} (${idx}/${n})`,
       category:           fields.category,
-      amount:             isLast ? lastAmount : baseAmount,
+      amount:             parcelAmt,
       currency,
       expense_date:       isFirst ? fields.expense_date : addMonths(fields.expense_date, i),
       is_deductible:      fields.is_deductible,
@@ -149,6 +175,10 @@ export async function createExpense(fields: {
       installments_total: n,
       installment_index:  idx,
       parent_expense_id:  isFirst ? null : parentId,
+      exchange_rate:      rate,
+      amount_brl:         parcelBrl,
+      iof_applied:        fields.iof_applied ?? false,
+      iof_amount:         parcelIof,
     }
   })
 
