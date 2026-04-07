@@ -81,6 +81,7 @@ export async function updateJob(
     currency?:          string
     payment_condition?: PaymentCondition
     job_date?:          string
+    payment_due_date?:  string
     status?:            JobStatus
     notes?:             string
     budget_id?:         string | null
@@ -115,6 +116,8 @@ export async function updateJob(
     payload.payment_condition = fields.payment_condition
   if (fields.job_date !== undefined)
     payload.job_date = fields.job_date || new Date().toISOString().split('T')[0]
+  if (fields.payment_due_date !== undefined)
+    payload.payment_due_date = fields.payment_due_date || null
   if (fields.status !== undefined)
     payload.status = fields.status
   if (fields.notes !== undefined)
@@ -303,6 +306,36 @@ export async function deletePayment(
   revalidatePath('/jobs')
   revalidatePath(`/jobs/${jobId}`)
   return { success: true, job: updatedJob ?? undefined }
+}
+
+// ─── BULK DELETE — soft delete em lote (listagem) ────────────────────────────
+
+export async function bulkDeleteJobs(
+  ids: string[]
+): Promise<{ success: boolean; error?: string }> {
+  if (!ids.length) return { success: false, error: 'Nenhum job selecionado.' }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser()
+
+  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+
+  const { error } = await supabase
+    .from('jobs')
+    .update({ deleted_at: new Date().toISOString() })
+    .in('id', ids)
+    .is('deleted_at', null)
+
+  if (error) {
+    console.error('[jobs/bulk-delete]', error)
+    return { success: false, error: 'Erro ao excluir jobs.' }
+  }
+
+  revalidatePath('/jobs')
+  return { success: true }
 }
 
 // ─── GET WITH PAYMENTS — para a tela de detalhe ───────────────────────────────

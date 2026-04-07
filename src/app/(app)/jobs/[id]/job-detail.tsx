@@ -1,18 +1,52 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { formatCurrency } from '@/lib/utils/format'
-import { updateJobStatus, updateJob, addPayment, deletePayment } from '@/lib/actions/jobs'
+import {
+  updateJobStatus, updateJob, addPayment, deletePayment, deleteJob,
+} from '@/lib/actions/jobs'
 import {
   addRevenueItem, updateRevenueItem, deleteRevenueItem,
   addCostItem,    updateCostItem,    deleteCostItem,
 } from '@/lib/actions/job-items'
-import { calcJobFinancials, JOB_COST_CATEGORY_LABELS } from '@/types/job'
+import { calcJobFinancials, getPaymentReminderStatus, JOB_COST_CATEGORY_LABELS } from '@/types/job'
 import type {
   Job, JobRevenueItem, JobCostItem, JobPayment,
   JobStatus, JobCategory, JobCostCategory, PaymentCondition,
 } from '@/types/job'
+
+// ─── Categorias de serviço (frontend apenas) ──────────────────────────────────
+// Codificadas no campo `description` como prefixo: "Filmagem • Captação casamento"
+// Zero mudança no banco. Legível para o humano e parseável.
+
+const SERVICE_CATEGORIES = [
+  { value: 'filmagem',   label: 'Filmagem'   },
+  { value: 'fotografia', label: 'Fotografia' },
+  { value: 'edicao',     label: 'Edição'     },
+  { value: 'drone',      label: 'Drone'      },
+  { value: 'direcao',    label: 'Direção'    },
+  { value: 'motion',     label: 'Motion'     },
+  { value: 'producao',   label: 'Produção'   },
+  { value: 'outros',     label: ''           }, // sem prefixo
+] as const
+
+type ServiceCat = typeof SERVICE_CATEGORIES[number]['value']
+
+function parseServiceCat(description: string): { cat: ServiceCat; text: string } {
+  for (const c of SERVICE_CATEGORIES) {
+    if (c.label && description.startsWith(`${c.label} • `)) {
+      return { cat: c.value, text: description.slice(`${c.label} • `.length) }
+    }
+  }
+  return { cat: 'outros', text: description }
+}
+
+function buildDesc(cat: ServiceCat, text: string): string {
+  const label = SERVICE_CATEGORIES.find(c => c.value === cat)?.label
+  return label ? `${label} • ${text.trim()}` : text.trim()
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +72,10 @@ const PAYMENT_COND_LABELS: Record<PaymentCondition, string> = {
   '60d': '60 dias', '90d': '90 dias',
 }
 
+// ─── Add result type ──────────────────────────────────────────────────────────
+
+type AddResult = { success: boolean; id?: string }
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -55,6 +93,8 @@ export default function JobDetail({
   initialCostItems,
   initialPayments,
 }: Props) {
+  const router = useRouter()
+
   const [job,          setJob]          = useState<Job>(initialJob)
   const [revenueItems, setRevenueItems] = useState<JobRevenueItem[]>(initialRevenueItems)
   const [costItems,    setCostItems]    = useState<JobCostItem[]>(initialCostItems)
@@ -73,6 +113,12 @@ export default function JobDetail({
   const [payDate,       setPayDate]       = useState(today())
   const [payNotes,      setPayNotes]      = useState('')
   const [deletingPayId, setDeletingPayId] = useState<string | null>(null)
+
+  // Delete job
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // PDF download
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   const [isPending, startTransition] = useTransition()
 
@@ -96,17 +142,76 @@ export default function JobDetail({
     })
   }
 
+  // ── Delete job ─────────────────────────────────────────────────────────────
+
+  async function handleDeleteJob() {
+    if (!window.confirm('Excluir este job? Esta ação não pode ser desfeita.')) return
+    setIsDeleting(true)
+    const res = await deleteJob(job.id)
+    if (res.success) {
+      router.push('/jobs')
+    } else {
+      setIsDeleting(false)
+      showToast('error', res.error)
+    }
+  }
+
+  // ── PDF download ───────────────────────────────────────────────────────────
+
+  async function handleDownloadPdf() {
+    setDownloadingPdf(true)
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/pdf`)
+      if (!res.ok) throw new Error('Erro na geração')
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = window.document.createElement('a')
+      a.href     = url
+
+      const slug = (job.title || 'job')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60)
+
+      const clientSlug = (job.client_name || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 40)
+
+      a.download = clientSlug
+        ? `cobranca_${clientSlug}_${slug}.pdf`
+        : `cobranca_${slug}.pdf`
+
+      window.document.body.appendChild(a)
+      a.click()
+      window.document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('[pdf/download]', err)
+      showToast('error', 'Erro ao gerar PDF. Tente novamente.')
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
   // ── Field save ─────────────────────────────────────────────────────────────
 
-  async function saveField(field: string) {
+  async function saveField(field: string, value?: string) {
     const payload: Parameters<typeof updateJob>[1] = {}
-    if (field === 'title')       payload.title       = titleDraft
-    if (field === 'client_name') payload.client_name = clientDraft
-    if (field === 'job_date')    payload.job_date    = dateDraft
+    if (field === 'title')              payload.title              = titleDraft
+    if (field === 'client_name')        payload.client_name        = clientDraft
+    if (field === 'job_date')           payload.job_date           = dateDraft
+    if (field === 'payment_condition')  payload.payment_condition  = value as PaymentCondition
     const res = await updateJob(job.id, payload)
     if (res.success && res.data) setJob(res.data)
     else if (!res.success) showToast('error', res.error)
-    setEditingField(null)
+    if (field !== 'payment_condition') setEditingField(null)
   }
 
   // ── Payments ───────────────────────────────────────────────────────────────
@@ -136,24 +241,30 @@ export default function JobDetail({
       setPayments(prev => prev.filter(p => p.id !== paymentId))
       if (res.job) setJob(res.job)
       showToast('success', 'Pagamento removido.')
-    } else if (!res.success) {
+    } else {
       showToast('error', res.error)
     }
   }
 
   // ── Revenue items ──────────────────────────────────────────────────────────
 
-  async function handleAddRevenueItem(description: string, quantity: number, unit_value: number) {
+  async function handleAddRevenueItem(
+    description: string, quantity: number, unit_value: number
+  ): Promise<AddResult> {
     const res = await addRevenueItem(job.id, { description, quantity, unit_value })
     if (res.success) {
       if (res.data) setRevenueItems(prev => [...prev, res.data as JobRevenueItem])
       if (res.job)  setJob(res.job)
-    } else {
-      showToast('error', res.error)
+      showToast('success', 'Item adicionado com sucesso.')
+      return { success: true, id: (res.data as JobRevenueItem | undefined)?.id }
     }
+    showToast('error', res.error)
+    return { success: false }
   }
 
-  async function handleUpdateRevenueItem(itemId: string, fields: { description?: string; quantity?: number; unit_value?: number }) {
+  async function handleUpdateRevenueItem(
+    itemId: string, fields: { description?: string; quantity?: number; unit_value?: number }
+  ) {
     const res = await updateRevenueItem(itemId, job.id, fields)
     if (res.success) {
       if (res.data) setRevenueItems(prev => prev.map(i => i.id === itemId ? res.data as JobRevenueItem : i))
@@ -168,6 +279,7 @@ export default function JobDetail({
     if (res.success) {
       setRevenueItems(prev => prev.filter(i => i.id !== itemId))
       if (res.job) setJob(res.job)
+      showToast('success', 'Item removido.')
     } else {
       showToast('error', res.error)
     }
@@ -175,17 +287,23 @@ export default function JobDetail({
 
   // ── Cost items ─────────────────────────────────────────────────────────────
 
-  async function handleAddCostItem(description: string, category: JobCostCategory, quantity: number, unit_value: number) {
+  async function handleAddCostItem(
+    description: string, category: JobCostCategory, quantity: number, unit_value: number
+  ): Promise<AddResult> {
     const res = await addCostItem(job.id, { description, category, quantity, unit_value })
     if (res.success) {
       if (res.data) setCostItems(prev => [...prev, res.data as JobCostItem])
       if (res.job)  setJob(res.job)
-    } else {
-      showToast('error', res.error)
+      showToast('success', 'Repasse adicionado com sucesso.')
+      return { success: true, id: (res.data as JobCostItem | undefined)?.id }
     }
+    showToast('error', res.error)
+    return { success: false }
   }
 
-  async function handleUpdateCostItem(itemId: string, fields: { description?: string; category?: JobCostCategory; quantity?: number; unit_value?: number }) {
+  async function handleUpdateCostItem(
+    itemId: string, fields: { description?: string; category?: JobCostCategory; quantity?: number; unit_value?: number }
+  ) {
     const res = await updateCostItem(itemId, job.id, fields)
     if (res.success) {
       if (res.data) setCostItems(prev => prev.map(i => i.id === itemId ? res.data as JobCostItem : i))
@@ -200,6 +318,7 @@ export default function JobDetail({
     if (res.success) {
       setCostItems(prev => prev.filter(i => i.id !== itemId))
       if (res.job) setJob(res.job)
+      showToast('success', 'Repasse removido.')
     } else {
       showToast('error', res.error)
     }
@@ -207,10 +326,20 @@ export default function JobDetail({
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const progressPct = fin.revenue > 0
-    ? Math.min(100, Math.round((fin.received / fin.revenue) * 100))
+  // base = total do job (serviços + repasses) — o que o cliente efetivamente deve
+  const progressPct = fin.total > 0
+    ? Math.min(100, Math.round((fin.received / fin.total) * 100))
     : 0
   const { label: statusLabel, cls: statusCls } = STATUS_MAP[job.status] ?? STATUS_MAP.in_progress
+
+  // ── Due date label ─────────────────────────────────────────────────────────
+  const { label: dueDaysLabel, isOverdue } = calcDueDaysLabel(job.payment_due_date, fin.due)
+  const dueColor = fin.due <= 0
+    ? 'text-[#525252]'
+    : isOverdue ? 'text-red-400' : 'text-[#D4A853]'
+
+  // ── Reminder status (para o banner de alerta) ──────────────────────────────
+  const reminderStatus = getPaymentReminderStatus(job)
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -257,30 +386,128 @@ export default function JobDetail({
             </p>
           )}
         </div>
-        <select value={job.status} onChange={handleStatusChange} disabled={isPending}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer outline-none appearance-none disabled:opacity-60 shrink-0 ${statusCls}`}>
-          {(Object.keys(STATUS_MAP) as JobStatus[]).map(s => (
-            <option key={s} value={s} className="bg-[#141414] text-white">{STATUS_MAP[s].label}</option>
-          ))}
-        </select>
+
+        {/* Status + PDF + Delete */}
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={job.status} onChange={handleStatusChange} disabled={isPending}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer outline-none appearance-none disabled:opacity-60 ${statusCls}`}>
+            {(Object.keys(STATUS_MAP) as JobStatus[]).map(s => (
+              <option key={s} value={s} className="bg-[#141414] text-white">{STATUS_MAP[s].label}</option>
+            ))}
+          </select>
+
+          {/* Gerar PDF */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            title="Baixar cobrança em PDF"
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] border border-[#D4A853]/30 hover:border-[#D4A853]/60 hover:bg-[#D4A853]/5 rounded-lg px-3 py-1.5 transition-all disabled:opacity-50 disabled:cursor-wait"
+          >
+            {downloadingPdf ? (
+              <Spinner />
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            )}
+            {downloadingPdf ? 'Gerando...' : 'PDF'}
+          </button>
+
+          <button
+            onClick={handleDeleteJob}
+            disabled={isDeleting}
+            title="Excluir job"
+            className="p-1.5 rounded-lg text-[#525252] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+          >
+            {isDeleting ? <Spinner /> : <TrashIcon />}
+          </button>
+        </div>
       </div>
 
-      {/* ── 4 cards financeiros ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <FinCard label="RECEITA"   value={fin.revenue}   currency={job.currency} color="text-white" />
-        <FinCard label="CUSTO"     value={fin.cost}      currency={job.currency} color="text-red-400" />
-        <FinCard label="LUCRO"     value={fin.profit}    currency={job.currency} color={fin.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}
-          sub={fin.revenue > 0 ? `${fin.margin_pct.toFixed(1)}% margem` : undefined} />
-        <FinCard label="A RECEBER" value={fin.due}       currency={job.currency} color={fin.due > 0 ? 'text-[#D4A853]' : 'text-[#525252]'}
-          sub={job.payment_due_date && fin.due > 0 ? `vence ${formatDate(job.payment_due_date)}` : undefined} />
+      {/* ── Alert de cobrança ────────────────────────────────────────────────── */}
+      {(reminderStatus === 'overdue' || reminderStatus === 'due_today') && fin.due > 0 && (
+        <div className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 mb-4 border ${
+          reminderStatus === 'overdue'
+            ? 'bg-red-500/5 border-red-500/20'
+            : 'bg-amber-500/5 border-amber-500/20'
+        }`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <svg className={`w-4 h-4 shrink-0 ${reminderStatus === 'overdue' ? 'text-red-400' : 'text-amber-400'}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="min-w-0">
+              <p className={`text-xs font-semibold ${reminderStatus === 'overdue' ? 'text-red-400' : 'text-amber-400'}`}>
+                {reminderStatus === 'overdue'
+                  ? `Pagamento atrasado${dueDaysLabel ? ` — ${dueDaysLabel}` : ''}`
+                  : 'Pagamento vence hoje'}
+              </p>
+              <p className="text-[10px] text-[#525252] truncate">
+                {formatCurrency(fin.due, job.currency)} a receber
+                {job.client_name ? ` de ${job.client_name}` : ''}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className={`flex items-center gap-1.5 text-[10px] font-semibold px-3 py-1.5 rounded-lg border transition-all disabled:opacity-50 shrink-0 ${
+              reminderStatus === 'overdue'
+                ? 'text-red-400 border-red-500/30 hover:border-red-500/50 hover:bg-red-500/5'
+                : 'text-amber-400 border-amber-500/30 hover:border-amber-500/50 hover:bg-amber-500/5'
+            }`}
+          >
+            {downloadingPdf ? <Spinner /> : (
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            )}
+            {downloadingPdf ? 'Gerando...' : 'Cobrar via PDF'}
+          </button>
+        </div>
+      )}
+
+      {/* ── 5 cards financeiros ──────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+        <FinCard label="SERVIÇOS"
+          value={fin.revenue}
+          currency={job.currency}
+          color="text-white"
+          tooltip="Total pelos seus serviços." />
+        <FinCard label="REPASSES"
+          value={fin.cost}
+          currency={job.currency}
+          color="text-[#a3a3a3]"
+          tooltip="Você paga e o cliente reembolsa. Neutro para seu ganho." />
+        <FinCard label="TOTAL DO JOB"
+          value={fin.total}
+          currency={job.currency}
+          color="text-white"
+          tooltip="Total que o cliente deve pagar (serviços + repasses)."
+          sub={fin.cost > 0 ? `${formatCurrency(fin.revenue, job.currency)} + repasses` : undefined} />
+        <FinCard label="RECEBIDO"
+          value={fin.received}
+          currency={job.currency}
+          color={fin.received > 0 ? 'text-emerald-400' : 'text-[#525252]'}
+          sub={fin.total > 0 && fin.received > 0
+            ? `${Math.round((fin.received / fin.total) * 100)}% do total`
+            : undefined} />
+        <FinCard label="A RECEBER"
+          value={fin.due}
+          currency={job.currency}
+          color={dueColor}
+          sub={dueDaysLabel} />
       </div>
 
       {/* Barra de progresso */}
-      {fin.revenue > 0 && job.status !== 'cancelled' && (
+      {fin.total > 0 && job.status !== 'cancelled' && (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[10px] text-[#525252]">
-              {formatCurrency(fin.received, job.currency)} recebido de {formatCurrency(fin.revenue, job.currency)}
+              {formatCurrency(fin.received, job.currency)} recebido de {formatCurrency(fin.total, job.currency)}
             </span>
             <span className="text-[10px] text-[#525252]">{progressPct}%</span>
           </div>
@@ -292,29 +519,18 @@ export default function JobDetail({
         </div>
       )}
 
-      {/* ── Receita ──────────────────────────────────────────────────────────── */}
-      <ItemTable
-        title="Receita"
-        subtitle="o que você cobra"
+      {/* ── Serviços ─────────────────────────────────────────────────────────── */}
+      <ServiceTable
         total={fin.revenue}
         currency={job.currency}
-        emptyMessage="Nenhum item de receita. Adicione o que você vai cobrar do cliente."
-        addLabel="+ Item de receita"
+        items={revenueItems}
         onAdd={(desc, qty, val) => handleAddRevenueItem(desc, qty, val)}
-        rows={revenueItems.map(item => ({
-          id:          item.id,
-          description: item.description,
-          quantity:    item.quantity,
-          unit_value:  item.unit_value,
-          total_value: item.total_value,
-          badge:       null,
-        }))}
         onUpdate={(id, fields) => handleUpdateRevenueItem(id, fields)}
         onDelete={(id) => handleDeleteRevenueItem(id)}
       />
 
-      {/* ── Custos ───────────────────────────────────────────────────────────── */}
-      <CostTable
+      {/* ── Repasses ao cliente ──────────────────────────────────────────────── */}
+      <RepassTable
         total={fin.cost}
         currency={job.currency}
         items={costItems}
@@ -340,8 +556,31 @@ export default function JobDetail({
               </span>
             )}
           </InfoRow>
-          <InfoRow label="Vencimento"><span className="text-xs text-white">{formatDate(job.payment_due_date)}</span></InfoRow>
-          <InfoRow label="Condição"><span className="text-xs text-white">{PAYMENT_COND_LABELS[job.payment_condition]}</span></InfoRow>
+          <InfoRow label="Vencimento">
+            <span className="text-xs text-white">{formatDate(job.payment_due_date)}</span>
+          </InfoRow>
+          <InfoRow label="Condição de pagamento">
+            <select
+              value={job.payment_condition}
+              onChange={async (e) => {
+                const condition = e.target.value as PaymentCondition
+                const dueDate   = calcDueDate(job.job_date, condition)
+                const res = await updateJob(job.id, {
+                  payment_condition: condition,
+                  payment_due_date:  dueDate,
+                })
+                if (res.success && res.data) {
+                  setJob(res.data)
+                  showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
+                } else if (!res.success) showToast('error', res.error)
+              }}
+              className="text-xs text-white bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 cursor-pointer outline-none hover:border-[#3a3a3a] focus:border-[#D4A853]/50 transition-colors appearance-none"
+            >
+              {(Object.entries(PAYMENT_COND_LABELS) as [PaymentCondition, string][]).map(([v, l]) => (
+                <option key={v} value={v} className="bg-[#141414] text-white">{l}</option>
+              ))}
+            </select>
+          </InfoRow>
         </div>
       </div>
 
@@ -349,7 +588,14 @@ export default function JobDetail({
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-white">Pagamentos recebidos</h2>
-          <button onClick={() => setShowPayForm(!showPayForm)}
+          <button
+            onClick={() => {
+              if (!showPayForm && fin.due > 0) {
+                // auto-preenche com o valor pendente
+                setPayAmount(fin.due.toFixed(2).replace('.', ','))
+              }
+              setShowPayForm(v => !v)
+            }}
             className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors">
             <svg className={`w-3.5 h-3.5 transition-transform ${showPayForm ? 'rotate-45' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -414,7 +660,7 @@ export default function JobDetail({
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl text-sm font-medium border shadow-xl z-50 ${
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl text-sm font-medium border shadow-xl z-50 whitespace-nowrap ${
           toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'
         }`}>
           {toast.message}
@@ -424,80 +670,130 @@ export default function JobDetail({
   )
 }
 
-// ─── FinCard ──────────────────────────────────────────────────────────────────
+// ─── FinCard — com flash animation ao atualizar ───────────────────────────────
 
-function FinCard({ label, value, currency, color, sub }: { label: string; value: number; currency: string; color: string; sub?: string }) {
+function FinCard({ label, value, currency, color, sub, tooltip }: {
+  label: string; value: number; currency: string; color: string; sub?: string; tooltip?: string
+}) {
+  const [flash, setFlash] = useState(false)
+  const prevRef = useRef(value)
+
+  useEffect(() => {
+    if (prevRef.current !== value) {
+      prevRef.current = value
+      setFlash(true)
+      const t = setTimeout(() => setFlash(false), 700)
+      return () => clearTimeout(t)
+    }
+  }, [value])
+
   return (
-    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
-      <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-1">{label}</p>
-      <p className={`text-base font-bold ${color}`}>{formatCurrency(value, currency)}</p>
+    <div className={`bg-[#141414] border rounded-xl p-4 transition-all duration-300 ${
+      flash ? 'border-[#D4A853]/30 shadow-[0_0_12px_rgba(212,168,83,0.08)]' : 'border-[#2a2a2a]'
+    }`}>
+      <div className="flex items-center gap-1 mb-1">
+        <p className="text-[10px] font-semibold text-[#525252] tracking-widest">{label}</p>
+        {tooltip && (
+          <span title={tooltip}
+            className="w-3.5 h-3.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[8px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none">?</span>
+        )}
+      </div>
+      <p className={`text-base font-bold transition-all duration-300 ${color} ${flash ? 'scale-105' : 'scale-100'}`}
+        style={{ transformOrigin: 'left center' }}>
+        {formatCurrency(value, currency)}
+      </p>
       {sub && <p className="text-[10px] text-[#525252] mt-0.5">{sub}</p>}
     </div>
   )
 }
 
-// ─── ItemTable (receita) ──────────────────────────────────────────────────────
+// ─── ServiceTable (serviços com categoria) ────────────────────────────────────
 
-interface ItemTableProps {
-  title:        string
-  subtitle:     string
-  total:        number
-  currency:     string
-  emptyMessage: string
-  addLabel:     string
-  rows: { id: string; description: string; quantity: number; unit_value: number; total_value: number; badge: string | null }[]
-  onAdd:    (description: string, quantity: number, unit_value: number) => void
+interface ServiceTableProps {
+  total:    number
+  currency: string
+  items:    JobRevenueItem[]
+  onAdd:    (description: string, quantity: number, unit_value: number) => Promise<AddResult>
   onUpdate: (id: string, fields: { description?: string; quantity?: number; unit_value?: number }) => void
   onDelete: (id: string) => void
 }
 
-function ItemTable({ title, subtitle, total, currency, emptyMessage, addLabel, rows, onAdd, onUpdate, onDelete }: ItemTableProps) {
-  const [adding,  setAdding]  = useState(false)
-  const [newDesc, setNewDesc] = useState('')
-  const [newQty,  setNewQty]  = useState('1')
-  const [newVal,  setNewVal]  = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDesc,  setEditDesc]  = useState('')
-  const [editQty,   setEditQty]   = useState('')
-  const [editVal,   setEditVal]   = useState('')
+function ServiceTable({ total, currency, items, onAdd, onUpdate, onDelete }: ServiceTableProps) {
+  const [adding,        setAdding]        = useState(false)
+  const [isSubmitting,  setIsSubmitting]  = useState(false)
+  const [newCat,        setNewCat]        = useState<ServiceCat>('outros')
+  const [newDesc,       setNewDesc]       = useState('')
+  const [newQty,        setNewQty]        = useState('1')
+  const [newVal,        setNewVal]        = useState('')
+  const [newlyAddedId,  setNewlyAddedId]  = useState<string | null>(null)
+  const [editingId,     setEditingId]     = useState<string | null>(null)
+  const [editCat,       setEditCat]       = useState<ServiceCat>('outros')
+  const [editDesc,      setEditDesc]      = useState('')
+  const [editQty,       setEditQty]       = useState('')
+  const [editVal,       setEditVal]       = useState('')
 
-  function submitAdd() {
-    const qty = parseFloat(newQty.replace(',', '.')) || 1
-    const val = parseFloat(newVal.replace(',', '.')) || 0
+  async function submitAdd() {
     if (!newDesc.trim()) return
-    onAdd(newDesc.trim(), qty, val)
-    setNewDesc(''); setNewQty('1'); setNewVal(''); setAdding(false)
+    const qty      = parseFloat(newQty.replace(',', '.')) || 1
+    const val      = parseFloat(newVal.replace(',', '.')) || 0
+    const fullDesc = buildDesc(newCat, newDesc)
+    setIsSubmitting(true)
+    const result = await onAdd(fullDesc, qty, val)
+    setIsSubmitting(false)
+    if (result.success) {
+      setNewCat('outros'); setNewDesc(''); setNewQty('1'); setNewVal(''); setAdding(false)
+      if (result.id) {
+        setNewlyAddedId(result.id)
+        setTimeout(() => setNewlyAddedId(null), 1200)
+      }
+    }
   }
 
-  function startEdit(row: typeof rows[number]) {
-    setEditingId(row.id)
-    setEditDesc(row.description)
-    setEditQty(String(row.quantity))
-    setEditVal(String(row.unit_value))
+  function startEdit(item: JobRevenueItem) {
+    const { cat, text } = parseServiceCat(item.description)
+    setEditingId(item.id); setEditCat(cat); setEditDesc(text)
+    setEditQty(String(item.quantity)); setEditVal(String(item.unit_value))
   }
 
   function submitEdit(id: string) {
-    const qty = parseFloat(editQty.replace(',', '.')) || 1
-    const val = parseFloat(editVal.replace(',', '.')) || 0
-    onUpdate(id, { description: editDesc, quantity: qty, unit_value: val })
+    const qty      = parseFloat(editQty.replace(',', '.')) || 1
+    const val      = parseFloat(editVal.replace(',', '.')) || 0
+    const fullDesc = buildDesc(editCat, editDesc)
+    onUpdate(id, { description: fullDesc, quantity: qty, unit_value: val })
     setEditingId(null)
   }
 
+  const catOptions = SERVICE_CATEGORIES.filter(c => c.value !== 'outros')
+
   return (
     <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
-      <div className="flex items-center justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-1">
         <div>
-          <h2 className="text-sm font-semibold text-white">{title}</h2>
-          <p className="text-[10px] text-[#525252] mt-0.5">{subtitle}</p>
+          <h2 className="text-sm font-semibold text-white">Serviços</h2>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} item${items.length !== 1 ? 's' : ''} · ${formatCurrency(total, currency)}`
+              : 'o que você cobra do cliente'}
+          </p>
         </div>
-        <button onClick={() => setAdding(true)} className="text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors">
-          {addLabel}
-        </button>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar serviço
+          </button>
+        )}
       </div>
 
-      {/* Cabeçalho */}
-      {(rows.length > 0 || adding) && (
-        <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 mb-1 px-1">
+      {/* Cabeçalho de colunas */}
+      {(items.length > 0 || adding) && (
+        <div className="grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
+          <span className={labelCls}>TIPO</span>
           <span className={labelCls}>DESCRIÇÃO</span>
           <span className={`${labelCls} text-right`}>QTD</span>
           <span className={`${labelCls} text-right`}>UNIT.</span>
@@ -508,72 +804,152 @@ function ItemTable({ title, subtitle, total, currency, emptyMessage, addLabel, r
 
       {/* Linhas */}
       <div className="space-y-1">
-        {rows.map(row => (
-          <div key={row.id}>
-            {editingId === row.id ? (
-              <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 items-center">
-                <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
-                  onBlur={() => submitEdit(row.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitEdit(row.id); if (e.key === 'Escape') setEditingId(null) }}
-                  className={inputSm} />
-                <input value={editQty} onChange={e => setEditQty(e.target.value)} onBlur={() => submitEdit(row.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitEdit(row.id); if (e.key === 'Escape') setEditingId(null) }}
-                  className={`${inputSm} text-right`} />
-                <input value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={() => submitEdit(row.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitEdit(row.id); if (e.key === 'Escape') setEditingId(null) }}
-                  className={`${inputSm} text-right`} />
-                <span className="text-xs text-right text-[#525252]">
-                  {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editVal) || 0), currency)}
-                </span>
-                <span />
-              </div>
-            ) : (
-              <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 items-center group rounded-lg hover:bg-[#1c1c1c] px-1 py-1 cursor-pointer"
-                onClick={() => startEdit(row)}>
-                <span className="text-sm text-white truncate">{row.description}</span>
-                <span className="text-xs text-[#a3a3a3] text-right">{row.quantity}×</span>
-                <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(row.unit_value, currency)}</span>
-                <span className="text-xs font-semibold text-white text-right">{formatCurrency(row.total_value, currency)}</span>
-                <button onClick={e => { e.stopPropagation(); onDelete(row.id) }}
-                  className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
-                  <TrashIcon />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        {items.map(item => {
+          const { cat, text: displayText } = parseServiceCat(item.description)
+          const catLabel = SERVICE_CATEGORIES.find(c => c.value === cat)?.label
+          const isNew    = item.id === newlyAddedId
+
+          return (
+            <div key={item.id}>
+              {editingId === item.id ? (
+                <div className="grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select value={editCat} onChange={e => setEditCat(e.target.value as ServiceCat)} className={inputSm}>
+                    <option value="outros" className="bg-[#141414]">—</option>
+                    {catOptions.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(item.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)} onBlur={() => submitEdit(item.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <input value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={() => submitEdit(item.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editVal) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(item)}
+                >
+                  {catLabel ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">
+                      {catLabel}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-[#3a3a3a]">—</span>
+                  )}
+                  <span className="text-sm text-white truncate">{displayText}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{item.quantity}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(item.unit_value, currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(item.total_value, currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
 
         {/* Nova linha */}
         {adding && (
-          <div className="grid grid-cols-[1fr_60px_90px_90px_32px] gap-2 items-center">
-            <input autoFocus placeholder="Descrição" value={newDesc} onChange={e => setNewDesc(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd(); if (e.key === 'Escape') { setAdding(false) } }}
-              className={inputSm} />
-            <input placeholder="1" value={newQty} onChange={e => setNewQty(e.target.value)}
+          <div className="grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20">
+            <select
+              value={newCat}
+              onChange={e => setNewCat(e.target.value as ServiceCat)}
+              disabled={isSubmitting}
+              className={inputSm}
+            >
+              <option value="outros" className="bg-[#141414]">Tipo</option>
+              {catOptions.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+            </select>
+            <input
+              autoFocus
+              placeholder="Descrição do serviço"
+              value={newDesc}
+              onChange={e => setNewDesc(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') submitAdd()
+                if (e.key === 'Escape') { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }
+              }}
+              disabled={isSubmitting}
+              className={inputSm}
+            />
+            <input
+              placeholder="1"
+              value={newQty}
+              onChange={e => setNewQty(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              className={`${inputSm} text-right`} />
-            <input placeholder="0,00" value={newVal} onChange={e => setNewVal(e.target.value)}
+              disabled={isSubmitting}
+              className={`${inputSm} text-right`}
+            />
+            <input
+              placeholder="0,00"
+              value={newVal}
+              onChange={e => setNewVal(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              className={`${inputSm} text-right`} />
+              disabled={isSubmitting}
+              className={`${inputSm} text-right`}
+            />
             <span className="text-xs text-right text-[#525252]">
               {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
             </span>
-            <button onClick={() => setAdding(false)} className="text-[#525252] hover:text-white p-0.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={submitAdd}
+                disabled={isSubmitting || !newDesc.trim()}
+                title="Confirmar (Enter)"
+                className="text-[#D4A853] hover:text-[#E8C47A] disabled:opacity-40 p-0.5 transition-colors"
+              >
+                {isSubmitting ? <Spinner /> : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+              {!isSubmitting && (
+                <button
+                  onClick={() => { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }}
+                  className="text-[#3a3a3a] hover:text-[#525252] p-0.5 transition-colors"
+                  title="Cancelar (Esc)"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {/* Empty state */}
-      {rows.length === 0 && !adding && (
-        <p className="text-xs text-[#525252] text-center py-4">{emptyMessage}</p>
+      {items.length === 0 && !adding && (
+        <div className="text-center py-6">
+          <p className="text-xs text-[#525252] mb-3">Nenhum serviço adicionado ainda.</p>
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-3 py-2 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 mx-auto"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar serviço
+          </button>
+        </div>
       )}
 
       {/* Total */}
-      {rows.length > 0 && (
+      {items.length > 0 && (
         <div className="flex justify-end mt-3 pt-3 border-t border-[#1c1c1c]">
           <span className="text-sm font-bold text-white">{formatCurrency(total, currency)}</span>
         </div>
@@ -582,35 +958,45 @@ function ItemTable({ title, subtitle, total, currency, emptyMessage, addLabel, r
   )
 }
 
-// ─── CostTable ────────────────────────────────────────────────────────────────
+// ─── RepassTable (repasses ao cliente) ────────────────────────────────────────
 
-interface CostTableProps {
+interface RepassTableProps {
   total:    number
   currency: string
   items:    JobCostItem[]
-  onAdd:    (description: string, category: JobCostCategory, quantity: number, unit_value: number) => void
+  onAdd:    (description: string, category: JobCostCategory, quantity: number, unit_value: number) => Promise<AddResult>
   onUpdate: (id: string, fields: { description?: string; category?: JobCostCategory; quantity?: number; unit_value?: number }) => void
   onDelete: (id: string) => void
 }
 
-function CostTable({ total, currency, items, onAdd, onUpdate, onDelete }: CostTableProps) {
-  const [adding,   setAdding]   = useState(false)
-  const [newDesc,  setNewDesc]  = useState('')
-  const [newCat,   setNewCat]   = useState<JobCostCategory>('other')
-  const [newQty,   setNewQty]   = useState('1')
-  const [newVal,   setNewVal]   = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editDesc,  setEditDesc]  = useState('')
-  const [editCat,   setEditCat]   = useState<JobCostCategory>('other')
-  const [editQty,   setEditQty]   = useState('')
-  const [editVal,   setEditVal]   = useState('')
+function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: RepassTableProps) {
+  const [adding,        setAdding]        = useState(false)
+  const [isSubmitting,  setIsSubmitting]  = useState(false)
+  const [newDesc,       setNewDesc]       = useState('')
+  const [newCat,        setNewCat]        = useState<JobCostCategory>('other')
+  const [newQty,        setNewQty]        = useState('1')
+  const [newVal,        setNewVal]        = useState('')
+  const [newlyAddedId,  setNewlyAddedId]  = useState<string | null>(null)
+  const [editingId,     setEditingId]     = useState<string | null>(null)
+  const [editDesc,      setEditDesc]      = useState('')
+  const [editCat,       setEditCat]       = useState<JobCostCategory>('other')
+  const [editQty,       setEditQty]       = useState('')
+  const [editVal,       setEditVal]       = useState('')
 
-  function submitAdd() {
+  async function submitAdd() {
+    if (!newDesc.trim()) return
     const qty = parseFloat(newQty.replace(',', '.')) || 1
     const val = parseFloat(newVal.replace(',', '.')) || 0
-    if (!newDesc.trim()) return
-    onAdd(newDesc.trim(), newCat, qty, val)
-    setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewVal(''); setAdding(false)
+    setIsSubmitting(true)
+    const result = await onAdd(newDesc.trim(), newCat, qty, val)
+    setIsSubmitting(false)
+    if (result.success) {
+      setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewVal(''); setAdding(false)
+      if (result.id) {
+        setNewlyAddedId(result.id)
+        setTimeout(() => setNewlyAddedId(null), 1200)
+      }
+    }
   }
 
   function startEdit(item: JobCostItem) {
@@ -629,18 +1015,37 @@ function CostTable({ total, currency, items, onAdd, onUpdate, onDelete }: CostTa
 
   return (
     <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
-      <div className="flex items-center justify-between mb-4">
+      {/* Header com tooltip */}
+      <div className="flex items-start justify-between mb-1">
         <div>
-          <h2 className="text-sm font-semibold text-white">Custos</h2>
-          <p className="text-[10px] text-[#525252] mt-0.5">o que você gasta no projeto</p>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold text-white">Repasses ao cliente</h2>
+            <span
+              title="Itens que você paga mas repassa ao cliente. Não reduzem seu lucro real."
+              className="w-4 h-4 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[9px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
+            >?</span>
+          </div>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} item${items.length !== 1 ? 's' : ''} · ${formatCurrency(total, currency)}`
+              : 'aluguel de gear, viagem cobrada, diária de assistente...'}
+          </p>
         </div>
-        <button onClick={() => setAdding(true)} className="text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors">
-          + Item de custo
-        </button>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar repasse
+          </button>
+        )}
       </div>
 
       {(items.length > 0 || adding) && (
-        <div className="grid grid-cols-[80px_1fr_60px_90px_90px_32px] gap-2 mb-1 px-1">
+        <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
           <span className={labelCls}>CATEGORIA</span>
           <span className={labelCls}>DESCRIÇÃO</span>
           <span className={`${labelCls} text-right`}>QTD</span>
@@ -651,76 +1056,143 @@ function CostTable({ total, currency, items, onAdd, onUpdate, onDelete }: CostTa
       )}
 
       <div className="space-y-1">
-        {items.map(item => (
-          <div key={item.id}>
-            {editingId === item.id ? (
-              <div className="grid grid-cols-[80px_1fr_60px_90px_90px_32px] gap-2 items-center">
-                <select value={editCat} onChange={e => setEditCat(e.target.value as JobCostCategory)} className={inputSm}>
-                  {catOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-                <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
-                  onBlur={() => submitEdit(item.id)}
-                  onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id); if (e.key === 'Escape') setEditingId(null) }}
-                  className={inputSm} />
-                <input value={editQty} onChange={e => setEditQty(e.target.value)} className={`${inputSm} text-right`}
-                  onBlur={() => submitEdit(item.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id) }} />
-                <input value={editVal} onChange={e => setEditVal(e.target.value)} className={`${inputSm} text-right`}
-                  onBlur={() => submitEdit(item.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id) }} />
-                <span className="text-xs text-right text-[#525252]">
-                  {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editVal) || 0), currency)}
-                </span>
-                <span />
-              </div>
-            ) : (
-              <div className="grid grid-cols-[80px_1fr_60px_90px_90px_32px] gap-2 items-center group rounded-lg hover:bg-[#1c1c1c] px-1 py-1 cursor-pointer"
-                onClick={() => startEdit(item)}>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">
-                  {JOB_COST_CATEGORY_LABELS[item.category]}
-                </span>
-                <span className="text-sm text-white truncate">{item.description}</span>
-                <span className="text-xs text-[#a3a3a3] text-right">{item.quantity}×</span>
-                <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(item.unit_value, currency)}</span>
-                <span className="text-xs font-semibold text-white text-right">{formatCurrency(item.total_value, currency)}</span>
-                <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
-                  className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
-                  <TrashIcon />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        {items.map(item => {
+          const isNew = item.id === newlyAddedId
+          return (
+            <div key={item.id}>
+              {editingId === item.id ? (
+                <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select value={editCat} onChange={e => setEditCat(e.target.value as JobCostCategory)} className={inputSm}>
+                    {catOptions.map(([v, l]) => <option key={v} value={v} className="bg-[#141414]">{l}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(item.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)} className={`${inputSm} text-right`}
+                    onBlur={() => submitEdit(item.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id) }} />
+                  <input value={editVal} onChange={e => setEditVal(e.target.value)} className={`${inputSm} text-right`}
+                    onBlur={() => submitEdit(item.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(item.id) }} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editVal) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(item)}
+                >
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">
+                    {JOB_COST_CATEGORY_LABELS[item.category]}
+                  </span>
+                  <span className="text-sm text-white truncate">{item.description}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{item.quantity}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(item.unit_value, currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(item.total_value, currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); onDelete(item.id) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
 
         {adding && (
-          <div className="grid grid-cols-[80px_1fr_60px_90px_90px_32px] gap-2 items-center">
-            <select value={newCat} onChange={e => setNewCat(e.target.value as JobCostCategory)} className={inputSm}>
-              {catOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20">
+            <select
+              value={newCat}
+              onChange={e => setNewCat(e.target.value as JobCostCategory)}
+              disabled={isSubmitting}
+              className={inputSm}
+            >
+              {catOptions.map(([v, l]) => <option key={v} value={v} className="bg-[#141414]">{l}</option>)}
             </select>
-            <input autoFocus placeholder="Descrição" value={newDesc} onChange={e => setNewDesc(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd(); if (e.key === 'Escape') setAdding(false) }}
-              className={inputSm} />
-            <input placeholder="1" value={newQty} onChange={e => setNewQty(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }} className={`${inputSm} text-right`} />
-            <input placeholder="0,00" value={newVal} onChange={e => setNewVal(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }} className={`${inputSm} text-right`} />
+            <input
+              autoFocus
+              placeholder="Ex: Aluguel drone, viagem..."
+              value={newDesc}
+              onChange={e => setNewDesc(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') submitAdd()
+                if (e.key === 'Escape') { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }
+              }}
+              disabled={isSubmitting}
+              className={inputSm}
+            />
+            <input
+              placeholder="1"
+              value={newQty}
+              onChange={e => setNewQty(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
+              disabled={isSubmitting}
+              className={`${inputSm} text-right`}
+            />
+            <input
+              placeholder="0,00"
+              value={newVal}
+              onChange={e => setNewVal(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
+              disabled={isSubmitting}
+              className={`${inputSm} text-right`}
+            />
             <span className="text-xs text-right text-[#525252]">
               {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
             </span>
-            <button onClick={() => setAdding(false)} className="text-[#525252] hover:text-white p-0.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex flex-col gap-0.5">
+              <button
+                onClick={submitAdd}
+                disabled={isSubmitting || !newDesc.trim()}
+                title="Confirmar (Enter)"
+                className="text-[#D4A853] hover:text-[#E8C47A] disabled:opacity-40 p-0.5 transition-colors"
+              >
+                {isSubmitting ? <Spinner /> : (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+              {!isSubmitting && (
+                <button
+                  onClick={() => { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }}
+                  className="text-[#3a3a3a] hover:text-[#525252] p-0.5 transition-colors"
+                  title="Cancelar (Esc)"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
 
       {items.length === 0 && !adding && (
-        <p className="text-xs text-[#525252] text-center py-4">Nenhum custo registrado. Adicione o que você gasta neste projeto.</p>
+        <div className="text-center py-6">
+          <p className="text-xs text-[#525252] mb-3">
+            Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
+          </p>
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-3 py-2 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 mx-auto"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar repasse
+          </button>
+        </div>
       )}
 
       {items.length > 0 && (
-        <div className="flex justify-end mt-3 pt-3 border-t border-[#1c1c1c]">
-          <span className="text-sm font-bold text-red-400">{formatCurrency(total, currency)}</span>
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1c1c1c]">
+          <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
+          <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
         </div>
       )}
     </div>
@@ -761,10 +1233,41 @@ function Spinner() {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function today() { return new Date().toISOString().split('T')[0] }
+
 function formatDate(iso: string | null) {
   if (!iso) return '—'
   const [y, m, d] = iso.split('-')
   return `${d}/${m}/${y}`
+}
+
+/** Calcula a data de vencimento a partir da data do job + condição de pagamento. */
+function calcDueDate(jobDateIso: string, condition: PaymentCondition): string {
+  const daysMap: Record<string, number> = {
+    upfront: 0, '7d': 7, '15d': 15, '30d': 30, '60d': 60, '90d': 90,
+  }
+  const days = daysMap[condition] ?? 0
+  const [y, m, d] = jobDateIso.split('-').map(Number)
+  const date = new Date(y, m - 1, d + days)
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+/** Retorna label "vence em Xd" / "venceu há Xd" / "vence hoje" + flag de vencido. */
+function calcDueDaysLabel(
+  dueDateIso: string | null,
+  due: number
+): { label?: string; isOverdue: boolean } {
+  if (!dueDateIso || due <= 0) return { isOverdue: false }
+  const ref = new Date(); ref.setHours(0, 0, 0, 0)
+  const [y, m, d] = dueDateIso.split('-').map(Number)
+  const dueDate = new Date(y, m - 1, d)
+  const diffDays = Math.round((dueDate.getTime() - ref.getTime()) / 86_400_000)
+  if (diffDays === 0) return { label: 'vence hoje', isOverdue: false }
+  if (diffDays > 0)   return { label: `vence em ${diffDays}d`, isOverdue: false }
+  return { label: `venceu há ${Math.abs(diffDays)}d`, isOverdue: true }
 }
 
 const labelCls = 'block text-[10px] font-semibold text-[#525252] tracking-widest'

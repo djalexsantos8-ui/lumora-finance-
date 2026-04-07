@@ -89,6 +89,9 @@ export interface JobCostItem {
   unit_value:  number
   total_value: number
   sort_order:  number
+  // Futuro (migration 006): URL do comprovante de pagamento do repasse.
+  // Já tipado aqui para o PDF mostrar "Comprovante disponível" sem mudança de banco.
+  receipt_url: string | null | undefined
   deleted_at:  string | null
   created_at:  string
 }
@@ -112,41 +115,158 @@ export interface JobWithItems extends Job {
 }
 
 // ─── Financeiro derivado (nunca armazenado) ───────────────────────────────────
+//
+// MODELO: total_job = serviços + repasses
+//         due       = total_job - recebido
+//
+// Repasses são cobrados do cliente → fazem parte do total que ele deve pagar.
+// "Lucro" aqui é somente informativo (revenue) — não é o ganho líquido real da
+// empresa, pois custos operacionais próprios ainda não são modelados.
+// Isso será corrigido na migration 006 com job_repass_items + job_cost_items.
+
 export interface JobFinancials {
-  revenue:    number  // revenue_total
-  cost:       number  // cost_total
-  profit:     number  // revenue - cost
-  margin_pct: number  // (profit / revenue) * 100
+  revenue:    number  // revenue_total — serviços cobrados
+  cost:       number  // cost_total — repasses cobrados do cliente
+  total:      number  // revenue + cost — total que o cliente deve pagar
+  profit:     number  // revenue (campo legado — repasses são pass-through)
+  margin_pct: number  // (revenue / total) * 100 — % que é seu
   received:   number  // amount_paid
-  due:        number  // revenue - amount_paid
+  due:        number  // total - received (correto)
 }
 
 export function calcJobFinancials(job: Pick<Job, 'revenue_total' | 'cost_total' | 'amount_paid'>): JobFinancials {
-  const revenue    = Number(job.revenue_total)
-  const cost       = Number(job.cost_total)
-  const profit     = revenue - cost
-  const margin_pct = revenue > 0 ? Math.round((profit / revenue) * 1000) / 10 : 0
+  const revenue  = Number(job.revenue_total)
+  const cost     = Number(job.cost_total)
+  const total    = revenue + cost
+  const received = Number(job.amount_paid)
   return {
     revenue,
     cost,
-    profit,
-    margin_pct,
-    received: Number(job.amount_paid),
-    due:      Math.max(0, revenue - Number(job.amount_paid)),
+    total,
+    profit:     revenue,                                           // repasses são neutros
+    margin_pct: total > 0 ? Math.round((revenue / total) * 1000) / 10 : 0,
+    received,
+    due:        Math.max(0, total - received),                    // ← corrigido
   }
 }
 
-// ─── Helpers legados (usados na listagem) ─────────────────────────────────────
-export function getPaymentStatus(job: Pick<Job, 'amount_paid' | 'revenue_total' | 'total_value'>): PaymentStatus {
-  const total = Number(job.revenue_total) || Number(job.total_value)
+// ─── Helpers (usados na listagem) ────────────────────────────────────────────
+// total_job inclui repasses para refletir o que o cliente deve pagar.
+
+export function getPaymentStatus(
+  job: Pick<Job, 'amount_paid' | 'revenue_total' | 'cost_total' | 'total_value'>
+): PaymentStatus {
+  const base  = Number(job.revenue_total) || Number(job.total_value)
+  const total = base + Number(job.cost_total)
   if (Number(job.amount_paid) <= 0)      return 'unpaid'
   if (Number(job.amount_paid) >= total)  return 'paid'
   return 'partial'
 }
 
-export function getAmountDue(job: Pick<Job, 'amount_paid' | 'revenue_total' | 'total_value'>): number {
-  const total = Number(job.revenue_total) || Number(job.total_value)
+export function getAmountDue(
+  job: Pick<Job, 'amount_paid' | 'revenue_total' | 'cost_total' | 'total_value'>
+): number {
+  const base  = Number(job.revenue_total) || Number(job.total_value)
+  const total = base + Number(job.cost_total)
   return Math.max(0, total - Number(job.amount_paid))
+}
+
+// ─── Status de lembrete de cobrança ──────────────────────────────────────────
+//
+// Distinto de PaymentStatus (unpaid/partial/paid), que descreve o estado do
+// pagamento em si. PaymentReminderStatus foca na urgência de cobrança.
+//
+// ok        → sem valor pendente, ou job cancelado/pago
+// pending   → tem valor a receber mas sem data de vencimento, ou ainda no prazo
+// due_today → vence hoje
+// overdue   → data de vencimento já passou
+
+export type PaymentReminderStatus = 'ok' | 'pending' | 'due_today' | 'overdue'
+
+/**
+ * Retorna o status do lembrete de cobrança baseado na data de vencimento.
+ *
+ * @param todayISO  Data de hoje no formato YYYY-MM-DD (padrão: data local atual).
+ *                  Aceita parâmetro externo para facilitar testes e SSR consistente.
+ */
+export function getPaymentReminderStatus(
+  job: Pick<Job, 'amount_paid' | 'revenue_total' | 'cost_total' | 'total_value' | 'payment_due_date' | 'status'>,
+  todayISO?: string
+): PaymentReminderStatus {
+  // Jobs cancelados ou totalmente pagos não precisam de lembrete
+  if (job.status === 'cancelled' || job.status === 'paid') return 'ok'
+
+  const due = getAmountDue(job)
+  if (due <= 0) return 'ok'
+
+  // Tem valor a receber, mas sem data definida → pending (sem urgência)
+  if (!job.payment_due_date) return 'pending'
+
+  // Data local (toLocaleDateString 'en-CA' = YYYY-MM-DD sem problemas de TZ)
+  const today = todayISO ?? new Date().toLocaleDateString('en-CA')
+
+  if (job.payment_due_date < today)  return 'overdue'
+  if (job.payment_due_date === today) return 'due_today'
+  return 'pending'
+}
+
+// ─── Estrutura de lembrete (Fase 3 — em memória, não persistida ainda) ────────
+//
+// Tipagem preparada para automação futura (email, push, cron job).
+// Quando persistida, vai para tabela `payment_reminders` no banco.
+// Campos: job_id, due_date, status, amount_due já cobrem o contrato mínimo
+// necessário para disparo de notificação.
+
+export interface PaymentReminder {
+  job_id:       string
+  job_title:    string
+  client_name:  string
+  due_date:     string   // YYYY-MM-DD
+  amount_due:   number
+  currency:     string
+  status:       Exclude<PaymentReminderStatus, 'ok'>
+  /** Positivo = dias de atraso. Negativo = dias restantes. Zero = vence hoje. */
+  days_delta:   number
+}
+
+/**
+ * Gera lembretes em memória a partir de uma lista de jobs.
+ * Filtra apenas jobs com valor a receber e data de vencimento definida.
+ * Ordena: overdue → due_today → pending.
+ */
+export function buildPaymentReminders(jobs: Job[], todayISO?: string): PaymentReminder[] {
+  const today = todayISO ?? new Date().toLocaleDateString('en-CA')
+  const [ty, tm, td] = today.split('-').map(Number)
+  const todayMs = new Date(ty, tm - 1, td).getTime()
+
+  return jobs
+    .filter(j => j.status !== 'cancelled')
+    .filter(j => getAmountDue(j) > 0 && j.payment_due_date)
+    .map(j => {
+      const status = getPaymentReminderStatus(j, today)
+      if (status === 'ok') return null
+
+      const [y, m, d] = j.payment_due_date!.split('-').map(Number)
+      const dueMs    = new Date(y, m - 1, d).getTime()
+      // positivo = já venceu (atraso), negativo = ainda falta, 0 = hoje
+      const days_delta = Math.round((todayMs - dueMs) / 86_400_000)
+
+      return {
+        job_id:      j.id,
+        job_title:   j.title || 'Job sem título',
+        client_name: j.client_name || 'Cliente não informado',
+        due_date:    j.payment_due_date!,
+        amount_due:  getAmountDue(j),
+        currency:    j.currency,
+        status:      status as Exclude<PaymentReminderStatus, 'ok'>,
+        days_delta,
+      }
+    })
+    .filter((r): r is PaymentReminder => r !== null)
+    .sort((a, b) => {
+      const ORDER: Record<string, number> = { overdue: 0, due_today: 1, pending: 2 }
+      return ORDER[a.status] - ORDER[b.status]
+    })
 }
 
 // ─── Tipos de retorno das Server Actions ──────────────────────────────────────
