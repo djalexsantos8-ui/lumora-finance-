@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { formatCurrency } from '@/lib/utils/format'
+import { useRouter } from 'next/navigation'
+import { formatCurrency, formatDate, formatDateShort, todayISO } from '@/lib/utils/format'
 import {
   createRecurringCost,
   createInstallmentCost,
@@ -40,22 +41,7 @@ interface SettleItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-
-function formatDateShort(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const [, m, d] = iso.split('-')
-  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-  return `${d}/${months[parseInt(m, 10) - 1]}`
-}
-
-function today(): string {
-  return new Date().toLocaleDateString('en-CA')
-}
+const today = todayISO
 
 /** Retorna true se last_paid_date pertence ao mês/ano atual */
 function isPaidThisMonth(lastPaidDate: string | null | undefined): boolean {
@@ -83,6 +69,7 @@ interface Props {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function FixedCostsClient({ initialItems }: Props) {
+  const router = useRouter()
   const [items,      setItems]      = useState<FixedCost[]>(initialItems)
   const [tab,        setTab]        = useState<TabId>('all')
   const [showForm,   setShowForm]   = useState(false)
@@ -219,8 +206,7 @@ export function FixedCostsClient({ initialItems }: Props) {
           // Optimistically add a placeholder — next navigation will fetch fresh
           showToast('success', `${parsedN} parcelas lançadas com sucesso!`)
           resetForm()
-          // Refresh list by re-fetching (simple: reload)
-          window.location.reload()
+          router.refresh()
         } else {
           showToast('error', res.error ?? 'Erro ao criar parcelas.')
         }

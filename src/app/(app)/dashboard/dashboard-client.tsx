@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { formatCurrency } from '@/lib/utils/format'
+import { formatCurrency, formatDate } from '@/lib/utils/format'
 import type {
   DashboardData,
   MonthlySeries,
@@ -15,11 +15,6 @@ interface Props { data: DashboardData }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
 
 function fmt(n: number) {
   return formatCurrency(n, 'BRL')

@@ -1,5 +1,29 @@
 import type { FreelancerRole } from '@/types/freelancer'
 
+// ─── Datas ────────────────────────────────────────────────────────────────────
+
+/** Retorna a data de hoje como string YYYY-MM-DD no fuso local (sem bug de UTC). */
+export function todayISO(): string {
+  return new Date().toLocaleDateString('en-CA')
+}
+
+/** Formata ISO YYYY-MM-DD → DD/MM/YYYY. Retorna '—' para valores nulos. */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
+/** Formata ISO YYYY-MM-DD → DD/Mês abreviado (ex: 15/Abr). */
+export function formatDateShort(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const [, m, d] = iso.split('-')
+  const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+  return `${d}/${months[parseInt(m, 10) - 1]}`
+}
+
+// ─── Moeda ────────────────────────────────────────────────────────────────────
+
 // Formata valor monetário com moeda
 export function formatCurrency(value: number | null, currency = 'BRL'): string {
   if (value === null || value === undefined) return '—'

@@ -3,21 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
+import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { FixedCostCategory, FixedCostActionResult, FixedCost } from '@/types/expense'
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-async function getWorkspaceId(userId: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
-  return data?.workspace_id ?? null
-}
 
 // ─── CREATE RECORRENTE ────────────────────────────────────────────────────────
 // Cria UM registro que se repete todo mês enquanto is_active = true.
@@ -73,7 +60,6 @@ export async function createRecurringCost(fields: {
     iof_amount:     fields.iof_amount ?? null,
   }
 
-  console.log('[fixed-costs/create-recurring] payload:', JSON.stringify(payload))
 
   const { data, error } = await supabase
     .from('fixed_costs')

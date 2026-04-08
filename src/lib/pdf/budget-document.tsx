@@ -8,6 +8,7 @@ import {
 } from '@react-pdf/renderer'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
+import { formatDate } from '@/lib/utils/format'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,16 +21,6 @@ function formatMoney(value: number, currency = 'BRL'): string {
     }).format(value)
   } catch {
     return `${currency} ${value.toFixed(2)}`
-  }
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    const [year, month, day] = iso.split('-')
-    return `${day}/${month}/${year}`
-  } catch {
-    return iso
   }
 }
 

@@ -2,22 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { ActionResult, FreelancerRole } from '@/types/freelancer'
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-async function getWorkspaceId(userId: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .order('workspace_id', { ascending: true })
-    .limit(1)
-    .single()
-  return data?.workspace_id ?? null
-}
 
 function parseRate(raw: string): number | null {
   const cleaned = raw.replace(/[^\d.,]/g, '').replace(',', '.')

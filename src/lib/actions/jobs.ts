@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getWorkspaceId } from '@/lib/utils/workspace'
 import type {
   JobStatus,
   JobType,
@@ -12,20 +13,6 @@ import type {
   JobPaymentActionResult,
   JobWithPaymentsResult,
 } from '@/types/job'
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-async function getWorkspaceId(userId: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
-  return data?.workspace_id ?? null
-}
 
 // ─── CREATE — cria job e redireciona para o detalhe ──────────────────────────
 

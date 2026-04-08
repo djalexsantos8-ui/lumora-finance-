@@ -3,7 +3,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { formatCurrency } from '@/lib/utils/format'
+import { formatCurrency, formatDate, todayISO } from '@/lib/utils/format'
 import {
   updateJobStatus, updateJob, addPayment, deletePayment, deleteJob,
 } from '@/lib/actions/jobs'
@@ -1336,13 +1336,7 @@ function Spinner() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function today() { return new Date().toISOString().split('T')[0] }
-
-function formatDate(iso: string | null) {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
+const today = todayISO
 
 /** Calcula a data de vencimento a partir da data do job + condição de pagamento. */
 function calcDueDate(jobDateIso: string, condition: PaymentCondition): string {

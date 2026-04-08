@@ -7,6 +7,7 @@ import {
 } from '@react-pdf/renderer'
 import type { Job, JobRevenueItem, JobCostItem } from '@/types/job'
 import { calcJobFinancials } from '@/types/job'
+import { formatDate } from '@/lib/utils/format'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -19,16 +20,6 @@ function formatMoney(value: number, currency = 'BRL'): string {
     }).format(value)
   } catch {
     return `${currency} ${value.toFixed(2)}`
-  }
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const [year, month, day] = iso.split('-')
-    return `${day}/${month}/${year}`
-  } catch {
-    return iso
   }
 }
 

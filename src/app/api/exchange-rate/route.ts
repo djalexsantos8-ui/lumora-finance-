@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 const SUPPORTED = ['USD', 'EUR']
 
 export async function GET(request: Request) {

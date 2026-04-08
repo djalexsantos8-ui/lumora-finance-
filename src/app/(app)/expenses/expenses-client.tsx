@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatCurrency } from '@/lib/utils/format'
+import { formatCurrency, todayISO } from '@/lib/utils/format'
 import { createExpense, deleteExpense, markExpensePaid, getInstallmentsRemaining, settleSelectedInstallments } from '@/lib/actions/expenses'
 import {
   EXPENSE_CATEGORIES,
@@ -31,10 +31,6 @@ interface SettleItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function todayISO() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 function formatExpenseDate(iso: string) {
   if (!iso) return '—'

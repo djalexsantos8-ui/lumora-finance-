@@ -3,21 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { BudgetActionResult, BudgetMarginType, BudgetStatus } from '@/types/budget'
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-async function getWorkspaceId(userId: string): Promise<string | null> {
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', userId)
-    .eq('status', 'active')
-    .limit(1)
-    .maybeSingle()
-  return data?.workspace_id ?? null
-}
 
 // Recalcula subtotal, margin_amount e total a partir dos itens ativos
 export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
