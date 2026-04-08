@@ -317,7 +317,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       description: editDesc,
       category:    editCat,
       amount:      parseFloat(editAmt.replace(',', '.')) || editItem.amount,
-      billing_day: parseInt(editDay, 10) || editItem.billing_day ?? undefined,
+      billing_day: (parseInt(editDay, 10) || editItem.billing_day) ?? undefined,
       start_date:  editStart || null,
     })
     setEditSaving(false)
