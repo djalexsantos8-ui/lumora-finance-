@@ -59,7 +59,7 @@ export async function createFreelancer(
 
     revalidatePath('/budgets/freelancers')
     return data
-  })
+  }, 'Profissional adicionado com sucesso.')
 }
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ export async function updateFreelancer(
   }
 
   revalidatePath('/budgets/freelancers')
-  return { success: true, data }
+  return { success: true, data, message: 'Profissional atualizado com sucesso.' }
 }
 
 // ─── SOFT DELETE ──────────────────────────────────────────────────────────────
@@ -130,5 +130,5 @@ export async function deleteFreelancer(id: string): Promise<ActionResult> {
   }
 
   revalidatePath('/budgets/freelancers')
-  return { success: true }
+  return { success: true, message: 'Profissional removido.' }
 }

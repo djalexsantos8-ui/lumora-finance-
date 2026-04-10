@@ -2,18 +2,17 @@
 
 import { useTransition } from 'react'
 import { createJob } from '@/lib/actions/jobs'
-import { toastError } from '@/lib/utils/toast'
+import { useActionToast } from '@/hooks/use-action-toast'
 
 export function NewJobButton({ label = 'Novo Job' }: { label?: string }) {
   const [isPending, startTransition] = useTransition()
+  const { handleResult } = useActionToast()
 
   function handleClick() {
     startTransition(async () => {
       const result = await createJob()
-      if (!result) return
-      if (!result.success) {
-        toastError(result.message)
-      }
+      // result só existe em caso de erro — redirect() propaga antes em sucesso
+      handleResult(result)
     })
   }
 

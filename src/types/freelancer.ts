@@ -36,5 +36,5 @@ export interface FreelancerFormData {
 }
 
 export type ActionResult =
-  | { success: true; data?: Freelancer }
+  | { success: true; data?: Freelancer; message?: string }
   | { success: false; message: string }

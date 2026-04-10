@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState, useTransition } from 'react'
+import { useEffect, useRef, useTransition } from 'react'
 import { createFreelancer, updateFreelancer } from '@/lib/actions/freelancers'
+import { useActionToast } from '@/hooks/use-action-toast'
 import {
   FREELANCER_ROLES,
   SUPPORTED_CURRENCIES,
@@ -10,7 +11,7 @@ import type { Freelancer } from '@/types/freelancer'
 
 interface FreelancerModalProps {
   open: boolean
-  freelancer?: Freelancer | null // null = modo criação
+  freelancer?: Freelancer | null
   onClose: () => void
 }
 
@@ -21,17 +22,14 @@ export default function FreelancerModal({
 }: FreelancerModalProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const { handleResult } = useActionToast()
 
   const isEdit = Boolean(freelancer)
 
-  // Resetar erro ao abrir/fechar
   useEffect(() => {
-    setError(null)
     if (open) formRef.current?.reset()
   }, [open, freelancer])
 
-  // Fechar com Escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape' && open) onClose()
@@ -44,20 +42,16 @@ export default function FreelancerModal({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setError(null)
-    const form = e.currentTarget
-    const formData = new FormData(form)
+    const formData = new FormData(e.currentTarget)
 
     startTransition(async () => {
       const result = isEdit && freelancer
         ? await updateFreelancer(freelancer.id, formData)
         : await createFreelancer(formData)
 
-      if (!result.success) {
-        setError(result.message)
-        return
-      }
-      onClose()
+      handleResult(result)
+
+      if (result.success) onClose()
     })
   }
 
@@ -174,13 +168,6 @@ export default function FreelancerModal({
                 className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors resize-none"
               />
             </div>
-
-            {/* Erro */}
-            {error && (
-              <p className="text-xs text-[#ef4444] bg-[#ef4444]/10 border border-[#ef4444]/20 rounded-lg px-3 py-2">
-                {error}
-              </p>
-            )}
 
             {/* Actions */}
             <div className="flex gap-3 pt-1">
