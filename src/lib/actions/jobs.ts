@@ -16,7 +16,7 @@ import type {
 
 // ─── CREATE — cria job e redireciona para o detalhe ──────────────────────────
 
-export async function createJob(): Promise<never> {
+export async function createJob(): Promise<{ success: false; message: string }> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -47,7 +47,7 @@ export async function createJob(): Promise<never> {
 
   if (error || !data) {
     console.error('[jobs/create]', error)
-    redirect('/jobs')
+    return { success: false, message: 'Erro ao criar job. Tente novamente.' }
   }
 
   revalidatePath('/jobs')
