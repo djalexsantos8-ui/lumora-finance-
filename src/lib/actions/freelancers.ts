@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
+import { AppError } from '@/lib/errors/app-error'
+import { handleAction } from '@/lib/actions/action-handler'
 import type { ActionResult, FreelancerRole } from '@/types/freelancer'
 
 function parseRate(raw: string): number | null {
@@ -24,38 +26,40 @@ export async function createFreelancer(
   const workspaceId = await getWorkspaceId(user.id)
   if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
-  const name = (formData.get('name') as string | null)?.trim() ?? ''
-  const role = (formData.get('role') as FreelancerRole | null) ?? 'other'
+  const name        = (formData.get('name')       as string | null)?.trim() ?? ''
+  const role        = (formData.get('role')        as FreelancerRole | null) ?? 'other'
   const dailyRateRaw = (formData.get('daily_rate') as string | null) ?? ''
-  const currency = (formData.get('currency') as string | null) ?? 'BRL'
-  const notes = (formData.get('notes') as string | null)?.trim() ?? ''
+  const currency    = (formData.get('currency')    as string | null) ?? 'BRL'
+  const notes       = (formData.get('notes')       as string | null)?.trim() ?? ''
 
   if (!name) return { success: false, message: 'Nome é obrigatório.' }
   if (name.length > 120) return { success: false, message: 'Nome muito longo (máx. 120 caracteres).' }
 
   const dailyRate = dailyRateRaw ? parseRate(dailyRateRaw) : null
 
-  const { data, error } = await supabase
-    .from('freelancers')
-    .insert({
-      workspace_id: workspaceId,
-      created_by: user.id,
-      name,
-      role,
-      daily_rate: dailyRate,
-      currency,
-      notes: notes || null,
-    })
-    .select()
-    .single()
+  return handleAction(async () => {
+    const { data, error } = await supabase
+      .from('freelancers')
+      .insert({
+        workspace_id: workspaceId,
+        created_by:   user.id,
+        name,
+        role,
+        daily_rate:   dailyRate,
+        currency,
+        notes:        notes || null,
+      })
+      .select()
+      .single()
 
-  if (error) {
-    console.error('[freelancers/create]', error)
-    return { success: false, message: 'Erro ao criar profissional.' }
-  }
+    if (error) {
+      console.error('[freelancers/create]', error)
+      throw new AppError('FREELANCER_CREATE_FAILED')
+    }
 
-  revalidatePath('/budgets/freelancers')
-  return { success: true, data }
+    revalidatePath('/budgets/freelancers')
+    return data
+  })
 }
 
 // ─── UPDATE ──────────────────────────────────────────────────────────────────

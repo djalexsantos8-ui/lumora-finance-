@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
+import { AppError } from '@/lib/errors/app-error'
+import { getErrorMessage } from '@/lib/errors/get-error-message'
 import type {
   JobStatus,
   JobType,
@@ -28,30 +30,38 @@ export async function createJob(): Promise<{ success: false; message: string }> 
   const workspaceId = await getWorkspaceId(user.id)
   if (!workspaceId) redirect('/dashboard')
 
-  const { data, error } = await supabase
-    .from('jobs')
-    .insert({
-      workspace_id:      workspaceId,
-      created_by:        user.id,
-      title:             'Job sem título',
-      client_name:       '',
-      status:            'in_progress' as JobStatus,
-      job_type:          'freelance'   as JobType,
-      payment_condition: 'upfront'     as PaymentCondition,
-      currency:          'BRL',
-      total_value:       0,
-      job_date:          new Date().toISOString().split('T')[0],
-    })
-    .select('id')
-    .single()
+  try {
+    const { data, error } = await supabase
+      .from('jobs')
+      .insert({
+        workspace_id:      workspaceId,
+        created_by:        user.id,
+        title:             'Job sem título',
+        client_name:       '',
+        status:            'in_progress' as JobStatus,
+        job_type:          'freelance'   as JobType,
+        payment_condition: 'upfront'     as PaymentCondition,
+        currency:          'BRL',
+        total_value:       0,
+        job_date:          new Date().toISOString().split('T')[0],
+      })
+      .select('id')
+      .single()
 
-  if (error || !data) {
-    console.error('[jobs/create]', error)
-    return { success: false, message: 'Erro ao criar job. Tente novamente.' }
+    if (error || !data) {
+      console.error('[jobs/create]', error)
+      throw new AppError('JOB_CREATE_FAILED')
+    }
+
+    revalidatePath('/jobs')
+    redirect(`/jobs/${data.id}`)
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { success: false, message: getErrorMessage(err.code) }
+    }
+    // redirect() lança um erro especial do Next.js — deve propagar
+    throw err
   }
-
-  revalidatePath('/jobs')
-  redirect(`/jobs/${data.id}`)
 }
 
 // ─── UPDATE INFO — campos editáveis do job ────────────────────────────────────
@@ -315,7 +325,7 @@ export async function deletePayment(
 
 export async function bulkDeleteJobs(
   ids: string[]
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message?: string }> {
   if (!ids.length) return { success: false, message: 'Nenhum job selecionado.' }
 
   const supabase = await createClient()

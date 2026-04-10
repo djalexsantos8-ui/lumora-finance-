@@ -7,6 +7,11 @@ import type { Budget, BudgetStatus } from '@/types/budget'
 
 export const metadata = { title: 'Orçamentos — Lumora Finance' }
 
+async function handleCreateBudget(_data: FormData): Promise<void> {
+  'use server'
+  await createBudget()
+}
+
 export default async function BudgetsPage() {
   const supabase = await createClient()
   const {
@@ -45,7 +50,7 @@ export default async function BudgetsPage() {
               : `${list.length} orçamento${list.length !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <form action={createBudget}>
+        <form action={handleCreateBudget}>
           <button
             type="submit"
             className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"
@@ -71,7 +76,7 @@ export default async function BudgetsPage() {
           <p className="text-[#525252] text-sm max-w-xs mb-6">
             Crie orçamentos profissionais com cálculo de margem e PDFs apresentáveis para seus clientes.
           </p>
-          <form action={createBudget}>
+          <form action={handleCreateBudget}>
             <button
               type="submit"
               className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"

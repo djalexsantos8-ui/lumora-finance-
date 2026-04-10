@@ -256,7 +256,7 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
     expense_date:      string
     installment_index: number | null
   }[]
-  error?:         string
+  message?:       string
 }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -315,7 +315,7 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
 export async function settleSelectedInstallments(
   ids:        string[],
   paidTotal?: number
-): Promise<{ success: boolean; count?: number; error?: string }> {
+): Promise<{ success: boolean; count?: number; message?: string }> {
   if (!ids || ids.length === 0) return { success: false, message: 'Nenhuma parcela selecionada.' }
 
   const supabase = await createClient()
@@ -381,7 +381,7 @@ export async function settleSelectedInstallments(
 export async function settleInstallments(
   parentId:   string,
   paidTotal?: number
-): Promise<{ success: boolean; count?: number; error?: string }> {
+): Promise<{ success: boolean; count?: number; message?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }

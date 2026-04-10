@@ -92,7 +92,7 @@ export async function createInstallmentCost(fields: {
   amount_brl?:    number | null   // amount_brl POR PARCELA
   iof_applied?:   boolean
   iof_amount?:    number | null   // iof POR PARCELA
-}): Promise<{ success: boolean; count?: number; error?: string }> {
+}): Promise<{ success: boolean; count?: number; message?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
@@ -268,7 +268,7 @@ export async function endRecurringCost(id: string): Promise<FixedCostActionResul
 
 export async function getFixedCostInstallments(
   parentId: string
-): Promise<{ success: boolean; items?: FixedCost[]; error?: string }> {
+): Promise<{ success: boolean; items?: FixedCost[]; message?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
@@ -294,7 +294,7 @@ export async function getFixedCostInstallments(
 export async function settleSelectedFixedCosts(
   ids: string[],
   paidTotal?: number
-): Promise<{ success: boolean; count?: number; error?: string }> {
+): Promise<{ success: boolean; count?: number; message?: string }> {
   if (!ids.length) return { success: false, message: 'Nenhuma parcela selecionada.' }
 
   const supabase = await createClient()
@@ -437,7 +437,7 @@ export async function payMonthlyRecurring(
 
 export async function payNextInstallment(
   parentId: string
-): Promise<{ success: boolean; paidIndex?: number; error?: string }> {
+): Promise<{ success: boolean; paidIndex?: number; message?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
@@ -583,7 +583,7 @@ export async function deleteFixedCost(id: string): Promise<FixedCostActionResult
 
 export async function deleteInstallmentGroup(
   parentId: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; message?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
