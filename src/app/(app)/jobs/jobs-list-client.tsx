@@ -79,7 +79,7 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
         setJobs(prev => prev.filter(j => !ids.includes(j.id)))
         setSelectedIds(new Set())
       } else {
-        alert(res.error ?? 'Erro ao excluir jobs.')
+        alert(res.message ?? 'Erro ao excluir jobs.')
       }
     })
   }

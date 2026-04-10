@@ -103,7 +103,7 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
         setToast({ type: 'success', message: 'Configurações salvas com sucesso!' })
         setTimeout(() => setToast(null), 4000)
       } else {
-        setToast({ type: 'error', message: result.error })
+        setToast({ type: 'error', message: result.message })
       }
     })
   }

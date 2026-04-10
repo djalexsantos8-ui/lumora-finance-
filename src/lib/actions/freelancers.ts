@@ -19,10 +19,10 @@ export async function createFreelancer(
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   const name = (formData.get('name') as string | null)?.trim() ?? ''
   const role = (formData.get('role') as FreelancerRole | null) ?? 'other'
@@ -30,8 +30,8 @@ export async function createFreelancer(
   const currency = (formData.get('currency') as string | null) ?? 'BRL'
   const notes = (formData.get('notes') as string | null)?.trim() ?? ''
 
-  if (!name) return { success: false, error: 'Nome é obrigatório.' }
-  if (name.length > 120) return { success: false, error: 'Nome muito longo (máx. 120 caracteres).' }
+  if (!name) return { success: false, message: 'Nome é obrigatório.' }
+  if (name.length > 120) return { success: false, message: 'Nome muito longo (máx. 120 caracteres).' }
 
   const dailyRate = dailyRateRaw ? parseRate(dailyRateRaw) : null
 
@@ -51,7 +51,7 @@ export async function createFreelancer(
 
   if (error) {
     console.error('[freelancers/create]', error)
-    return { success: false, error: 'Erro ao criar profissional.' }
+    return { success: false, message: 'Erro ao criar profissional.' }
   }
 
   revalidatePath('/budgets/freelancers')
@@ -67,7 +67,7 @@ export async function updateFreelancer(
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const name = (formData.get('name') as string | null)?.trim() ?? ''
   const role = (formData.get('role') as FreelancerRole | null) ?? 'other'
@@ -75,8 +75,8 @@ export async function updateFreelancer(
   const currency = (formData.get('currency') as string | null) ?? 'BRL'
   const notes = (formData.get('notes') as string | null)?.trim() ?? ''
 
-  if (!name) return { success: false, error: 'Nome é obrigatório.' }
-  if (name.length > 120) return { success: false, error: 'Nome muito longo (máx. 120 caracteres).' }
+  if (!name) return { success: false, message: 'Nome é obrigatório.' }
+  if (name.length > 120) return { success: false, message: 'Nome muito longo (máx. 120 caracteres).' }
 
   const dailyRate = dailyRateRaw ? parseRate(dailyRateRaw) : null
 
@@ -97,7 +97,7 @@ export async function updateFreelancer(
 
   if (error) {
     console.error('[freelancers/update]', error)
-    return { success: false, error: 'Erro ao atualizar profissional.' }
+    return { success: false, message: 'Erro ao atualizar profissional.' }
   }
 
   revalidatePath('/budgets/freelancers')
@@ -110,7 +110,7 @@ export async function deleteFreelancer(id: string): Promise<ActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   // Soft delete: apenas preenche deleted_at
   // RLS garante workspace correto
@@ -122,7 +122,7 @@ export async function deleteFreelancer(id: string): Promise<ActionResult> {
 
   if (error) {
     console.error('[freelancers/delete]', error)
-    return { success: false, error: 'Erro ao remover profissional.' }
+    return { success: false, message: 'Erro ao remover profissional.' }
   }
 
   revalidatePath('/budgets/freelancers')

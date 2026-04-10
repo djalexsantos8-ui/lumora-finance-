@@ -129,8 +129,8 @@ export interface FixedCost {
 
 export type ExpenseActionResult =
   | { success: true; data?: Expense }
-  | { success: false; error: string }
+  | { success: false; message: string }
 
 export type FixedCostActionResult =
   | { success: true; data?: FixedCost }
-  | { success: false; error: string }
+  | { success: false; message: string }

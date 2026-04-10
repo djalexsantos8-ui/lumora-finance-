@@ -25,13 +25,13 @@ export async function createRecurringCost(fields: {
 }): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
-  if (!fields.description.trim()) return { success: false, error: 'Descrição obrigatória.' }
-  if (fields.amount <= 0)         return { success: false, error: 'Valor deve ser maior que zero.' }
+  if (!fields.description.trim()) return { success: false, message: 'Descrição obrigatória.' }
+  if (fields.amount <= 0)         return { success: false, message: 'Valor deve ser maior que zero.' }
 
   const billingDay = fields.start_date
     ? parseInt(fields.start_date.split('-')[2], 10)
@@ -69,7 +69,7 @@ export async function createRecurringCost(fields: {
 
   if (error) {
     console.error('[fixed-costs/create-recurring] error:', JSON.stringify(error))
-    return { success: false, error: error.message ?? 'Erro ao criar custo fixo.' }
+    return { success: false, message: error.message ?? 'Erro ao criar custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -95,14 +95,14 @@ export async function createInstallmentCost(fields: {
 }): Promise<{ success: boolean; count?: number; error?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
-  if (!fields.description.trim())  return { success: false, error: 'Descrição obrigatória.' }
-  if (fields.amount_per <= 0)      return { success: false, error: 'Valor deve ser maior que zero.' }
-  if (fields.installments < 2)     return { success: false, error: 'Parcelado requer ao menos 2 parcelas.' }
+  if (!fields.description.trim())  return { success: false, message: 'Descrição obrigatória.' }
+  if (fields.amount_per <= 0)      return { success: false, message: 'Valor deve ser maior que zero.' }
+  if (fields.installments < 2)     return { success: false, message: 'Parcelado requer ao menos 2 parcelas.' }
 
   const parentId   = randomUUID()
   const billingDay = parseInt(fields.start_date.split('-')[2], 10)
@@ -149,7 +149,7 @@ export async function createInstallmentCost(fields: {
 
   if (error) {
     console.error('[fixed-costs/create-installment]', error)
-    return { success: false, error: `Erro ao criar parcelas: ${error.message}` }
+    return { success: false, message: `Erro ao criar parcelas: ${error.message}` }
   }
 
   revalidatePath('/fixed-costs')
@@ -170,13 +170,13 @@ export async function createFixedCost(fields: {
 }): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
-  if (!fields.description.trim()) return { success: false, error: 'Descrição obrigatória.' }
-  if (fields.amount <= 0)         return { success: false, error: 'Valor deve ser maior que zero.' }
+  if (!fields.description.trim()) return { success: false, message: 'Descrição obrigatória.' }
+  if (fields.amount <= 0)         return { success: false, message: 'Valor deve ser maior que zero.' }
 
   const billingDay = Math.max(1, Math.min(31, Math.round(fields.billing_day)))
 
@@ -202,7 +202,7 @@ export async function createFixedCost(fields: {
 
   if (error) {
     console.error('[fixed-costs/create]', error)
-    return { success: false, error: 'Erro ao criar custo fixo.' }
+    return { success: false, message: 'Erro ao criar custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -217,7 +217,7 @@ export async function toggleFixedCost(
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data, error } = await supabase
     .from('fixed_costs')
@@ -229,7 +229,7 @@ export async function toggleFixedCost(
 
   if (error) {
     console.error('[fixed-costs/toggle]', error)
-    return { success: false, error: 'Erro ao atualizar custo fixo.' }
+    return { success: false, message: 'Erro ao atualizar custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -242,7 +242,7 @@ export async function toggleFixedCost(
 export async function endRecurringCost(id: string): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const today = new Date().toLocaleDateString('en-CA')
 
@@ -256,7 +256,7 @@ export async function endRecurringCost(id: string): Promise<FixedCostActionResul
 
   if (error) {
     console.error('[fixed-costs/end]', error)
-    return { success: false, error: 'Erro ao encerrar custo recorrente.' }
+    return { success: false, message: 'Erro ao encerrar custo recorrente.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -271,7 +271,7 @@ export async function getFixedCostInstallments(
 ): Promise<{ success: boolean; items?: FixedCost[]; error?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data, error } = await supabase
     .from('fixed_costs')
@@ -282,7 +282,7 @@ export async function getFixedCostInstallments(
 
   if (error) {
     console.error('[fixed-costs/get-installments]', error)
-    return { success: false, error: 'Erro ao buscar parcelas.' }
+    return { success: false, message: 'Erro ao buscar parcelas.' }
   }
 
   return { success: true, items: data ?? [] }
@@ -295,11 +295,11 @@ export async function settleSelectedFixedCosts(
   ids: string[],
   paidTotal?: number
 ): Promise<{ success: boolean; count?: number; error?: string }> {
-  if (!ids.length) return { success: false, error: 'Nenhuma parcela selecionada.' }
+  if (!ids.length) return { success: false, message: 'Nenhuma parcela selecionada.' }
 
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   // Busca as parcelas selecionadas
   const { data: selected, error: fetchErr } = await supabase
@@ -310,7 +310,7 @@ export async function settleSelectedFixedCosts(
     .order('installment_index', { ascending: true })
 
   if (fetchErr || !selected?.length) {
-    return { success: false, error: 'Erro ao buscar parcelas.' }
+    return { success: false, message: 'Erro ao buscar parcelas.' }
   }
 
   const n          = selected.length
@@ -341,7 +341,7 @@ export async function settleSelectedFixedCosts(
   const failed = results.filter(r => r.error)
   if (failed.length) {
     console.error('[fixed-costs/settle-selected]', failed[0].error)
-    return { success: false, error: 'Erro ao quitar parcelas.' }
+    return { success: false, message: 'Erro ao quitar parcelas.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -356,7 +356,7 @@ export async function unpayInstallment(
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data, error } = await supabase
     .from('fixed_costs')
@@ -368,7 +368,7 @@ export async function unpayInstallment(
 
   if (error) {
     console.error('[fixed-costs/unpay-installment]', error)
-    return { success: false, error: error.message ?? 'Erro ao desfazer pagamento.' }
+    return { success: false, message: error.message ?? 'Erro ao desfazer pagamento.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -383,7 +383,7 @@ export async function unpayMonthlyRecurring(
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data, error } = await supabase
     .from('fixed_costs')
@@ -395,7 +395,7 @@ export async function unpayMonthlyRecurring(
 
   if (error) {
     console.error('[fixed-costs/unpay-monthly]', error)
-    return { success: false, error: error.message ?? 'Erro ao desfazer pagamento.' }
+    return { success: false, message: error.message ?? 'Erro ao desfazer pagamento.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -411,7 +411,7 @@ export async function payMonthlyRecurring(
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const today = new Date().toLocaleDateString('en-CA')
 
@@ -425,7 +425,7 @@ export async function payMonthlyRecurring(
 
   if (error) {
     console.error('[fixed-costs/pay-monthly]', error)
-    return { success: false, error: error.message ?? 'Erro ao registrar pagamento.' }
+    return { success: false, message: error.message ?? 'Erro ao registrar pagamento.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -440,7 +440,7 @@ export async function payNextInstallment(
 ): Promise<{ success: boolean; paidIndex?: number; error?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   // Busca a primeira parcela não paga do grupo
   const { data: next, error: fetchErr } = await supabase
@@ -455,9 +455,9 @@ export async function payNextInstallment(
 
   if (fetchErr) {
     console.error('[fixed-costs/pay-next-installment]', fetchErr)
-    return { success: false, error: 'Erro ao buscar parcela.' }
+    return { success: false, message: 'Erro ao buscar parcela.' }
   }
-  if (!next) return { success: false, error: 'Nenhuma parcela pendente.' }
+  if (!next) return { success: false, message: 'Nenhuma parcela pendente.' }
 
   const now = new Date().toISOString()
   const { error: updateErr } = await supabase
@@ -467,7 +467,7 @@ export async function payNextInstallment(
 
   if (updateErr) {
     console.error('[fixed-costs/pay-next-installment]', updateErr)
-    return { success: false, error: updateErr.message ?? 'Erro ao quitar parcela.' }
+    return { success: false, message: updateErr.message ?? 'Erro ao quitar parcela.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -489,10 +489,10 @@ export async function updateFixedCost(
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   // Busca estado atual para diff de histórico
   const { data: current, error: fetchErr } = await supabase
@@ -502,7 +502,7 @@ export async function updateFixedCost(
     .is('deleted_at', null)
     .single()
 
-  if (fetchErr || !current) return { success: false, error: 'Custo não encontrado.' }
+  if (fetchErr || !current) return { success: false, message: 'Custo não encontrado.' }
 
   // Monta payload apenas com campos fornecidos
   const payload: Record<string, unknown> = {}
@@ -523,7 +523,7 @@ export async function updateFixedCost(
 
   if (error) {
     console.error('[fixed-costs/update]', error)
-    return { success: false, error: error.message ?? 'Erro ao atualizar.' }
+    return { success: false, message: error.message ?? 'Erro ao atualizar.' }
   }
 
   // Grava histórico dos campos que mudaram
@@ -562,7 +562,7 @@ export async function updateFixedCost(
 export async function deleteFixedCost(id: string): Promise<FixedCostActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('fixed_costs')
@@ -572,7 +572,7 @@ export async function deleteFixedCost(id: string): Promise<FixedCostActionResult
 
   if (error) {
     console.error('[fixed-costs/delete]', error)
-    return { success: false, error: 'Erro ao excluir custo fixo.' }
+    return { success: false, message: 'Erro ao excluir custo fixo.' }
   }
 
   revalidatePath('/fixed-costs')
@@ -586,7 +586,7 @@ export async function deleteInstallmentGroup(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('fixed_costs')
@@ -596,7 +596,7 @@ export async function deleteInstallmentGroup(
 
   if (error) {
     console.error('[fixed-costs/delete-group]', error)
-    return { success: false, error: 'Erro ao excluir parcelas.' }
+    return { success: false, message: 'Erro ao excluir parcelas.' }
   }
 
   revalidatePath('/fixed-costs')

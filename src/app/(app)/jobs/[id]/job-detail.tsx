@@ -145,7 +145,7 @@ export default function JobDetail({
     startTransition(async () => {
       const res = await updateJobStatus(job.id, newStatus)
       if (res.success && res.data) setJob(res.data)
-      else if (!res.success) showToast('error', res.error)
+      else if (!res.success) showToast('error', res.message)
     })
   }
 
@@ -159,7 +159,7 @@ export default function JobDetail({
       router.push('/jobs')
     } else {
       setIsDeleting(false)
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -217,7 +217,7 @@ export default function JobDetail({
     if (field === 'payment_condition')  payload.payment_condition  = value as PaymentCondition
     const res = await updateJob(job.id, payload)
     if (res.success && res.data) setJob(res.data)
-    else if (!res.success) showToast('error', res.error)
+    else if (!res.success) showToast('error', res.message)
     if (field !== 'payment_condition') setEditingField(null)
   }
 
@@ -235,7 +235,7 @@ export default function JobDetail({
         setPayAmount(''); setPayDate(today()); setPayNotes(''); setShowPayForm(false)
         showToast('success', 'Pagamento registrado.')
       } else {
-        showToast('error', res.error)
+        showToast('error', res.message)
       }
     })
   }
@@ -249,7 +249,7 @@ export default function JobDetail({
       if (res.job) setJob(res.job)
       showToast('success', 'Pagamento removido.')
     } else {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -265,7 +265,7 @@ export default function JobDetail({
       showToast('success', 'Item adicionado com sucesso.')
       return { success: true, id: (res.data as JobRevenueItem | undefined)?.id }
     }
-    showToast('error', res.error)
+    showToast('error', res.message)
     return { success: false }
   }
 
@@ -277,7 +277,7 @@ export default function JobDetail({
       if (res.data) setRevenueItems(prev => prev.map(i => i.id === itemId ? res.data as JobRevenueItem : i))
       if (res.job)  setJob(res.job)
     } else {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -288,7 +288,7 @@ export default function JobDetail({
       if (res.job) setJob(res.job)
       showToast('success', 'Item removido.')
     } else {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -304,7 +304,7 @@ export default function JobDetail({
       showToast('success', 'Repasse adicionado com sucesso.')
       return { success: true, id: (res.data as JobCostItem | undefined)?.id }
     }
-    showToast('error', res.error)
+    showToast('error', res.message)
     return { success: false }
   }
 
@@ -316,7 +316,7 @@ export default function JobDetail({
       if (res.data) setCostItems(prev => prev.map(i => i.id === itemId ? res.data as JobCostItem : i))
       if (res.job)  setJob(res.job)
     } else {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -327,7 +327,7 @@ export default function JobDetail({
       if (res.job) setJob(res.job)
       showToast('success', 'Repasse removido.')
     } else {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -579,7 +579,7 @@ export default function JobDetail({
                 if (res.success && res.data) {
                   setJob(res.data)
                   showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
-                } else if (!res.success) showToast('error', res.error)
+                } else if (!res.success) showToast('error', res.message)
               }}
               className="text-xs text-white bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 cursor-pointer outline-none hover:border-[#3a3a3a] focus:border-[#D4A853]/50 transition-colors appearance-none"
             >

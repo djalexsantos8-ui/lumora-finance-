@@ -104,7 +104,7 @@ export default function AddItemModal({
         : await createBudgetItem(budgetId, formData)
 
       if (!result.success) {
-        setError(result.error)
+        setError(result.message)
         return
       }
       if (result.data) {

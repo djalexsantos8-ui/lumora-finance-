@@ -203,7 +203,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
         iof_applied:        fCurrency !== 'BRL' ? fIof : undefined,
       })
 
-      if (!res.success) { setErrorMsg(res.error); return }
+      if (!res.success) { setErrorMsg(res.message); return }
 
       const [py, pm] = monthParam.split('-')
       if ('installments' in res && res.installments) {
@@ -262,7 +262,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
       setSuccessMsg({ text: 'Despesa marcada como paga ✓' })
       setTimeout(() => setSuccessMsg(null), 4000)
     } else {
-      setErrorMsg(res.error)
+      setErrorMsg(res.message)
     }
   }
 
@@ -292,7 +292,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
       })
       setTimeout(() => setSuccessMsg(null), 5000)
     } else {
-      setErrorMsg(res.error)
+      setErrorMsg(res.message)
     }
   }
 
@@ -314,7 +314,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     const res = await getInstallmentsRemaining(expense.id)
     setLoadingSettle(false)
     if (!res.success || !res.installments) {
-      setErrorMsg(res.error ?? 'Erro ao buscar parcelas.')
+      setErrorMsg(res.message ?? 'Erro ao buscar parcelas.')
       return
     }
     setSettleModal({
@@ -353,7 +353,7 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
     const res = await settleSelectedInstallments(settleModal.selected, paidAmt)
     setSettling(false)
 
-    if (!res.success) { setErrorMsg(res.error ?? 'Erro ao quitar parcelas.'); return }
+    if (!res.success) { setErrorMsg(res.message ?? 'Erro ao quitar parcelas.'); return }
 
     // Atualiza otimisticamente as parcelas quitadas na lista atual
     const now       = new Date().toISOString()

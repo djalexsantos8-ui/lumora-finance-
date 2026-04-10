@@ -54,7 +54,7 @@ export default function FreelancerModal({
         : await createFreelancer(formData)
 
       if (!result.success) {
-        setError(result.error)
+        setError(result.message)
         return
       }
       onClose()

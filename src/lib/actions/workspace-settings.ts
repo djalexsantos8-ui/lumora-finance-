@@ -29,10 +29,10 @@ export async function upsertWorkspaceSettings(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getActiveWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   const company_name    = (formData.get('company_name') as string)?.trim()    || null
   const company_logo_url = (formData.get('company_logo_url') as string)        || null
@@ -58,7 +58,7 @@ export async function upsertWorkspaceSettings(
 
   if (error) {
     console.error('[settings/upsert]', error)
-    return { success: false, error: 'Erro ao salvar configurações.' }
+    return { success: false, message: 'Erro ao salvar configurações.' }
   }
 
   revalidatePath('/settings')

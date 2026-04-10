@@ -187,7 +187,7 @@ export function FixedCostsClient({ initialItems }: Props) {
           showToast('success', 'Custo recorrente criado!')
           resetForm()
         } else if (!res.success) {
-          showToast('error', res.error)
+          showToast('error', res.message)
         }
       } else {
         if (parsedN < 2) { showToast('error', 'Mínimo 2 parcelas.'); return }
@@ -208,7 +208,7 @@ export function FixedCostsClient({ initialItems }: Props) {
           resetForm()
           router.refresh()
         } else {
-          showToast('error', res.error ?? 'Erro ao criar parcelas.')
+          showToast('error', res.message ?? 'Erro ao criar parcelas.')
         }
       }
     })
@@ -232,7 +232,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       setItems(prev => prev.map(i => i.id === id ? { ...i, is_active: false, end_date: res.data!.end_date } : i))
       showToast('success', 'Custo encerrado.')
     } else if (!res.success) {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -246,7 +246,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       setItems(prev => prev.map(i => i.id === id ? { ...i, last_paid_date: res.data!.last_paid_date } : i))
       showToast('success', 'Pagamento do mês registrado!')
     } else if (!res.success) {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -265,7 +265,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       }))
       showToast('success', `Parcela ${res.paidIndex} paga!`)
     } else {
-      showToast('error', res.error ?? 'Erro ao pagar parcela.')
+      showToast('error', res.message ?? 'Erro ao pagar parcela.')
     }
   }
 
@@ -281,7 +281,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       ))
       showToast('success', 'Pagamento desfeito com sucesso.')
     } else if (!res.success) {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -295,7 +295,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       setItems(prev => prev.map(i => i.id === id ? { ...i, last_paid_date: null } : i))
       showToast('success', 'Pagamento desfeito com sucesso.')
     } else if (!res.success) {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -326,7 +326,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       setEditItem(null)
       showToast('success', 'Custo atualizado.')
     } else if (!res.success) {
-      showToast('error', res.error)
+      showToast('error', res.message)
     }
   }
 
@@ -417,7 +417,7 @@ export function FixedCostsClient({ initialItems }: Props) {
       showToast('success', `${res.count} parcela${res.count !== 1 ? 's' : ''} quitada${res.count !== 1 ? 's' : ''}!`)
       closeSettleModal()
     } else {
-      showToast('error', res.error ?? 'Erro ao quitar parcelas.')
+      showToast('error', res.message ?? 'Erro ao quitar parcelas.')
       setSettling(false)
     }
   }

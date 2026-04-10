@@ -86,7 +86,7 @@ export async function updateJob(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   // Garante que workspace_id nunca será alterado via updateJob
   const payload: Record<string, unknown> = {}
@@ -129,7 +129,7 @@ export async function updateJob(
     payload.client_segment = fields.client_segment?.trim() || null
 
   if (Object.keys(payload).length === 0)
-    return { success: false, error: 'Nenhum campo para atualizar.' }
+    return { success: false, message: 'Nenhum campo para atualizar.' }
 
   const { data, error } = await supabase
     .from('jobs')
@@ -141,7 +141,7 @@ export async function updateJob(
 
   if (error) {
     console.error('[jobs/update]', error)
-    return { success: false, error: 'Erro ao salvar job.' }
+    return { success: false, message: 'Erro ao salvar job.' }
   }
 
   revalidatePath('/jobs')
@@ -161,7 +161,7 @@ export async function updateJobStatus(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data, error } = await supabase
     .from('jobs')
@@ -173,7 +173,7 @@ export async function updateJobStatus(
 
   if (error) {
     console.error('[jobs/update-status]', error)
-    return { success: false, error: 'Erro ao atualizar status.' }
+    return { success: false, message: 'Erro ao atualizar status.' }
   }
 
   revalidatePath('/jobs')
@@ -190,7 +190,7 @@ export async function deleteJob(id: string): Promise<JobActionResult> {
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('jobs')
@@ -200,7 +200,7 @@ export async function deleteJob(id: string): Promise<JobActionResult> {
 
   if (error) {
     console.error('[jobs/delete]', error)
-    return { success: false, error: 'Erro ao excluir job.' }
+    return { success: false, message: 'Erro ao excluir job.' }
   }
 
   revalidatePath('/jobs')
@@ -224,13 +224,13 @@ export async function addPayment(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   if (!fields.amount || fields.amount <= 0)
-    return { success: false, error: 'Valor deve ser maior que zero.' }
+    return { success: false, message: 'Valor deve ser maior que zero.' }
 
   if (!fields.received_at)
-    return { success: false, error: 'Data de recebimento é obrigatória.' }
+    return { success: false, message: 'Data de recebimento é obrigatória.' }
 
   // Busca moeda do job caso não seja informada
   let currency = fields.currency
@@ -258,7 +258,7 @@ export async function addPayment(
 
   if (paymentErr) {
     console.error('[jobs/add-payment]', paymentErr)
-    return { success: false, error: 'Erro ao registrar pagamento.' }
+    return { success: false, message: 'Erro ao registrar pagamento.' }
   }
 
   // Busca job atualizado (amount_paid recalculado pelo trigger)
@@ -286,7 +286,7 @@ export async function deletePayment(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('job_payments')
@@ -295,7 +295,7 @@ export async function deletePayment(
 
   if (error) {
     console.error('[jobs/delete-payment]', error)
-    return { success: false, error: 'Erro ao remover pagamento.' }
+    return { success: false, message: 'Erro ao remover pagamento.' }
   }
 
   // Busca job atualizado (amount_paid recalculado pelo trigger)
@@ -316,7 +316,7 @@ export async function deletePayment(
 export async function bulkDeleteJobs(
   ids: string[]
 ): Promise<{ success: boolean; error?: string }> {
-  if (!ids.length) return { success: false, error: 'Nenhum job selecionado.' }
+  if (!ids.length) return { success: false, message: 'Nenhum job selecionado.' }
 
   const supabase = await createClient()
   const {
@@ -324,7 +324,7 @@ export async function bulkDeleteJobs(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('jobs')
@@ -334,7 +334,7 @@ export async function bulkDeleteJobs(
 
   if (error) {
     console.error('[jobs/bulk-delete]', error)
-    return { success: false, error: 'Erro ao excluir jobs.' }
+    return { success: false, message: 'Erro ao excluir jobs.' }
   }
 
   revalidatePath('/jobs')
@@ -350,7 +350,7 @@ export async function getJobWithPayments(id: string): Promise<JobWithPaymentsRes
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data: job, error: jobErr } = await supabase
     .from('jobs')
@@ -359,7 +359,7 @@ export async function getJobWithPayments(id: string): Promise<JobWithPaymentsRes
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (jobErr || !job) return { success: false, error: 'Job não encontrado.' }
+  if (jobErr || !job) return { success: false, message: 'Job não encontrado.' }
 
   const { data: payments } = await supabase
     .from('job_payments')

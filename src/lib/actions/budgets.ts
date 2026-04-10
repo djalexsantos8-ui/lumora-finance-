@@ -48,7 +48,7 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
 
 // ─── CREATE — cria rascunho e redireciona para o editor ───────────────────────
 
-export async function createBudget(): Promise<never> {
+export async function createBudget(): Promise<{ success: false; message: string }> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -75,7 +75,7 @@ export async function createBudget(): Promise<never> {
 
   if (error || !data) {
     console.error('[budgets/create]', error)
-    redirect('/budgets')
+    return { success: false, message: 'Erro ao criar orçamento. Tente novamente.' }
   }
 
   revalidatePath('/budgets')
@@ -103,7 +103,7 @@ export async function updateBudgetInfo(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const payload: Record<string, unknown> = {}
 
@@ -134,7 +134,7 @@ export async function updateBudgetInfo(
 
   if (error) {
     console.error('[budgets/update-info]', error)
-    return { success: false, error: 'Erro ao salvar orçamento.' }
+    return { success: false, message: 'Erro ao salvar orçamento.' }
   }
 
   revalidatePath('/budgets')
@@ -155,7 +155,7 @@ export async function updateBudgetMargin(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { data: current } = await supabase
     .from('budgets')
@@ -163,7 +163,7 @@ export async function updateBudgetMargin(
     .eq('id', id)
     .single()
 
-  if (!current) return { success: false, error: 'Orçamento não encontrado.' }
+  if (!current) return { success: false, message: 'Orçamento não encontrado.' }
 
   const subtotal = Number(current.subtotal)
   const marginAmount =
@@ -187,7 +187,7 @@ export async function updateBudgetMargin(
 
   if (error) {
     console.error('[budgets/update-margin]', error)
-    return { success: false, error: 'Erro ao atualizar margem.' }
+    return { success: false, message: 'Erro ao atualizar margem.' }
   }
 
   return { success: true, data }
@@ -205,7 +205,7 @@ export async function updateBudgetStatus(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const timestamps: Record<string, string> = {}
   if (status === 'sent')     timestamps.sent_at     = new Date().toISOString()
@@ -221,7 +221,7 @@ export async function updateBudgetStatus(
 
   if (error) {
     console.error('[budgets/update-status]', error)
-    return { success: false, error: 'Erro ao atualizar status.' }
+    return { success: false, message: 'Erro ao atualizar status.' }
   }
 
   revalidatePath('/budgets')
@@ -238,7 +238,7 @@ export async function deleteBudget(id: string): Promise<BudgetActionResult> {
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('budgets')
@@ -248,7 +248,7 @@ export async function deleteBudget(id: string): Promise<BudgetActionResult> {
 
   if (error) {
     console.error('[budgets/delete]', error)
-    return { success: false, error: 'Erro ao excluir orçamento.' }
+    return { success: false, message: 'Erro ao excluir orçamento.' }
   }
 
   revalidatePath('/budgets')

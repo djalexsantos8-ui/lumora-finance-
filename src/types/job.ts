@@ -278,16 +278,16 @@ export function buildPaymentReminders(jobs: Job[], todayISO?: string): PaymentRe
 // ─── Tipos de retorno das Server Actions ──────────────────────────────────────
 export type JobActionResult =
   | { success: true;  data?: Job }
-  | { success: false; error: string }
+  | { success: false; message: string }
 
 export type JobPaymentActionResult =
   | { success: true;  data?: JobPayment; job?: Job }
-  | { success: false; error: string }
+  | { success: false; message: string }
 
 export type JobWithPaymentsResult =
   | { success: true;  data: JobWithItems }
-  | { success: false; error: string }
+  | { success: false; message: string }
 
 export type JobItemActionResult =
   | { success: true;  data?: JobRevenueItem | JobCostItem; job?: Job }
-  | { success: false; error: string }
+  | { success: false; message: string }

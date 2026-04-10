@@ -54,20 +54,20 @@ export async function createExpense(fields: {
 }): Promise<ExpenseActionResult & { installments?: Expense[] }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
-  if (!fields.description.trim()) return { success: false, error: 'Descrição obrigatória.' }
-  if (fields.amount <= 0)          return { success: false, error: 'Valor deve ser maior que zero.' }
-  if (!fields.expense_date)        return { success: false, error: 'Data obrigatória.' }
+  if (!fields.description.trim()) return { success: false, message: 'Descrição obrigatória.' }
+  if (fields.amount <= 0)          return { success: false, message: 'Valor deve ser maior que zero.' }
+  if (!fields.expense_date)        return { success: false, message: 'Data obrigatória.' }
 
   const isInstallment = fields.is_installment === true
   const n = fields.installments_total ?? 1
 
   if (isInstallment && (!Number.isInteger(n) || n < 2 || n > 60))
-    return { success: false, error: 'Número de parcelas deve ser entre 2 e 60.' }
+    return { success: false, message: 'Número de parcelas deve ser entre 2 e 60.' }
 
   const currency    = fields.currency ?? 'BRL'
   const notes       = fields.notes?.trim() || null
@@ -117,7 +117,7 @@ export async function createExpense(fields: {
 
     if (error) {
       console.error('[expenses/create] supabase error:', JSON.stringify(error))
-      return { success: false, error: translateSupabaseError(error) }
+      return { success: false, message: translateSupabaseError(error) }
     }
 
     revalidatePath('/expenses')
@@ -176,7 +176,7 @@ export async function createExpense(fields: {
 
   if (insertErr || !inserted) {
     console.error('[expenses/create-installments] supabase error:', JSON.stringify(insertErr))
-    return { success: false, error: translateSupabaseError(insertErr) }
+    return { success: false, message: translateSupabaseError(insertErr) }
   }
 
   revalidatePath('/expenses')
@@ -196,10 +196,10 @@ export async function markExpensePaid(
 ): Promise<ExpenseActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   // Busca o amount original para usar como fallback
   const { data: original, error: fetchErr } = await supabase
@@ -210,10 +210,10 @@ export async function markExpensePaid(
     .single()
 
   if (fetchErr || !original)
-    return { success: false, error: 'Despesa não encontrada.' }
+    return { success: false, message: 'Despesa não encontrada.' }
 
   if (original.workspace_id !== workspaceId)
-    return { success: false, error: 'Não autorizado.' }
+    return { success: false, message: 'Não autorizado.' }
 
   const finalAmount = (paidAmount !== undefined && paidAmount > 0)
     ? Math.round(paidAmount * 100) / 100
@@ -233,7 +233,7 @@ export async function markExpensePaid(
 
   if (error) {
     console.error('[expenses/mark-paid]', JSON.stringify(error))
-    return { success: false, error: translateSupabaseError(error) }
+    return { success: false, message: translateSupabaseError(error) }
   }
 
   revalidatePath('/expenses')
@@ -260,10 +260,10 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
 }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   const { data: ref, error: refErr } = await supabase
     .from('expenses')
@@ -272,8 +272,8 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
     .is('deleted_at', null)
     .single()
 
-  if (refErr || !ref)                    return { success: false, error: 'Despesa não encontrada.' }
-  if (ref.workspace_id !== workspaceId)  return { success: false, error: 'Não autorizado.' }
+  if (refErr || !ref)                    return { success: false, message: 'Despesa não encontrada.' }
+  if (ref.workspace_id !== workspaceId)  return { success: false, message: 'Não autorizado.' }
 
   const parentId = ref.parent_expense_id ?? ref.id
 
@@ -285,8 +285,8 @@ export async function getInstallmentsRemaining(expenseId: string): Promise<{
     .is('deleted_at', null)
     .order('installment_index', { ascending: true })
 
-  if (fetchErr)                          return { success: false, error: translateSupabaseError(fetchErr) }
-  if (!unpaid || unpaid.length === 0)    return { success: false, error: 'Nenhuma parcela em aberto.' }
+  if (fetchErr)                          return { success: false, message: translateSupabaseError(fetchErr) }
+  if (!unpaid || unpaid.length === 0)    return { success: false, message: 'Nenhuma parcela em aberto.' }
 
   const total = Math.round(
     unpaid.reduce((s, e) => s + Number(e.amount_brl ?? e.amount), 0) * 100
@@ -316,14 +316,14 @@ export async function settleSelectedInstallments(
   ids:        string[],
   paidTotal?: number
 ): Promise<{ success: boolean; count?: number; error?: string }> {
-  if (!ids || ids.length === 0) return { success: false, error: 'Nenhuma parcela selecionada.' }
+  if (!ids || ids.length === 0) return { success: false, message: 'Nenhuma parcela selecionada.' }
 
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   // Busca as parcelas selecionadas e valida workspace
   const { data: selected, error: fetchErr } = await supabase
@@ -334,10 +334,10 @@ export async function settleSelectedInstallments(
     .is('deleted_at', null)
     .order('installment_index', { ascending: true })
 
-  if (fetchErr)                              return { success: false, error: translateSupabaseError(fetchErr) }
-  if (!selected || selected.length === 0)   return { success: false, error: 'Nenhuma parcela em aberto encontrada.' }
+  if (fetchErr)                              return { success: false, message: translateSupabaseError(fetchErr) }
+  if (!selected || selected.length === 0)   return { success: false, message: 'Nenhuma parcela em aberto encontrada.' }
   if (selected.some(e => e.workspace_id !== workspaceId))
-                                             return { success: false, error: 'Não autorizado.' }
+                                             return { success: false, message: 'Não autorizado.' }
 
   const n             = selected.length
   const totalOriginal = selected.reduce((s, e) => s + Number(e.amount), 0)
@@ -368,7 +368,7 @@ export async function settleSelectedInstallments(
   )
 
   const firstError = results.find(r => r.error)
-  if (firstError?.error) return { success: false, error: translateSupabaseError(firstError.error) }
+  if (firstError?.error) return { success: false, message: translateSupabaseError(firstError.error) }
 
   revalidatePath('/expenses')
   return { success: true, count: selected.length }
@@ -384,10 +384,10 @@ export async function settleInstallments(
 ): Promise<{ success: boolean; count?: number; error?: string }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) return { success: false, error: 'Workspace não encontrado.' }
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
 
   // Valida que o parentId pertence ao workspace
   const { data: parentExp } = await supabase
@@ -398,7 +398,7 @@ export async function settleInstallments(
     .maybeSingle()
 
   if (!parentExp || parentExp.workspace_id !== workspaceId)
-    return { success: false, error: 'Não autorizado.' }
+    return { success: false, message: 'Não autorizado.' }
 
   // Busca todas as parcelas em aberto, ordenadas por índice
   const { data: unpaid, error: fetchErr } = await supabase
@@ -409,8 +409,8 @@ export async function settleInstallments(
     .is('deleted_at', null)
     .order('installment_index', { ascending: true })
 
-  if (fetchErr)                        return { success: false, error: translateSupabaseError(fetchErr) }
-  if (!unpaid || unpaid.length === 0)  return { success: false, error: 'Nenhuma parcela em aberto.' }
+  if (fetchErr)                        return { success: false, message: translateSupabaseError(fetchErr) }
+  if (!unpaid || unpaid.length === 0)  return { success: false, message: 'Nenhuma parcela em aberto.' }
 
   const n             = unpaid.length
   const totalOriginal = unpaid.reduce((s, e) => s + Number(e.amount), 0)
@@ -442,7 +442,7 @@ export async function settleInstallments(
   )
 
   const firstError = results.find(r => r.error)
-  if (firstError?.error) return { success: false, error: translateSupabaseError(firstError.error) }
+  if (firstError?.error) return { success: false, message: translateSupabaseError(firstError.error) }
 
   revalidatePath('/expenses')
   return { success: true, count: n }
@@ -453,7 +453,7 @@ export async function settleInstallments(
 export async function deleteExpense(id: string): Promise<ExpenseActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('expenses')
@@ -463,7 +463,7 @@ export async function deleteExpense(id: string): Promise<ExpenseActionResult> {
 
   if (error) {
     console.error('[expenses/delete]', JSON.stringify(error))
-    return { success: false, error: translateSupabaseError(error) }
+    return { success: false, message: translateSupabaseError(error) }
   }
 
   revalidatePath('/expenses')

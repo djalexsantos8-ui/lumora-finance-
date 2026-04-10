@@ -13,4 +13,4 @@ export interface WorkspaceSettings {
 
 export type SettingsActionResult =
   | { success: true; data: WorkspaceSettings }
-  | { success: false; error: string }
+  | { success: false; message: string }

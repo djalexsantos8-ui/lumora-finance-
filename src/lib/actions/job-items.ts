@@ -31,10 +31,10 @@ export async function addRevenueItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const description = String(fields.description).trim()
-  if (!description) return { success: false, error: 'Descrição obrigatória.' }
+  if (!description) return { success: false, message: 'Descrição obrigatória.' }
 
   const quantity   = Math.max(0.01, parseDecimal(fields.quantity))
   const unit_value = parseDecimal(fields.unit_value)
@@ -55,7 +55,7 @@ export async function addRevenueItem(
 
   if (error) {
     console.error('[job-items/add-revenue]', error)
-    return { success: false, error: 'Erro ao adicionar item.' }
+    return { success: false, message: 'Erro ao adicionar item.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
@@ -70,13 +70,13 @@ export async function updateRevenueItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const payload: Record<string, unknown> = {}
 
   if (fields.description !== undefined) {
     const d = String(fields.description).trim()
-    if (!d) return { success: false, error: 'Descrição obrigatória.' }
+    if (!d) return { success: false, message: 'Descrição obrigatória.' }
     payload.description = d
   }
 
@@ -104,7 +104,7 @@ export async function updateRevenueItem(
 
   if (error) {
     console.error('[job-items/update-revenue]', error)
-    return { success: false, error: 'Erro ao atualizar item.' }
+    return { success: false, message: 'Erro ao atualizar item.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
@@ -118,7 +118,7 @@ export async function deleteRevenueItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('job_revenue_items')
@@ -128,7 +128,7 @@ export async function deleteRevenueItem(
 
   if (error) {
     console.error('[job-items/delete-revenue]', error)
-    return { success: false, error: 'Erro ao remover item.' }
+    return { success: false, message: 'Erro ao remover item.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
@@ -149,10 +149,10 @@ export async function addCostItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const description = String(fields.description).trim()
-  if (!description) return { success: false, error: 'Descrição obrigatória.' }
+  if (!description) return { success: false, message: 'Descrição obrigatória.' }
 
   const quantity    = Math.max(0.01, parseDecimal(fields.quantity))
   const unit_value  = parseDecimal(fields.unit_value)
@@ -180,7 +180,7 @@ export async function addCostItem(
 
   if (error) {
     console.error('[job-items/add-cost]', error)
-    return { success: false, error: 'Erro ao adicionar custo.' }
+    return { success: false, message: 'Erro ao adicionar custo.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
@@ -200,13 +200,13 @@ export async function updateCostItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const payload: Record<string, unknown> = {}
 
   if (fields.description !== undefined) {
     const d = String(fields.description).trim()
-    if (!d) return { success: false, error: 'Descrição obrigatória.' }
+    if (!d) return { success: false, message: 'Descrição obrigatória.' }
     payload.description = d
   }
   if (fields.category !== undefined) payload.category = fields.category
@@ -234,7 +234,7 @@ export async function updateCostItem(
 
   if (error) {
     console.error('[job-items/update-cost]', error)
-    return { success: false, error: 'Erro ao atualizar custo.' }
+    return { success: false, message: 'Erro ao atualizar custo.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
@@ -248,7 +248,7 @@ export async function deleteCostItem(
 ): Promise<JobItemActionResult> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('job_cost_items')
@@ -258,7 +258,7 @@ export async function deleteCostItem(
 
   if (error) {
     console.error('[job-items/delete-cost]', error)
-    return { success: false, error: 'Erro ao remover custo.' }
+    return { success: false, message: 'Erro ao remover custo.' }
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)

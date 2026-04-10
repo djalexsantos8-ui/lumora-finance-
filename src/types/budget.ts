@@ -54,8 +54,8 @@ export interface BudgetItem {
 
 export type BudgetActionResult =
   | { success: true; data?: Budget }
-  | { success: false; error: string }
+  | { success: false; message: string }
 
 export type BudgetItemActionResult =
   | { success: true; data?: BudgetItem; budget?: Budget }
-  | { success: false; error: string }
+  | { success: false; message: string }

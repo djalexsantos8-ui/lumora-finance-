@@ -67,7 +67,7 @@ export async function createBudgetItem(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const label        = (formData.get('label') as string)?.trim() ?? ''
   const category     = (formData.get('category') as string) || null
@@ -78,7 +78,7 @@ export async function createBudgetItem(
   const unitValue    = parseDecimal((formData.get('unit_value') as string) || '0')
   const showInPdf    = formData.get('show_in_pdf') === 'true'
 
-  if (!label) return { success: false, error: 'Descrição do item é obrigatória.' }
+  if (!label) return { success: false, message: 'Descrição do item é obrigatória.' }
 
   const totalValue = Math.round(quantity * days * unitValue * 100) / 100
 
@@ -110,7 +110,7 @@ export async function createBudgetItem(
 
   if (error) {
     console.error('[budget-items/create]', error)
-    return { success: false, error: 'Erro ao adicionar item.' }
+    return { success: false, message: 'Erro ao adicionar item.' }
   }
 
   const updatedBudget = await recalculateAndReturn(supabase, budgetId)
@@ -132,7 +132,7 @@ export async function updateBudgetItem(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const label        = (formData.get('label') as string)?.trim() ?? ''
   const category     = (formData.get('category') as string) || null
@@ -143,7 +143,7 @@ export async function updateBudgetItem(
   const unitValue    = parseDecimal((formData.get('unit_value') as string) || '0')
   const showInPdf    = formData.get('show_in_pdf') === 'true'
 
-  if (!label) return { success: false, error: 'Descrição do item é obrigatória.' }
+  if (!label) return { success: false, message: 'Descrição do item é obrigatória.' }
 
   const totalValue = Math.round(quantity * days * unitValue * 100) / 100
 
@@ -167,7 +167,7 @@ export async function updateBudgetItem(
 
   if (error) {
     console.error('[budget-items/update]', error)
-    return { success: false, error: 'Erro ao atualizar item.' }
+    return { success: false, message: 'Erro ao atualizar item.' }
   }
 
   const updatedBudget = await recalculateAndReturn(supabase, budgetId)
@@ -188,7 +188,7 @@ export async function deleteBudgetItem(
     error: authErr,
   } = await supabase.auth.getUser()
 
-  if (authErr || !user) return { success: false, error: 'Não autorizado.' }
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
   const { error } = await supabase
     .from('budget_items')
@@ -198,7 +198,7 @@ export async function deleteBudgetItem(
 
   if (error) {
     console.error('[budget-items/delete]', error)
-    return { success: false, error: 'Erro ao remover item.' }
+    return { success: false, message: 'Erro ao remover item.' }
   }
 
   const updatedBudget = await recalculateAndReturn(supabase, budgetId)
