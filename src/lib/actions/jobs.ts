@@ -64,6 +64,64 @@ export async function createJob(): Promise<{ success: false; message: string }> 
   }
 }
 
+// ─── CREATE FROM FORM — cria job com dados mínimos e volta para a lista ───────
+//
+// Fluxo: /jobs/new → preenche título + data → clica "Salvar Job" → /jobs
+// Nunca insere um job vazio no banco.
+
+export async function createJobFromForm(
+  formData: FormData
+): Promise<{ success: false; message: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser()
+
+  if (authErr || !user) redirect('/login')
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) redirect('/dashboard')
+
+  const title      = (formData.get('title')       as string | null)?.trim() ?? ''
+  const jobDate    = (formData.get('job_date')    as string | null)?.trim() ?? ''
+  const clientName = (formData.get('client_name') as string | null)?.trim() ?? ''
+
+  if (!title)   return { success: false, message: 'Título é obrigatório.' }
+  if (!jobDate) return { success: false, message: 'Data é obrigatória.' }
+
+  try {
+    const { error } = await supabase
+      .from('jobs')
+      .insert({
+        workspace_id:      workspaceId,
+        created_by:        user.id,
+        title,
+        client_name:       clientName,
+        status:            'in_progress' as JobStatus,
+        job_type:          'freelance'   as JobType,
+        payment_condition: 'upfront'     as PaymentCondition,
+        currency:          'BRL',
+        total_value:       0,
+        job_date:          jobDate,
+        payment_due_date:  jobDate, // upfront = mesmo dia
+      })
+
+    if (error) {
+      console.error('[jobs/create-form]', error)
+      throw new AppError('JOB_CREATE_FAILED')
+    }
+
+    revalidatePath('/jobs')
+    redirect('/jobs')
+  } catch (err) {
+    if (err instanceof AppError) {
+      return { success: false, message: getErrorMessage(err.code) }
+    }
+    throw err
+  }
+}
+
 // ─── UPDATE INFO — campos editáveis do job ────────────────────────────────────
 
 export async function updateJob(
