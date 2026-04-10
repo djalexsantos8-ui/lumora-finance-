@@ -44,13 +44,22 @@ export default async function JobsPage() {
 
   const { from, to } = currentMonthRange()
 
+  // ─── Overlap query ───────────────────────────────────────────────────────────
+  // Single-day:  job_date BETWEEN from AND to
+  // Multi-day:   job_date_start <= to
+  //              AND (job_date_end IS NULL OR job_date_end >= from)
+  //
+  // NULL no job_date_end é tratado como "sem fim" — aparece no mês corrente
+  // enquanto o job_date_start estiver dentro do to bound.
   const { data: jobs } = await supabase
     .from('jobs')
     .select('*')
     .eq('workspace_id', member.workspace_id)
     .is('deleted_at', null)
-    .gte('job_date', from)
-    .lte('job_date', to)
+    .or(
+      `and(is_multi_day.eq.false,job_date.gte.${from},job_date.lte.${to}),` +
+      `and(is_multi_day.eq.true,job_date_start.lte.${to},or(job_date_end.is.null,job_date_end.gte.${from}))`
+    )
     .order('job_date', { ascending: false })
 
   const list = (jobs ?? []) as Job[]
