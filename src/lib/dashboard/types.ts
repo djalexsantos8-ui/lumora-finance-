@@ -9,6 +9,7 @@
 // Se um agregador novo precisar de mais campo, adicionar aqui e no adapter.
 
 import type { Job, JobPayment } from '@/types/job'
+import type { Expense as LegacyExpense, FixedCost as LegacyFixedCost } from '@/types/expense'
 
 // ─── Freelance ────────────────────────────────────────────────────────────────
 
@@ -84,4 +85,50 @@ export function freelanceAmountDue(
   f: Pick<Freelance, 'revenue_total' | 'cost_total' | 'total_value' | 'amount_paid'>
 ): number {
   return Math.max(0, freelanceTotal(f) - f.amount_paid)
+}
+
+// ─── Despesas (slice mínima p/ agregadores) ───────────────────────────────────
+//
+// `amount_brl` já resolvido pelo adapter: se null no banco (freelance single-
+// moeda), cai em `amount`. Isso permite que os agregadores somem sem se
+// preocupar com câmbio.
+
+export interface DashExpense {
+  amount_brl:    number       // sempre em BRL (resolvido no adapter)
+  expense_date:  string       // YYYY-MM-DD
+  is_installment: boolean
+  is_paid:       boolean
+}
+
+export interface DashFixedCost {
+  amount_brl:    number       // sempre em BRL (resolvido no adapter)
+  is_active:     boolean
+  is_recurring:  boolean
+  is_installment: boolean
+  is_paid:       boolean
+}
+
+export function toDashExpense(e: Pick<
+  LegacyExpense,
+  'amount' | 'amount_brl' | 'expense_date' | 'is_installment' | 'is_paid'
+>): DashExpense {
+  return {
+    amount_brl:     Number(e.amount_brl ?? e.amount) || 0,
+    expense_date:   e.expense_date,
+    is_installment: e.is_installment,
+    is_paid:        e.is_paid,
+  }
+}
+
+export function toDashFixedCost(f: Pick<
+  LegacyFixedCost,
+  'amount' | 'amount_brl' | 'is_active' | 'is_recurring' | 'is_installment' | 'is_paid'
+>): DashFixedCost {
+  return {
+    amount_brl:     Number(f.amount_brl ?? f.amount) || 0,
+    is_active:      f.is_active,
+    is_recurring:   f.is_recurring,
+    is_installment: f.is_installment,
+    is_paid:        f.is_paid,
+  }
 }
