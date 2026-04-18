@@ -182,6 +182,40 @@ export function getAmountDue(
 // Distinto de PaymentStatus (unpaid/partial/paid), que descreve o estado do
 // pagamento em si. PaymentReminderStatus foca na urgência de cobrança.
 //
+// ─── isJobPending — jobs que exigem ação na listagem de notificações ──────────
+//
+// Um job é "pendente de ação" quando:
+//   1. Status ainda é in_progress (não foi entregue, pago ou cancelado)
+//   2. A data do job já chegou (passou ou é hoje) — jobs futuros não aparecem
+//
+// Multi-day: usa job_date_start como referência — se já iniciou, exige ação.
+// Não usa job_date_end: mesmo terminado, enquanto status = in_progress há ação a tomar.
+// Timezone: comparação YYYY-MM-DD (string) no fuso local, sem bug de UTC.
+
+/**
+ * Retorna true se o job exige ação nas notificações.
+ *
+ * Critérios:
+ * - status `in_progress` (delivered/paid/cancelled = ação já tomada)
+ * - data válida informada
+ * - data já chegou (job_date <= hoje para single, job_date_start <= hoje para multi-day)
+ *
+ * @param today  Data de hoje como YYYY-MM-DD no fuso local (use todayISO()).
+ */
+export function isJobPending(
+  job: Pick<Job, 'status' | 'is_multi_day' | 'job_date' | 'job_date_start'>,
+  today: string
+): boolean {
+  if (job.status !== 'in_progress') return false
+
+  if (!job.is_multi_day) {
+    return !!job.job_date && job.job_date <= today
+  }
+
+  // Multi-day: pendente se já iniciou — inclui em andamento e os que já terminaram
+  return !!job.job_date_start && job.job_date_start <= today
+}
+
 // ok        → sem valor pendente, ou job cancelado/pago
 // pending   → tem valor a receber mas sem data de vencimento, ou ainda no prazo
 // due_today → vence hoje

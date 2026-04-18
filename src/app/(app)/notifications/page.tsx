@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect }      from 'next/navigation'
-import { buildPaymentReminders } from '@/types/job'
-import { formatCurrency }        from '@/lib/utils/format'
-import type { Job }      from '@/types/job'
+import { buildPaymentReminders, isJobPending } from '@/types/job'
+import { formatCurrency, formatJobDateRange }  from '@/lib/utils/format'
+import type { Job }       from '@/types/job'
 import type { FixedCost } from '@/types/expense'
 import { FIXED_COST_CATEGORY_LABELS } from '@/types/expense'
 
@@ -67,6 +67,47 @@ function formatDay(day: number): string {
   return `dia ${day}`
 }
 
+// ─── Helpers para jobs pendentes ──────────────────────────────────────────────
+
+/**
+ * Quantos dias desde que o job deveria ter sido atualizado.
+ * Retorna 0 se o job está acontecendo hoje (single) ou ainda em andamento (multi).
+ */
+function pendingJobDelta(job: Job, today: string): number {
+  const [ty, tm, td] = today.split('-').map(Number)
+  const todayMs = new Date(ty, tm - 1, td).getTime()
+
+  if (!job.is_multi_day) {
+    if (!job.job_date) return 0
+    const [jy, jm, jd] = job.job_date.split('-').map(Number)
+    return Math.round((todayMs - new Date(jy, jm - 1, jd).getTime()) / 86_400_000)
+  }
+
+  // Multi-day ainda em andamento (sem fim ou fim >= hoje) → 0 = "hoje"
+  if (!job.job_date_end || job.job_date_end >= today) return 0
+
+  const [ey, em, ed] = job.job_date_end.split('-').map(Number)
+  return Math.round((todayMs - new Date(ey, em - 1, ed).getTime()) / 86_400_000)
+}
+
+function pendingBadge(delta: number, isMultiDay: boolean): { label: string; color: 'amber' | 'red' } {
+  if (delta === 0) return { label: isMultiDay ? 'em andamento' : 'hoje', color: 'amber' }
+  if (delta === 1) return { label: '1d de atraso', color: 'red' }
+  return { label: `${delta}d de atraso`, color: 'red' }
+}
+
+/** Ordena: hoje/em-andamento (delta=0) primeiro, depois mais atrasado (maior delta) primeiro. */
+function sortPendingJobs(jobs: Job[], today: string): Job[] {
+  return [...jobs].sort((a, b) => {
+    const da = pendingJobDelta(a, today)
+    const db = pendingJobDelta(b, today)
+    if (da === 0 && db === 0) return 0
+    if (da === 0) return -1
+    if (db === 0) return  1
+    return db - da  // maior delta (mais atrasado) primeiro
+  })
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function NotificationsPage() {
@@ -85,8 +126,10 @@ export default async function NotificationsPage() {
   const workspaceId = member?.workspace_id
   if (!workspaceId) redirect('/dashboard')
 
+  const today = new Date().toLocaleDateString('en-CA')
+
   // ── Fetch data ──────────────────────────────────────────────────────────────
-  const [{ data: costsRaw }, { data: jobsRaw }] = await Promise.all([
+  const [{ data: costsRaw }, { data: jobsRaw }, { data: pendingRaw }] = await Promise.all([
     supabase
       .from('fixed_costs')
       .select('*')
@@ -94,29 +137,45 @@ export default async function NotificationsPage() {
       .is('deleted_at', null)
       .eq('is_active', true)
       .eq('is_recurring', true),
+    // Payment reminders: todos os jobs não-cancelados (inclui futuros — filtrado por due_date)
     supabase
       .from('jobs')
       .select('*')
       .eq('workspace_id', workspaceId)
       .is('deleted_at', null)
       .not('status', 'eq', 'cancelled'),
+    // Pending action: somente in_progress com data já chegada
+    supabase
+      .from('jobs')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .is('deleted_at', null)
+      .eq('status', 'in_progress')
+      .or(
+        `and(is_multi_day.eq.false,job_date.lte.${today}),` +
+        `and(is_multi_day.eq.true,job_date_start.lte.${today})`
+      ),
   ])
-
-  const today = new Date().toLocaleDateString('en-CA')
 
   const fixedAlerts  = buildFixedCostAlerts((costsRaw ?? []) as FixedCost[])
   const jobReminders = buildPaymentReminders((jobsRaw ?? []) as Job[], today)
+
+  // isJobPending como segunda camada de segurança (lida com NULLs e edge cases)
+  const pendingJobs  = sortPendingJobs(
+    ((pendingRaw ?? []) as Job[]).filter(j => isJobPending(j, today)),
+    today
+  )
 
   const overdueFixed   = fixedAlerts.filter(a => a.daysUntilDue < 0)
   const todayFixed     = fixedAlerts.filter(a => a.daysUntilDue === 0)
   const upcomingFixed  = fixedAlerts.filter(a => a.daysUntilDue > 0)
 
-  const overdueJobs    = jobReminders.filter(r => r.status === 'overdue')
-  const dueTodayJobs   = jobReminders.filter(r => r.status === 'due_today')
-  const pendingJobs    = jobReminders.filter(r => r.status === 'pending')
+  const overdueJobs        = jobReminders.filter(r => r.status === 'overdue')
+  const dueTodayJobs       = jobReminders.filter(r => r.status === 'due_today')
+  const pendingPaymentJobs = jobReminders.filter(r => r.status === 'pending')
 
   const urgentCount    = overdueFixed.length + todayFixed.length + overdueJobs.length + dueTodayJobs.length
-  const totalCount     = fixedAlerts.length + jobReminders.length
+  const totalCount     = fixedAlerts.length + jobReminders.length + pendingJobs.length
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] p-6 max-w-3xl mx-auto">
@@ -205,9 +264,9 @@ export default async function NotificationsPage() {
           )}
 
           {/* ── Jobs com pagamento pendente ───────────────────────────────────── */}
-          {pendingJobs.length > 0 && (
+          {pendingPaymentJobs.length > 0 && (
             <Section label="PAGAMENTOS PENDENTES" dot="gray">
-              {pendingJobs.map(r => (
+              {pendingPaymentJobs.map(r => (
                 <AlertRow key={r.job_id}
                   title={r.job_title}
                   sub={`Jobs · ${r.client_name} · vence ${r.due_date.split('-').reverse().join('/')}`}
@@ -217,6 +276,30 @@ export default async function NotificationsPage() {
                   href="/jobs"
                 />
               ))}
+            </Section>
+          )}
+
+          {/* ── Jobs pendentes de ação ────────────────────────────────────────── */}
+          {pendingJobs.length > 0 && (
+            <Section label="JOBS PENDENTES" dot="gray">
+              {pendingJobs.map(job => {
+                const delta = pendingJobDelta(job, today)
+                const { label, color } = pendingBadge(delta, job.is_multi_day)
+                const totalValue = Number(job.revenue_total) || Number(job.total_value)
+                return (
+                  <AlertRow key={job.id}
+                    title={job.title || 'Job sem título'}
+                    sub={[
+                      job.client_name || 'Cliente não informado',
+                      formatJobDateRange(job),
+                    ].filter(Boolean).join(' · ')}
+                    amount={totalValue > 0 ? formatCurrency(totalValue, job.currency) : '—'}
+                    badge={label}
+                    badgeColor={color}
+                    href={`/jobs/${job.id}`}
+                  />
+                )
+              })}
             </Section>
           )}
         </div>
