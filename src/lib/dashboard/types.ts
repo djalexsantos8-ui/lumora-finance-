@@ -94,26 +94,33 @@ export function freelanceAmountDue(
 // preocupar com câmbio.
 
 export interface DashExpense {
-  amount_brl:    number       // sempre em BRL (resolvido no adapter)
-  expense_date:  string       // YYYY-MM-DD
+  amount_brl:     number       // sempre em BRL (resolvido no adapter)
+  description:    string
+  category:       string       // mantido como string — categorias livres na UI
+  expense_date:   string       // YYYY-MM-DD
   is_installment: boolean
-  is_paid:       boolean
+  is_paid:        boolean
 }
 
 export interface DashFixedCost {
-  amount_brl:    number       // sempre em BRL (resolvido no adapter)
-  is_active:     boolean
-  is_recurring:  boolean
+  amount_brl:     number       // sempre em BRL (resolvido no adapter)
+  description:    string
+  category:       string
+  start_date:     string | null  // YYYY-MM-DD — data-base da parcela (só is_installment)
+  is_active:      boolean
+  is_recurring:   boolean
   is_installment: boolean
-  is_paid:       boolean
+  is_paid:        boolean
 }
 
 export function toDashExpense(e: Pick<
   LegacyExpense,
-  'amount' | 'amount_brl' | 'expense_date' | 'is_installment' | 'is_paid'
+  'amount' | 'amount_brl' | 'description' | 'category' | 'expense_date' | 'is_installment' | 'is_paid'
 >): DashExpense {
   return {
     amount_brl:     Number(e.amount_brl ?? e.amount) || 0,
+    description:    e.description,
+    category:       e.category,
     expense_date:   e.expense_date,
     is_installment: e.is_installment,
     is_paid:        e.is_paid,
@@ -122,10 +129,13 @@ export function toDashExpense(e: Pick<
 
 export function toDashFixedCost(f: Pick<
   LegacyFixedCost,
-  'amount' | 'amount_brl' | 'is_active' | 'is_recurring' | 'is_installment' | 'is_paid'
+  'amount' | 'amount_brl' | 'description' | 'category' | 'start_date' | 'is_active' | 'is_recurring' | 'is_installment' | 'is_paid'
 >): DashFixedCost {
   return {
     amount_brl:     Number(f.amount_brl ?? f.amount) || 0,
+    description:    f.description,
+    category:       f.category,
+    start_date:     f.start_date,
     is_active:      f.is_active,
     is_recurring:   f.is_recurring,
     is_installment: f.is_installment,
