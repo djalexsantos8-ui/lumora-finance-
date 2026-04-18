@@ -23,6 +23,11 @@ export interface Freelance {
   amount_paid:       number
   payment_due_date:  string | null       // YYYY-MM-DD
   currency:          string
+  /**
+   * Data do freelance no calendário (quando o trabalho aconteceu/acontece).
+   * Para multi-day, usa job_date_start. Unifica os dois modelos num único campo.
+   */
+  occurred_at:       string | null       // YYYY-MM-DD
 }
 
 export interface FreelancePayment {
@@ -41,6 +46,7 @@ export function toFreelance(job: Pick<
   Job,
   'id' | 'client_name' | 'status' | 'revenue_total' | 'cost_total'
   | 'total_value' | 'amount_paid' | 'payment_due_date' | 'currency'
+  | 'is_multi_day' | 'job_date' | 'job_date_start'
 >): Freelance {
   return {
     id:               job.id,
@@ -52,6 +58,7 @@ export function toFreelance(job: Pick<
     amount_paid:      Number(job.amount_paid)   || 0,
     payment_due_date: job.payment_due_date,
     currency:         job.currency,
+    occurred_at:      job.is_multi_day ? job.job_date_start : job.job_date,
   }
 }
 
