@@ -22,6 +22,44 @@ export function formatDateShort(iso: string | null | undefined): string {
   return `${d}/${months[parseInt(m, 10) - 1]}`
 }
 
+const MONTHS_LOWER = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+
+/** Formata ISO YYYY-MM-DD → "10 abr" (minúsculo, sem barra). Retorna '' para nulos. */
+function shortDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const [, m, d] = iso.split('-')
+  return `${parseInt(d, 10)} ${MONTHS_LOWER[parseInt(m, 10) - 1]}`
+}
+
+/**
+ * Formata a data de exibição de um job nos cards da listagem.
+ *
+ * - Job simples (is_multi_day = false): "10 abr"
+ * - Job multi-day com fim:              "10 abr → 15 abr"
+ * - Job multi-day sem fim (aberto):     "desde 10 abr"
+ * - Sem data: ""
+ */
+export function formatJobDateRange(job: {
+  is_multi_day:   boolean
+  job_date:       string | null
+  job_date_start: string | null
+  job_date_end:   string | null
+}): string {
+  if (!job.is_multi_day) {
+    return shortDate(job.job_date)
+  }
+
+  const start = shortDate(job.job_date_start)
+  if (!start) return ''
+
+  if (job.job_date_end) {
+    const end = shortDate(job.job_date_end)
+    return `${start} → ${end}`
+  }
+
+  return `desde ${start}`
+}
+
 // ─── Moeda ────────────────────────────────────────────────────────────────────
 
 // Formata valor monetário com moeda
