@@ -2,10 +2,12 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { formatCurrency } from '@/lib/utils/format'
+import { formatCurrency, formatJobDateRange } from '@/lib/utils/format'
 import { bulkDeleteJobs } from '@/lib/actions/jobs'
 import { getPaymentStatus, getAmountDue, getPaymentReminderStatus } from '@/types/job'
-import type { Job, JobStatus, PaymentReminderStatus } from '@/types/job'
+import type { Job, PaymentReminderStatus } from '@/types/job'
+import { getJobState } from '@/lib/domain/job-state'
+import type { JobStateResult } from '@/lib/domain/job-state'
 import { NewJobButton } from './new-job-button'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -222,7 +224,8 @@ function JobCard({ job, className = '', today }: { job: Job; className?: string;
     ? Math.min(100, Math.round((Number(job.amount_paid) / totalJob) * 100))
     : 0
 
-  const jobDateFormatted = formatJobDate(job.job_date)
+  const jobDateFormatted = formatJobDateRange(job)
+  const jobState         = getJobState(job, today)
 
   return (
     <Link
@@ -236,7 +239,7 @@ function JobCard({ job, className = '', today }: { job: Job; className?: string;
             <p className="text-sm font-semibold text-white truncate">
               {job.title || 'Job sem título'}
             </p>
-            <JobStatusBadge status={job.status} />
+            <JobStateBadge {...jobState} />
             {job.category && <CategoryBadge category={job.category} />}
             {reminderStatus === 'overdue'   && <PaymentReminderBadge status="overdue" />}
             {reminderStatus === 'due_today' && <PaymentReminderBadge status="due_today" />}
@@ -293,18 +296,18 @@ function JobCard({ job, className = '', today }: { job: Job; className?: string;
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
 
-const STATUS_MAP: Record<JobStatus, { label: string; cls: string }> = {
-  in_progress:     { label: 'Em andamento',    cls: 'bg-blue-500/10 text-blue-400'       },
-  delivered:       { label: 'Entregue',         cls: 'bg-purple-500/10 text-purple-400'   },
-  pending_payment: { label: 'Pagamento pend.', cls: 'bg-amber-500/10 text-amber-400'     },
-  paid:            { label: 'Pago',             cls: 'bg-emerald-500/10 text-emerald-400' },
-  cancelled:       { label: 'Cancelado',        cls: 'bg-[#262626] text-[#525252]'        },
+// Mapeamento de cor semântica → classe Tailwind
+// Centralizado aqui para que mudanças visuais não exijam tocar em job-state.ts
+const STATE_COLOR_CLS: Record<JobStateResult['color'], string> = {
+  gray:  'bg-[#1c1c1c] text-[#525252]',
+  blue:  'bg-blue-500/10 text-blue-400',
+  amber: 'bg-amber-500/10 text-amber-400',
+  green: 'bg-emerald-500/10 text-emerald-400',
 }
 
-function JobStatusBadge({ status }: { status: JobStatus }) {
-  const { label, cls } = STATUS_MAP[status] ?? STATUS_MAP.in_progress
+function JobStateBadge({ label, color }: JobStateResult) {
   return (
-    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${cls}`}>
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATE_COLOR_CLS[color]}`}>
       {label}
     </span>
   )
@@ -340,10 +343,3 @@ function CategoryBadge({ category }: { category: string }) {
   )
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatJobDate(iso: string): string {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
