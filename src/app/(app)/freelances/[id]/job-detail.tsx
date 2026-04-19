@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import { useState, useTransition, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { formatCurrency, formatDate, todayISO } from '@/lib/utils/format'
@@ -24,6 +24,8 @@ import { ComprovantesList } from '@/components/freelances/job-files-section'
 import { JobFileUploadModal } from '@/components/freelances/job-file-upload-modal'
 import { ClientField, type ClientRef } from '@/components/clients/client-field'
 import type { JobFile } from '@/types/job-file'
+import { useSaveTracker } from '@/hooks/use-save-tracker'
+import { SaveStatus } from '@/components/freelances/save-status'
 
 // ─── Taxonomias de freelance ──────────────────────────────────────────────────
 // Listas curadas com o vocabulário do produto. São sugestões (não enum rígido)
@@ -142,6 +144,11 @@ export default function JobDetail({
 }: Props) {
   const router = useRouter()
 
+  // Save tracker: contabiliza TODAS as persistências (autosave + manual).
+  // Consumido pelo SaveStatus no header. Cada action que mexe no banco deve
+  // ser envolvida em tracker.track(promise) para que o indicador funcione.
+  const tracker = useSaveTracker()
+
   const [job,          setJob]          = useState<Job>(initialJob)
   const [revenueItems, setRevenueItems] = useState<JobRevenueItem[]>(initialRevenueItems)
   const [costItems,    setCostItems]    = useState<JobCostItem[]>(initialCostItems)
@@ -220,9 +227,12 @@ export default function JobDetail({
 
   function applyStatus(newStatus: JobStatus) {
     startTransition(async () => {
-      const res = await updateJobStatus(job.id, newStatus)
+      const res = await tracker.track(updateJobStatus(job.id, newStatus))
       if (res.success && res.data) setJob(res.data)
-      else if (!res.success) showToast('error', res.message)
+      else if (!res.success) {
+        tracker.markError(res.message)
+        showToast('error', res.message)
+      }
     })
   }
 
@@ -320,9 +330,12 @@ export default function JobDetail({
     const payload: Parameters<typeof updateJob>[1] = {}
     if (field === 'title')              payload.title              = titleDraft
     if (field === 'payment_condition')  payload.payment_condition  = value as PaymentCondition
-    const res = await updateJob(job.id, payload)
+    const res = await tracker.track(updateJob(job.id, payload))
     if (res.success && res.data) setJob(res.data)
-    else if (!res.success) showToast('error', res.message)
+    else if (!res.success) {
+      tracker.markError(res.message)
+      showToast('error', res.message)
+    }
     if (field !== 'payment_condition') setEditingField(null)
   }
 
@@ -349,7 +362,7 @@ export default function JobDetail({
     setClientRef(next)
 
     startTransition(async () => {
-      const res = await updateJob(job.id, { client_ref: next })
+      const res = await tracker.track(updateJob(job.id, { client_ref: next }))
 
       // Descartar resposta obsoleta: uma troca mais nova já disparou.
       if (mySeq !== clientSaveSeqRef.current) return
@@ -371,10 +384,41 @@ export default function JobDetail({
   // os 4 campos legados no banco atomicamente (job_date, *_start, *_end, is_multi_day).
   async function handleDateRangeCommit(start: string, end: string | null) {
     if (!start) return
-    const res = await updateJob(job.id, { date_start: start, date_end: end })
+    const res = await tracker.track(updateJob(job.id, { date_start: start, date_end: end }))
     if (res.success && res.data) setJob(res.data)
-    else if (!res.success) showToast('error', res.message)
+    else if (!res.success) {
+      tracker.markError(res.message)
+      showToast('error', res.message)
+    }
   }
+
+  // ── Save manual ────────────────────────────────────────────────────────────
+  //
+  // O botão "Salvar" existe como segurança para o usuário:
+  //   1. O SaveStatus chama waitForIdle() ANTES — então qualquer autosave
+  //      em andamento termina primeiro (evita request duplicado).
+  //   2. Em seguida invoca este handler, que persiste qualquer *rascunho*
+  //      não commitado (atualmente só `title` tem estado de rascunho aberto).
+  //   3. Retorna { success, message } — o SaveStatus cuida de toast + tracker.
+  //
+  // Concorrência:
+  //   · tracker garante contador global de saves in-flight
+  //   · busy local no SaveStatus impede double-click
+  //   · clientSwitching desabilita o botão durante troca de cliente
+  const handleManualSave = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
+    // Commit do rascunho de título se houver (outros campos já fazem blur-save)
+    if (editingField === 'title') {
+      const res = await updateJob(job.id, { title: titleDraft })
+      if (res.success) {
+        if (res.data) setJob(res.data)
+        setEditingField(null)
+        return { success: true }
+      }
+      return { success: false, message: res.message || 'Erro ao salvar título.' }
+    }
+    // Caso contrário, waitForIdle já garantiu que tudo foi persistido.
+    return { success: true }
+  }, [editingField, titleDraft, job.id])
 
   // ── Payments ───────────────────────────────────────────────────────────────
 
@@ -462,13 +506,14 @@ export default function JobDetail({
   async function handleAddRevenueItem(
     description: string, quantity: number, unit_value: number
   ): Promise<AddResult> {
-    const res = await addRevenueItem(job.id, { description, quantity, unit_value })
+    const res = await tracker.track(addRevenueItem(job.id, { description, quantity, unit_value }))
     if (res.success) {
       if (res.data) setRevenueItems(prev => [...prev, res.data as JobRevenueItem])
       if (res.job)  setJob(res.job)
       showToast('success', 'Item adicionado com sucesso.')
       return { success: true, id: (res.data as JobRevenueItem | undefined)?.id }
     }
+    tracker.markError(res.message)
     showToast('error', res.message)
     return { success: false }
   }
@@ -476,22 +521,24 @@ export default function JobDetail({
   async function handleUpdateRevenueItem(
     itemId: string, fields: { description?: string; quantity?: number; unit_value?: number }
   ) {
-    const res = await updateRevenueItem(itemId, job.id, fields)
+    const res = await tracker.track(updateRevenueItem(itemId, job.id, fields))
     if (res.success) {
       if (res.data) setRevenueItems(prev => prev.map(i => i.id === itemId ? res.data as JobRevenueItem : i))
       if (res.job)  setJob(res.job)
     } else {
+      tracker.markError(res.message)
       showToast('error', res.message)
     }
   }
 
   async function handleDeleteRevenueItem(itemId: string) {
-    const res = await deleteRevenueItem(itemId, job.id)
+    const res = await tracker.track(deleteRevenueItem(itemId, job.id))
     if (res.success) {
       setRevenueItems(prev => prev.filter(i => i.id !== itemId))
       if (res.job) setJob(res.job)
       showToast('success', 'Item removido.')
     } else {
+      tracker.markError(res.message)
       showToast('error', res.message)
     }
   }
@@ -501,13 +548,14 @@ export default function JobDetail({
   async function handleAddCostItem(
     description: string, category: JobCostCategory, quantity: number, unit_value: number
   ): Promise<AddResult> {
-    const res = await addCostItem(job.id, { description, category, quantity, unit_value })
+    const res = await tracker.track(addCostItem(job.id, { description, category, quantity, unit_value }))
     if (res.success) {
       if (res.data) setCostItems(prev => [...prev, res.data as JobCostItem])
       if (res.job)  setJob(res.job)
       showToast('success', 'Repasse adicionado com sucesso.')
       return { success: true, id: (res.data as JobCostItem | undefined)?.id }
     }
+    tracker.markError(res.message)
     showToast('error', res.message)
     return { success: false }
   }
@@ -515,22 +563,24 @@ export default function JobDetail({
   async function handleUpdateCostItem(
     itemId: string, fields: { description?: string; category?: JobCostCategory; quantity?: number; unit_value?: number }
   ) {
-    const res = await updateCostItem(itemId, job.id, fields)
+    const res = await tracker.track(updateCostItem(itemId, job.id, fields))
     if (res.success) {
       if (res.data) setCostItems(prev => prev.map(i => i.id === itemId ? res.data as JobCostItem : i))
       if (res.job)  setJob(res.job)
     } else {
+      tracker.markError(res.message)
       showToast('error', res.message)
     }
   }
 
   async function handleDeleteCostItem(itemId: string) {
-    const res = await deleteCostItem(itemId, job.id)
+    const res = await tracker.track(deleteCostItem(itemId, job.id))
     if (res.success) {
       setCostItems(prev => prev.filter(i => i.id !== itemId))
       if (res.job) setJob(res.job)
       showToast('success', 'Repasse removido.')
     } else {
+      tracker.markError(res.message)
       showToast('error', res.message)
     }
   }
@@ -608,7 +658,8 @@ export default function JobDetail({
                   onChange só dispara com cliente JÁ persistido no banco.
                 · Legado: se client_id=null mas client_name existe, renderiza
                   um aviso abaixo para o usuário re-vincular. */}
-          <div className="mt-2 flex flex-col gap-1.5">
+          <div className="mt-2 flex flex-col gap-2">
+            {/* Cliente */}
             <ClientField
               value={clientRef}
               onChange={handleClientChange}
@@ -622,6 +673,44 @@ export default function JobDetail({
                 {' '}— selecione acima para re-vincular.
               </p>
             )}
+
+            {/* Status stepper — posicionado logo abaixo do cliente, na coluna
+                esquerda, para dar protagonismo visual à decisão mais frequente
+                do usuário (mudar status) sem competir com PDF/SaveStatus. */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {job.status === 'cancelled' ? (
+                <span className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS_MAP.cancelled.cls}`}>
+                  {STATUS_MAP.cancelled.label}
+                </span>
+              ) : (
+                <StatusStepper
+                  status={job.status}
+                  disabled={isPending}
+                  onChange={handleStepperChange}
+                />
+              )}
+              {/* Cancelar / reabrir — ação lateral de baixa visibilidade */}
+              {job.status === 'cancelled' ? (
+                <button
+                  type="button"
+                  onClick={handleReopenFreelance}
+                  disabled={isPending}
+                  className="text-[10px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Reabrir freelance
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCancelFreelance}
+                  disabled={isPending}
+                  className="text-[10px] font-medium text-[#525252] hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  Cancelar freelance
+                </button>
+              )}
+            </div>
+
             {job.category && (
               <span className="inline-block w-fit text-[10px] px-1.5 py-0.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252]">
                 {CATEGORY_LABELS[job.category]}
@@ -630,26 +719,17 @@ export default function JobDetail({
           </div>
         </div>
 
-        {/* Status stepper (linha 1) + ações PDF/Excluir (linha 2) + cancelar/reabrir (linha 3)
-            Separado em duas linhas pra respirar: status = decisão frequente, PDF/Excluir = ação
-            secundária. Antes ficava tudo apertado na mesma linha. */}
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
-          {/* Linha 1 — status */}
-          <div className="flex items-center gap-2">
-            {job.status === 'cancelled' ? (
-              <span className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS_MAP.cancelled.cls}`}>
-                {STATUS_MAP.cancelled.label}
-              </span>
-            ) : (
-              <StatusStepper
-                status={job.status}
-                disabled={isPending}
-                onChange={handleStepperChange}
-              />
-            )}
-          </div>
+        {/* Coluna direita — ações: Save, PDF, Excluir
+            Save no topo (ação primária de segurança), PDF ao lado (exportação),
+            Excluir discreto no fim (ação destrutiva). */}
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {/* SaveStatus — indicador "salvo/salvando" + botão manual */}
+          <SaveStatus
+            tracker={tracker}
+            onSave={handleManualSave}
+            disabled={clientSwitching}
+          />
 
-          {/* Linha 2 — ações (PDF + Excluir) */}
           <div className="flex items-center gap-2">
             {/* Gerar PDF */}
             <button
@@ -678,27 +758,6 @@ export default function JobDetail({
               {isDeleting ? <Spinner /> : <TrashIcon />}
             </button>
           </div>
-
-          {/* Linha 3 — ação lateral: cancelar / reabrir freelance */}
-          {job.status === 'cancelled' ? (
-            <button
-              type="button"
-              onClick={handleReopenFreelance}
-              disabled={isPending}
-              className="text-[10px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-50"
-            >
-              Reabrir freelance
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleCancelFreelance}
-              disabled={isPending}
-              className="text-[10px] font-medium text-[#525252] hover:text-red-400 transition-colors disabled:opacity-50"
-            >
-              Cancelar freelance
-            </button>
-          )}
         </div>
       </div>
 
@@ -867,21 +926,27 @@ export default function JobDetail({
               paymentCondition={job.payment_condition}
               onApplyShortcut={async (condition) => {
                 const dueDate = calcDueDate(job.job_date, condition)
-                const res = await updateJob(job.id, {
+                const res = await tracker.track(updateJob(job.id, {
                   payment_condition: condition,
                   payment_due_date:  dueDate,
-                })
+                }))
                 if (res.success && res.data) {
                   setJob(res.data)
                   showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
-                } else if (!res.success) showToast('error', res.message)
+                } else if (!res.success) {
+                  tracker.markError(res.message)
+                  showToast('error', res.message)
+                }
               }}
               onApplyCustom={async (dueDate) => {
-                const res = await updateJob(job.id, { payment_due_date: dueDate })
+                const res = await tracker.track(updateJob(job.id, { payment_due_date: dueDate }))
                 if (res.success && res.data) {
                   setJob(res.data)
                   showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
-                } else if (!res.success) showToast('error', res.message)
+                } else if (!res.success) {
+                  tracker.markError(res.message)
+                  showToast('error', res.message)
+                }
               }}
             />
           </InfoRow>
@@ -899,8 +964,9 @@ export default function JobDetail({
               ariaLabel="Origem do lead"
               onCommit={async (next) => {
                 setLeadSourceDraft(next)
-                const res = await updateJob(job.id, { lead_source: next || null })
+                const res = await tracker.track(updateJob(job.id, { lead_source: next || null }))
                 if (res.success && res.data) setJob(res.data)
+                else if (!res.success) tracker.markError(res.message)
               }}
             />
           </InfoRow>
@@ -916,8 +982,9 @@ export default function JobDetail({
               ariaLabel="Segmento do cliente"
               onCommit={async (next) => {
                 setSegmentDraft(next)
-                const res = await updateJob(job.id, { client_segment: next || null })
+                const res = await tracker.track(updateJob(job.id, { client_segment: next || null }))
                 if (res.success && res.data) setJob(res.data)
+                else if (!res.success) tracker.markError(res.message)
               }}
             />
           </InfoRow>
