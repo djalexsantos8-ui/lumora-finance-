@@ -1,9 +1,20 @@
+// ─── Dashboard Executivo · Server Page ──────────────────────────────────────
+//
+// Responsabilidade mínima:
+//   1. Autenticar
+//   2. Resolver workspace_id do usuário
+//   3. Chamar getExecutiveDashboard (composer)
+//   4. Passar { agregados, narrativa } pro client
+//
+// Todo o side-effect de dados vive em getExecutiveDashboard → loadRaw. Aqui
+// a gente só orquestra.
+
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { getDashboardData } from '@/lib/dashboard/getDashboardData'
-import { DashboardClient } from './dashboard-client'
+import { getExecutiveDashboard } from '@/lib/dashboard/composer'
+import { DashboardExecutivoClient } from './client'
 
-export default async function DashboardPage() {
+export default async function DashboardExecutivoPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -24,7 +35,7 @@ export default async function DashboardPage() {
     )
   }
 
-  const data = await getDashboardData(member.workspace_id)
+  const data = await getExecutiveDashboard(member.workspace_id)
 
-  return <DashboardClient data={data} />
+  return <DashboardExecutivoClient data={data} />
 }
