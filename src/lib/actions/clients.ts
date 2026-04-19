@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient as createSupabase } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
-import { normalizeName, cleanName } from '@/lib/utils/normalize-name'
+import { normalizeName, cleanName, validateClientName } from '@/lib/utils/normalize-name'
 import type {
   Client,
   ClientActionResult,
@@ -69,6 +69,140 @@ export async function getOrCreateClient(
     .maybeSingle()
 
   return (afterRace as Client | null) ?? null
+}
+
+// ─── quickCreateClient — criação rápida (só nome) via ClientField ────────────
+//
+// Wrapper com auth em volta de getOrCreateClient.
+// Idempotente: se já existe cliente com mesmo name_normalized no workspace,
+// retorna o existente — o ClientField trata como seleção normal.
+//
+// Usado exclusivamente pela row "Criar rápido" do dropdown do ClientField.
+
+export async function quickCreateClient(
+  rawName: string
+): Promise<ClientActionResult> {
+  const supabase = await createSupabase()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { success: false, message: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
+
+  // Validação centralizada — bloqueia "a", "1", "12", ".", etc.
+  const v = validateClientName(rawName)
+  if (!v.valid) return { success: false, message: v.message! }
+
+  // Idempotente por construção (getOrCreateClient). Se já existe match exato
+  // por name_normalized, retorna o existente — sem criar duplicata.
+  const client = await getOrCreateClient(workspaceId, v.cleaned)
+  if (!client) return { success: false, message: 'Não foi possível criar o cliente.' }
+
+  revalidatePath('/clientes')
+  return { success: true, data: client }
+}
+
+// ─── createClientFull — criação completa (nome + dados opcionais) ────────────
+//
+// Usado pelo modal "Criar com dados completos" do ClientField.
+// Em caso de duplicidade por name_normalized, retorna `duplicate: Client` para
+// que a UI ofereça merge (adicionar dados ao cliente existente) sem descartar
+// o que o usuário preencheu.
+
+export type CreateClientFullResult =
+  | { success: true;  data: Client }
+  | { success: false; duplicate: Client; message: string }
+  | { success: false; message: string }
+
+export async function createClientFull(
+  draft: {
+    name:       string
+    phone?:     string | null
+    instagram?: string | null
+    email?:     string | null
+    document?:  string | null
+    notes?:     string | null
+  }
+): Promise<CreateClientFullResult> {
+  const supabase = await createSupabase()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { success: false, message: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
+
+  // Validação centralizada — mesma regra do quickCreateClient.
+  const v = validateClientName(draft.name)
+  if (!v.valid) return { success: false, message: v.message! }
+
+  const name = v.cleaned
+  const normalized = normalizeName(name)
+
+  // 1. Checa duplicata ANTES de inserir — se existe, devolve pra UI oferecer merge
+  const { data: existing } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('name_normalized', normalized)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (existing) {
+    return {
+      success: false,
+      duplicate: existing as Client,
+      message: `Já existe um cliente chamado "${(existing as Client).name}".`,
+    }
+  }
+
+  // 2. Cria
+  const payload: Record<string, unknown> = {
+    workspace_id:    workspaceId,
+    name,
+    name_normalized: normalized,
+    phone:     draft.phone?.trim()     || null,
+    instagram: draft.instagram?.trim() || null,
+    email:     draft.email?.trim()     || null,
+    document:  draft.document?.trim()  || null,
+    notes:     draft.notes?.trim()     || null,
+  }
+
+  const { data, error } = await supabase
+    .from('clients')
+    .insert(payload)
+    .select('*')
+    .single()
+
+  if (error) {
+    // Race condition — alguém criou entre o check e o insert.
+    if (error.code === '23505') {
+      const { data: afterRace } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('name_normalized', normalized)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (afterRace) {
+        return {
+          success: false,
+          duplicate: afterRace as Client,
+          message: `Já existe um cliente chamado "${(afterRace as Client).name}".`,
+        }
+      }
+    }
+    console.error('[clients/create-full]', error)
+    return { success: false, message: 'Erro ao criar cliente.' }
+  }
+
+  revalidatePath('/clientes')
+  return { success: true, data: data as Client }
 }
 
 // ─── searchClients — para autocomplete ───────────────────────────────────────

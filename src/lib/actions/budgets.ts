@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
+import { getOrCreateClient } from '@/lib/actions/clients'
 import type { BudgetActionResult, BudgetMarginType, BudgetStatus } from '@/types/budget'
 
 // Recalcula subtotal, margin_amount e total a partir dos itens ativos
@@ -109,8 +110,25 @@ export async function updateBudgetInfo(
 
   if (fields.title !== undefined)
     payload.title = fields.title.trim() || 'Orçamento sem título'
-  if (fields.client_name !== undefined)
-    payload.client_name = fields.client_name.trim()
+
+  // Cliente: sempre que `client_name` for tocado, resolve via getOrCreateClient.
+  // Orçamentos NÃO têm coluna `client_id` no schema atual — mantemos só o
+  // nome (compatível). A resolução serve pra garantir que o cliente existe
+  // na tabela `clients` (aparece em /clientes e pode ser enriquecido depois
+  // pelo modo expandido do ClientPicker via updateClient(id, extras)).
+  let resolvedClient: Awaited<ReturnType<typeof getOrCreateClient>> | undefined
+  if (fields.client_name !== undefined) {
+    const cleaned = fields.client_name.trim()
+    payload.client_name = cleaned
+
+    if (cleaned) {
+      const workspaceId = await getWorkspaceId(user.id)
+      if (workspaceId) {
+        resolvedClient = await getOrCreateClient(workspaceId, cleaned)
+      }
+    }
+  }
+
   if (fields.project_description !== undefined)
     payload.project_description = fields.project_description.trim() || null
   if (fields.deliverables !== undefined)
@@ -139,7 +157,10 @@ export async function updateBudgetInfo(
 
   revalidatePath('/budgets')
   revalidatePath(`/budgets/${id}`)
-  return { success: true, data }
+  // Expõe o client resolvido pro caller (frontend usa o id pra chamar
+  // updateClient() no modo expandido do ClientPicker). Pode vir undefined
+  // quando `client_name` não foi tocado nessa chamada — comportamento ok.
+  return { success: true, data, client: resolvedClient ?? undefined }
 }
 
 // ─── UPDATE MARGIN — atualiza margem e recalcula totais ───────────────────────

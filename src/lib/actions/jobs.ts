@@ -89,6 +89,13 @@ export async function updateJob(
   fields: {
     title?:             string
     client_name?:       string
+    /**
+     * Atalho do ClientField: seta client_id + client_name em uma ação só,
+     * sem passar pelo resolver getOrCreateClient (cliente já existe no banco).
+     * Aceita null para desvincular explicitamente.
+     * Se client_id e client_name vierem juntos, este prevalece.
+     */
+    client_ref?:        { id: string; name: string } | null
     client_email?:      string
     category?:          JobCategory | null
     job_type?:          JobType
@@ -127,9 +134,51 @@ export async function updateJob(
   if (fields.title !== undefined)
     payload.title = fields.title.trim() || 'Job sem título'
 
-  // Cliente: se o nome foi editado, resolve o client_id via getOrCreateClient.
-  // Se virou vazio → solta a relação (client_id = null) mas preserva client_name.
-  if (fields.client_name !== undefined) {
+  // Cliente — dois caminhos:
+  //   (a) client_ref (novo, preferido): { id, name } | null — ponteiro direto.
+  //       Usado pelo ClientField: cliente JÁ existe, bastam os ponteiros.
+  //
+  //       BLINDAGEM DE CONSISTÊNCIA (server-side):
+  //         · verifica que o client_id pertence ao workspace do usuário
+  //           e não está soft-deleted — bloqueia id forjado/cross-workspace
+  //         · descarta o `name` recebido do caller e re-lê `clients.name`
+  //           direto do banco → client_id e client_name ficam sempre 100%
+  //           coerentes entre si, mesmo se o caller enviar um nome stale
+  //         · client_id + client_name são gravados no MESMO UPDATE (atômico)
+  //
+  //   (b) client_name (legado): resolve via getOrCreateClient. Mantido para
+  //       compatibilidade com fluxos antigos (quickAdd, imports, etc.).
+  //
+  // Se ambos vierem, client_ref vence.
+  if (fields.client_ref !== undefined) {
+    if (fields.client_ref === null) {
+      payload.client_id   = null
+      payload.client_name = ''
+    } else {
+      const workspaceId = await getWorkspaceId(user.id)
+      if (!workspaceId) {
+        return { success: false, message: 'Workspace não encontrado.' }
+      }
+
+      const { data: client } = await supabase
+        .from('clients')
+        .select('id, name')
+        .eq('id', fields.client_ref.id)
+        .eq('workspace_id', workspaceId)
+        .is('deleted_at', null)
+        .maybeSingle()
+
+      if (!client) {
+        return {
+          success: false,
+          message: 'Cliente não encontrado neste workspace.',
+        }
+      }
+
+      payload.client_id   = client.id
+      payload.client_name = client.name // server é source of truth
+    }
+  } else if (fields.client_name !== undefined) {
     const cleaned = cleanName(fields.client_name)
     payload.client_name = cleaned
 
@@ -233,6 +282,35 @@ export async function updateJobStatus(
   } = await supabase.auth.getUser()
 
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
+
+  // ── Backend safety · transição crítica para `paid` ───────────────────────
+  //
+  // Regra mínima de consistência de negócio: não aceitar marcar como pago um
+  // job sem cliente vinculado (client_id null). Previne rascunho vazio virar
+  // receita fantasma sem contraparte.
+  //
+  // Escopo estrito:
+  //   · Só se aplica quando a transição é PARA `paid`
+  //   · Edição normal, draft, delivered, in_progress: não exigem client_id
+  //   · Qualquer outra validação fica com o fluxo existente (updateJob)
+  if (status === 'paid') {
+    const { data: current } = await supabase
+      .from('jobs')
+      .select('client_id')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (!current) {
+      return { success: false, message: 'Freelance não encontrado.' }
+    }
+    if (!current.client_id) {
+      return {
+        success: false,
+        message: 'Vincule um cliente antes de marcar como pago.',
+      }
+    }
+  }
 
   const { data, error } = await supabase
     .from('jobs')

@@ -59,6 +59,12 @@ export const FIXED_COST_CATEGORIES = Object.entries(
 export interface Expense {
   id:                  string
   workspace_id:        string
+  /**
+   * Vínculo opcional com um job (migration 008 tornou nullable).
+   *   · null → despesa geral (aparece em /expenses)
+   *   · uuid → despesa operacional DESTE job (aparece no detalhe do freelance)
+   */
+  job_id:              string | null
   description:         string
   category:            ExpenseCategory
   amount:              number

@@ -6,13 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy": "npm run build && git add -A && (git diff --cached --quiet || git commit -m \"deploy: $(date +'%Y-%m-%d %H:%M')\") && git push origin main && echo '\\n✓ Push feito. Vercel vai buildar em ~60s → https://vercel.com/dashboard'"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.3",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
+    "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
+    "heic2any": "^0.0.4",
     "next": "16.2.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",

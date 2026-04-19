@@ -7,7 +7,6 @@ import { formatCurrency, formatDate, todayISO } from '@/lib/utils/format'
 import {
   updateJobStatus, updateJob, addPayment, deletePayment, deleteJob,
 } from '@/lib/actions/jobs'
-import { updateClient } from '@/lib/actions/clients'
 import {
   addRevenueItem, updateRevenueItem, deleteRevenueItem,
   addCostItem,    updateCostItem,    deleteCostItem,
@@ -19,27 +18,52 @@ import type {
 } from '@/types/job'
 import { StatusStepper } from '@/components/freelances/status-stepper'
 import { FreelanceDateRange } from '@/components/freelances/date-range'
-import { ClientCombobox } from '@/components/clients/client-combobox'
-import {
-  ClientFullForm,
-  EMPTY_CLIENT_FULL_FORM,
-  type ClientFullFormValue,
-} from '@/components/clients/client-full-form'
+import { PaymentDueField } from '@/components/freelances/payment-due-field'
+import { TagCombobox } from '@/components/freelances/tag-combobox'
+import { ComprovantesList } from '@/components/freelances/job-files-section'
+import { JobFileUploadModal } from '@/components/freelances/job-file-upload-modal'
+import { ClientField, type ClientRef } from '@/components/clients/client-field'
+import type { JobFile } from '@/types/job-file'
 
-// ─── Helper: extrai extras do cliente embutido no job (join do page.tsx) ─────
-// Regra crítica (item 7 do brief): NUNCA busca por nome — só usa os dados já
-// vinculados via FK. Se `job.client_id` é null ou `job.client` não foi
-// carregado, devolve vazio. Não tenta adivinhar.
-function extrasFromJob(job: Job): ClientFullFormValue {
-  const c = job.client
-  if (!job.client_id || !c) return EMPTY_CLIENT_FULL_FORM
-  return {
-    phone:     c.phone     ?? '',
-    instagram: c.instagram ?? '',
-    email:     c.email     ?? '',
-    document:  c.document  ?? '',
-    notes:     c.notes     ?? '',
-  }
+// ─── Taxonomias de freelance ──────────────────────────────────────────────────
+// Listas curadas com o vocabulário do produto. São sugestões (não enum rígido)
+// — os campos aceitam texto livre pra casos fora da lista.
+const LEAD_SOURCES = [
+  'Instagram',
+  'WhatsApp',
+  'Indicação',
+  'Google',
+  'TikTok',
+  'YouTube',
+  'Cliente recorrente',
+  'Parceria',
+  'Evento',
+  'Outro',
+] as const
+
+const CLIENT_SEGMENTS = [
+  'Produtora',
+  'Fotógrafo',
+  'Filmmaker',
+  'Agência',
+  'Marca',
+  'Evento',
+  'Influencer',
+  'Corporativo',
+  'Outro',
+] as const
+import { createExpense, deleteExpense } from '@/lib/actions/expenses'
+import type { Expense } from '@/types/expense'
+
+// ─── Helper: deriva ClientRef a partir do job carregado ──────────────────────
+// Source of truth: se existe client_id + client (join), usa esses.
+// Legado (client_id null + client_name preenchido): retorna null e o UI
+// mostra um aviso "cliente antigo — selecione para vincular".
+function refFromJob(job: Job): ClientRef | null {
+  if (!job.client_id) return null
+  const name = job.client?.name ?? job.client_name
+  if (!name) return null
+  return { id: job.client_id, name }
 }
 
 // ─── Categorias de serviço (frontend apenas) ──────────────────────────────────
@@ -91,12 +115,6 @@ const CATEGORY_LABELS: Record<JobCategory, string> = {
   other:       'Outros',
 }
 
-const PAYMENT_COND_LABELS: Record<PaymentCondition, string> = {
-  upfront: 'À vista',
-  '7d':  '7 dias', '15d': '15 dias', '30d': '30 dias',
-  '60d': '60 dias', '90d': '90 dias',
-}
-
 // ─── Add result type ──────────────────────────────────────────────────────────
 
 type AddResult = { success: boolean; id?: string }
@@ -108,6 +126,8 @@ interface Props {
   initialRevenueItems: JobRevenueItem[]
   initialCostItems:    JobCostItem[]
   initialPayments:     JobPayment[]
+  initialJobExpenses:  Expense[]
+  initialJobFiles:     JobFile[]
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -117,6 +137,8 @@ export default function JobDetail({
   initialRevenueItems,
   initialCostItems,
   initialPayments,
+  initialJobExpenses,
+  initialJobFiles,
 }: Props) {
   const router = useRouter()
 
@@ -124,34 +146,47 @@ export default function JobDetail({
   const [revenueItems, setRevenueItems] = useState<JobRevenueItem[]>(initialRevenueItems)
   const [costItems,    setCostItems]    = useState<JobCostItem[]>(initialCostItems)
   const [payments,     setPayments]     = useState<JobPayment[]>(initialPayments)
+  const [jobExpenses,  setJobExpenses]  = useState<Expense[]>(initialJobExpenses)
+  // Arquivos + modal de upload (fonte de verdade única — compartilhada
+  // entre o botão "Comprovante" em Repasses e o botão de Arquivos).
+  const [jobFiles,     setJobFiles]     = useState<JobFile[]>(initialJobFiles)
+  const [uploadOpen,   setUploadOpen]   = useState(false)
   const [toast,        setToast]        = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   // Inline editing
   const [editingField, setEditingField] = useState<string | null>(null)
   const [titleDraft,   setTitleDraft]   = useState(job.title)
-  const [clientDraft,  setClientDraft]  = useState(job.client_name)
   // Deploy 4 (F.6): dateDraft / isMultiDay / dateStartDraft / dateEndDraft
   // foram removidos — o estado de datas agora vive dentro de FreelanceDateRange.
 
-  // ─── Modo expandido do cliente (F.4 — ficha completa) ──────────────────────
-  // Quando `expandedClientEdit = true`, abaixo do combobox aparece o
-  // ClientFullForm com phone/instagram/email/document/notes. Source of truth
-  // do NOME continua sendo `clientDraft` (o form renderiza nome em read-only).
-  const [expandedClientEdit, setExpandedClientEdit] = useState(false)
-  const [clientExtras,       setClientExtras]       = useState<ClientFullFormValue>(
-    extrasFromJob(initialJob)
-  )
+  // ─── Cliente (ClientField, padrão único) ───────────────────────────────────
+  //
+  // Source of truth local: clientRef = { id, name } | null, derivado do job.
+  // Reagimos via useEffect porque o job é atualizado após updateJob.
+  //
+  // BLINDAGEM DE CONSISTÊNCIA:
+  //   · clientSwitching (espelha o estado interno do ClientField) pausa:
+  //       (a) a sincronização clientRef ← job (evita que um save de outro
+  //           campo sobrescreva o UI enquanto o usuário digita no combobox)
+  //       (b) outros autosaves-por-blur (ex: title) durante a troca
+  //   · Invariante reforçada: o server (updateJob) verifica workspace do
+  //     client_id e deriva client_name do banco, então o pair {id,name}
+  //     chega sempre consistente de volta.
+  const [clientRef, setClientRef] = useState<ClientRef | null>(refFromJob(initialJob))
+  const [clientSwitching, setClientSwitching] = useState(false)
 
-  // Reset crítico: se o usuário trocar o nome do cliente no combobox (digitou
-  // outro / selecionou outro existente), os extras do cliente anterior NÃO
-  // podem vazar pro novo. Regra item 8 do brief: sempre que `clientDraft`
-  // diverge do nome atual do job, zera e recolhe o modo expandido.
+  // Sequence counter para ignorar respostas obsoletas. Se o usuário troca
+  // cliente várias vezes rápido e uma resposta antiga chega depois da nova,
+  // a antiga é descartada — garante que o UI reflete só a troca mais recente.
+  const clientSaveSeqRef = useRef(0)
+
   useEffect(() => {
-    if (clientDraft !== job.client_name) {
-      setClientExtras(EMPTY_CLIENT_FULL_FORM)
-      setExpandedClientEdit(false)
-    }
-  }, [clientDraft, job.client_name])
+    // Não sincronizar enquanto o usuário está trocando cliente — senão um
+    // save concorrente (title/date/etc.) faria o job voltar → refFromJob
+    // re-derivaria e a UI piscaria.
+    if (clientSwitching) return
+    setClientRef(refFromJob(job))
+  }, [job, clientSwitching])
 
   // Analytics fields (migration 014)
   const [leadSourceDraft, setLeadSourceDraft] = useState(job.lead_source ?? '')
@@ -278,9 +313,12 @@ export default function JobDetail({
   // Tracked: DEPLOY_TECH_DEBT #F.save-consistency
 
   async function saveField(field: string, value?: string) {
+    // Pausa autosaves por blur enquanto o usuário está trocando cliente.
+    // Ações explícitas (submit, clique em status, etc.) continuam passando.
+    if (clientSwitching && field === 'title') return
+
     const payload: Parameters<typeof updateJob>[1] = {}
     if (field === 'title')              payload.title              = titleDraft
-    if (field === 'client_name')        payload.client_name        = clientDraft
     if (field === 'payment_condition')  payload.payment_condition  = value as PaymentCondition
     const res = await updateJob(job.id, payload)
     if (res.success && res.data) setJob(res.data)
@@ -288,69 +326,44 @@ export default function JobDetail({
     if (field !== 'payment_condition') setEditingField(null)
   }
 
-  // ─── Salvar cliente (modo simples OU expandido) ────────────────────────────
+  // ─── Cliente · ClientField integração ──────────────────────────────────────
   //
-  // Fluxo encadeado (regra item 9 do brief — zero novo endpoint):
-  //   1. updateJob({ client_name })   — cria/linka via getOrCreateClient no
-  //                                     backend; retorna job com client_id.
-  //   2. (só se expandido) updateClient(client_id, extras) — enriquece a ficha.
+  // O ClientField só chama onChange depois de o cliente estar persistido
+  // (quickCreateClient / createClientFull retornaram). Aqui só resta escrever
+  // o ponteiro em jobs.client_id. Zero debounce — ação já foi explícita.
   //
-  // Falha no passo 2 é SOFT-FAIL: o vínculo com o job já foi feito, o cliente
-  // existe com pelo menos o nome — o usuário pode completar depois em /clientes.
-  async function saveClientField() {
+  // Invariante de dados:
+  //   · client_id + client_name gravam no MESMO UPDATE (atômico no banco)
+  //   · o server descarta o `name` do ref e re-lê clients.name do banco,
+  //     garantindo que o par {id, name} persistido é sempre consistente
+  //   · em caso de erro (cliente não pertence ao workspace, deletado,
+  //     etc.) o UI faz rollback para refFromJob(job)
+  //   · trocas rápidas consecutivas: cada request recebe um seq; respostas
+  //     com seq obsoleto são descartadas silenciosamente (impede que uma
+  //     resposta antiga sobrescreva a seleção mais recente)
+  async function handleClientChange(next: ClientRef | null) {
+    const mySeq = ++clientSaveSeqRef.current
+    const previous = clientRef
+
+    // Otimista: atualiza UI imediatamente para evitar flicker.
+    setClientRef(next)
+
     startTransition(async () => {
-      // Passo 1 — nome + vínculo
-      const jobRes = await updateJob(job.id, { client_name: clientDraft })
-      if (!jobRes.success) {
-        showToast('error', jobRes.message)
-        return
-      }
-      if (jobRes.data) setJob(jobRes.data)
+      const res = await updateJob(job.id, { client_ref: next })
 
-      // Modo simples: fecha e volta.
-      if (!expandedClientEdit) {
-        setEditingField(null)
-        return
-      }
+      // Descartar resposta obsoleta: uma troca mais nova já disparou.
+      if (mySeq !== clientSaveSeqRef.current) return
 
-      // Passo 2 — ficha completa. Precisa de client_id (pode ser null se o
-      // nome ficou vazio, aí não há o que enriquecer).
-      const clientId = jobRes.data?.client_id
-      if (!clientId) {
-        setEditingField(null)
-        setExpandedClientEdit(false)
-        return
-      }
-
-      const extrasRes = await updateClient(clientId, {
-        phone:     clientExtras.phone,
-        instagram: clientExtras.instagram,
-        email:     clientExtras.email,
-        document:  clientExtras.document,
-        notes:     clientExtras.notes,
-      })
-
-      if (!extrasRes.success) {
-        // Regra item 10 do brief — mensagem explícita, não falhar silenciosamente.
-        showToast(
-          'error',
-          'Cliente criado, mas não conseguimos salvar todos os dados. Você pode completar depois em Clientes.'
-        )
+      if (res.success) {
+        // setJob dispara o useEffect que re-deriva clientRef via refFromJob,
+        // agora com o name canônico vindo do banco (server source of truth).
+        if (res.data) setJob(res.data)
       } else {
-        showToast('success', 'Cliente atualizado.')
+        showToast('error', res.message || 'Erro ao vincular cliente.')
+        // Rollback: volta para o ref anterior. Se não havia, tenta do job.
+        setClientRef(previous ?? refFromJob(job))
       }
-
-      setEditingField(null)
-      setExpandedClientEdit(false)
     })
-  }
-
-  // Cancelar modo edição do cliente: restaura drafts/extras pro snapshot do job.
-  function cancelClientEdit() {
-    setEditingField(null)
-    setExpandedClientEdit(false)
-    setClientDraft(job.client_name ?? '')
-    setClientExtras(extrasFromJob(job))
   }
 
   // Deploy 4 (F.6): handler unificado para o FreelanceDateRange.
@@ -394,6 +407,55 @@ export default function JobDetail({
       showToast('error', res.message)
     }
   }
+
+  // ── Job Expenses · despesas operacionais DESTE freelance ──────────────────
+  //
+  // Escopo deliberadamente mínimo:
+  //   · description + amount (BRL, moeda do job)
+  //   · expense_date = hoje, category = 'other', is_deductible = false
+  //   · sem parcelamento, sem multimoeda (quem precisa disso usa /expenses)
+  //
+  // Persistência: reusa createExpense / deleteExpense existentes (tabela
+  // expenses, coluna job_id = job.id). Zero schema novo, zero duplicação.
+
+  async function handleAddJobExpense(description: string, amount: number): Promise<AddResult> {
+    const desc = description.trim()
+    if (!desc)        { showToast('error', 'Descrição obrigatória.'); return { success: false } }
+    if (!(amount > 0)){ showToast('error', 'Valor deve ser maior que zero.'); return { success: false } }
+
+    const res = await createExpense({
+      description:   desc,
+      category:      'other',
+      amount,
+      currency:      job.currency,
+      expense_date:  todayISO(),
+      is_deductible: false,
+      job_id:        job.id,
+    })
+    if (res.success) {
+      if (res.data) setJobExpenses(prev => [res.data as Expense, ...prev])
+      showToast('success', 'Despesa adicionada.')
+      return { success: true, id: (res.data as Expense | undefined)?.id }
+    }
+    showToast('error', res.message)
+    return { success: false }
+  }
+
+  async function handleDeleteJobExpense(expenseId: string): Promise<void> {
+    const res = await deleteExpense(expenseId)
+    if (res.success) {
+      setJobExpenses(prev => prev.filter(e => e.id !== expenseId))
+      showToast('success', 'Despesa removida.')
+    } else {
+      showToast('error', res.message)
+    }
+  }
+
+  // Total de despesas deste job (BRL se job.currency=BRL; senão soma bruta).
+  const totalJobExpenses = jobExpenses.reduce((s, e) => s + Number(e.amount), 0)
+  // Lucro estimado simples — literalmente "valor do job - total de despesas".
+  // Não considera repasses pagos a terceiros; é uma aproximação de 1ª ordem.
+  const lucroEstimado = fin.total - totalJobExpenses
 
   // ── Revenue items ──────────────────────────────────────────────────────────
 
@@ -537,94 +599,42 @@ export default function JobDetail({
               {job.title || 'Freelance sem título'}
             </h1>
           )}
-          {editingField === 'client_name' ? (
-            <div
-              className="flex flex-col gap-2 mt-1"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') { e.stopPropagation(); cancelClientEdit() }
-              }}
-            >
-              <ClientCombobox
-                autoFocus
-                defaultValue={clientDraft}
-                disabled={isPending}
-                placeholder="Nome do cliente"
-                onChange={(v) => setClientDraft(v)}
-                onSelectExisting={(c) => setClientDraft(c.name)}
-              />
-              <p className="text-[10px] text-[#525252]">
-                Selecione um cliente existente ou digite um nome novo — ele será criado ao salvar.
+          {/* ─── Cliente · ClientField (padrão único) ─────────────────────
+              Comportamento:
+                · Quando há cliente vinculado (client_id+client): mostra pill
+                  dourada com "trocar". Clicar "trocar" abre busca sem desvincular.
+                · Quando não há (legado ou novo freelance): mostra input de busca.
+                · Criação rápida ou completa acontece via server action — o
+                  onChange só dispara com cliente JÁ persistido no banco.
+                · Legado: se client_id=null mas client_name existe, renderiza
+                  um aviso abaixo para o usuário re-vincular. */}
+          <div className="mt-2 flex flex-col gap-1.5">
+            <ClientField
+              value={clientRef}
+              onChange={handleClientChange}
+              onSwitchingChange={setClientSwitching}
+              disabled={isPending}
+              placeholder="Buscar ou criar cliente…"
+            />
+            {!clientRef && job.client_name && (
+              <p className="text-[11px] text-[#a87740]">
+                Cliente antigo: <span className="font-medium">&ldquo;{job.client_name}&rdquo;</span>
+                {' '}— selecione acima para re-vincular.
               </p>
-
-              {/* Linha 1: ação principal */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => saveClientField()}
-                  disabled={isPending}
-                  className="text-[11px] font-semibold px-3 py-1 rounded-md bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] transition-colors disabled:opacity-60"
-                >
-                  {isPending ? 'Salvando…' : 'Salvar'}
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={cancelClientEdit}
-                  disabled={isPending}
-                  className="text-[11px] font-medium px-3 py-1 rounded-md text-[#a3a3a3] hover:text-white border border-[#2a2a2a] hover:border-[#3a3a3a] transition-colors disabled:opacity-60"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-              {/* Linha 2 (ABAIXO do Salvar/Cancelar) — toggle do modo expandido.
-                  Regra item 4 do brief: NÃO na mesma linha da ação principal. */}
-              <div>
-                <button
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => setExpandedClientEdit(v => !v)}
-                  disabled={isPending || !clientDraft.trim()}
-                  className="text-[11px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {expandedClientEdit ? '− Recolher' : '+ Adicionar detalhes'}
-                </button>
-              </div>
-
-              {/* Painel expandido — ficha completa reutilizando o componente
-                  de /clientes. Nome fica read-only (source of truth = combobox). */}
-              {expandedClientEdit && (
-                <div className="mt-1 p-3 rounded-xl bg-[#101010] border border-[#1f1f1f]">
-                  <p className="text-xs text-[#737373] leading-relaxed">
-                    Você pode cadastrar apenas o nome para criar rapidamente o cliente.
-                    Ou adicionar mais detalhes agora para manter seu cadastro organizado.
-                  </p>
-                  <ClientFullForm
-                    name={clientDraft}
-                    nameReadOnly
-                    value={clientExtras}
-                    onChange={setClientExtras}
-                    disabled={isPending}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-[#a3a3a3] mt-1 cursor-pointer hover:text-white transition-colors"
-              onClick={() => { setClientDraft(job.client_name); setEditingField('client_name') }} title="Clique para editar">
-              {job.client_name || 'Cliente não informado'}
-              {job.category && (
-                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252]">
-                  {CATEGORY_LABELS[job.category]}
-                </span>
-              )}
-            </p>
-          )}
+            )}
+            {job.category && (
+              <span className="inline-block w-fit text-[10px] px-1.5 py-0.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252]">
+                {CATEGORY_LABELS[job.category]}
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Status stepper + ações (PDF, Excluir) + cancelar/reabrir lateral */}
+        {/* Status stepper (linha 1) + ações PDF/Excluir (linha 2) + cancelar/reabrir (linha 3)
+            Separado em duas linhas pra respirar: status = decisão frequente, PDF/Excluir = ação
+            secundária. Antes ficava tudo apertado na mesma linha. */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
+          {/* Linha 1 — status */}
           <div className="flex items-center gap-2">
             {job.status === 'cancelled' ? (
               <span className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS_MAP.cancelled.cls}`}>
@@ -637,7 +647,10 @@ export default function JobDetail({
                 onChange={handleStepperChange}
               />
             )}
+          </div>
 
+          {/* Linha 2 — ações (PDF + Excluir) */}
+          <div className="flex items-center gap-2">
             {/* Gerar PDF */}
             <button
               onClick={handleDownloadPdf}
@@ -666,7 +679,7 @@ export default function JobDetail({
             </button>
           </div>
 
-          {/* Ação lateral: cancelar / reabrir freelance */}
+          {/* Linha 3 — ação lateral: cancelar / reabrir freelance */}
           {job.status === 'cancelled' ? (
             <button
               type="button"
@@ -801,6 +814,27 @@ export default function JobDetail({
         onAdd={(desc, cat, qty, val) => handleAddCostItem(desc, cat, qty, val)}
         onUpdate={(id, fields) => handleUpdateCostItem(id, fields)}
         onDelete={(id) => handleDeleteCostItem(id)}
+        onAddFile={() => setUploadOpen(true)}
+        files={jobFiles}
+        onFileDeletedOptimistic={(id) =>
+          setJobFiles(prev => prev.filter(x => x.id !== id))
+        }
+        onFileDeleteRollback={(file) =>
+          setJobFiles(prev => [file, ...prev])
+        }
+      />
+
+      {/* ── Despesas operacionais deste freelance (novo) ──────────────────────
+          Saída de bolso. Reutiliza tabela expenses (job_id = este job).
+          Lucro estimado = valor do job − despesas. */}
+      <JobExpensesSection
+        expenses={jobExpenses}
+        currency={job.currency}
+        totalJob={fin.total}
+        totalExpenses={totalJobExpenses}
+        lucro={lucroEstimado}
+        onAdd={handleAddJobExpense}
+        onDelete={handleDeleteJobExpense}
       />
 
       {/* ── Info ─────────────────────────────────────────────────────────────── */}
@@ -818,15 +852,21 @@ export default function JobDetail({
               onCommit={handleDateRangeCommit}
             />
           </InfoRow>
+          {/* ── Vencimento (prazo rápido OU data exata) ─────────────────────
+              Componente único (PaymentDueField) unifica dois modos:
+                · Atalhos de prazo (upfront/7d/15d/30d/60d/90d) → recalcula
+                  payment_due_date a partir de job_date
+                · Calendário manual → grava payment_due_date literal,
+                  mantendo payment_condition como informação contextual
+              Detecção automática do modo inicial: se o vencimento gravado
+              bate com calcDueDate(condição) = shortcut, senão = custom. */}
           <InfoRow label="Vencimento">
-            <span className="text-xs text-white">{formatDate(job.payment_due_date)}</span>
-          </InfoRow>
-          <InfoRow label="Condição de pagamento">
-            <select
-              value={job.payment_condition}
-              onChange={async (e) => {
-                const condition = e.target.value as PaymentCondition
-                const dueDate   = calcDueDate(job.job_date, condition)
+            <PaymentDueField
+              jobDate={job.job_date}
+              paymentDueDate={job.payment_due_date}
+              paymentCondition={job.payment_condition}
+              onApplyShortcut={async (condition) => {
+                const dueDate = calcDueDate(job.job_date, condition)
                 const res = await updateJob(job.id, {
                   payment_condition: condition,
                   payment_due_date:  dueDate,
@@ -836,58 +876,50 @@ export default function JobDetail({
                   showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
                 } else if (!res.success) showToast('error', res.message)
               }}
-              className="text-xs text-white bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 cursor-pointer outline-none hover:border-[#3a3a3a] focus:border-[#D4A853]/50 transition-colors appearance-none"
-            >
-              {(Object.entries(PAYMENT_COND_LABELS) as [PaymentCondition, string][]).map(([v, l]) => (
-                <option key={v} value={v} className="bg-[#141414] text-white">{l}</option>
-              ))}
-            </select>
+              onApplyCustom={async (dueDate) => {
+                const res = await updateJob(job.id, { payment_due_date: dueDate })
+                if (res.success && res.data) {
+                  setJob(res.data)
+                  showToast('success', `Vencimento atualizado para ${formatDate(dueDate)}`)
+                } else if (!res.success) showToast('error', res.message)
+              }}
+            />
           </InfoRow>
 
-          {/* ── Origem do lead ────────────────────────────────────────────── */}
+          {/* ── Origem do lead ──────────────────────────────────────────────
+              Substituído o <datalist> nativo por TagCombobox:
+              popup via portal → anchoring consistente, imune a overflow
+              do card e stacking context. Free text preservado: o backend
+              continua recebendo string livre (lead_source). */}
           <InfoRow label="Origem do lead">
-            <>
-              <input
-                type="text"
-                list="lead-source-list"
-                value={leadSourceDraft}
-                onChange={e => setLeadSourceDraft(e.target.value)}
-                onBlur={async () => {
-                  const res = await updateJob(job.id, { lead_source: leadSourceDraft || null })
-                  if (res.success && res.data) setJob(res.data)
-                }}
-                placeholder="Como te encontraram?"
-                className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-full transition-colors hover:border-[#3a3a3a]"
-              />
-              <datalist id="lead-source-list">
-                {['Instagram','Indicação','WhatsApp','Prospecção ativa','Cliente recorrente','Google','Agência','Outro'].map(v => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
-            </>
+            <TagCombobox
+              value={leadSourceDraft}
+              options={LEAD_SOURCES}
+              placeholder="Como te encontraram?"
+              ariaLabel="Origem do lead"
+              onCommit={async (next) => {
+                setLeadSourceDraft(next)
+                const res = await updateJob(job.id, { lead_source: next || null })
+                if (res.success && res.data) setJob(res.data)
+              }}
+            />
           </InfoRow>
 
-          {/* ── Segmento do cliente ───────────────────────────────────────── */}
+          {/* ── Segmento do cliente ────────────────────────────────────────
+              Mesmo padrão da origem do lead. Persistência em client_segment
+              como texto livre. */}
           <InfoRow label="Segmento">
-            <>
-              <input
-                type="text"
-                list="segment-list"
-                value={segmentDraft}
-                onChange={e => setSegmentDraft(e.target.value)}
-                onBlur={async () => {
-                  const res = await updateJob(job.id, { client_segment: segmentDraft || null })
-                  if (res.success && res.data) setJob(res.data)
-                }}
-                placeholder="Tipo de cliente"
-                className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-full transition-colors hover:border-[#3a3a3a]"
-              />
-              <datalist id="segment-list">
-                {['Automotivo','Corporativo','Imobiliário','Evento','Casamento','Restaurante','Moda','Fitness','Influencer','Agência','Produto','Financeiro','Educacional','Outro'].map(v => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
-            </>
+            <TagCombobox
+              value={segmentDraft}
+              options={CLIENT_SEGMENTS}
+              placeholder="Tipo de cliente"
+              ariaLabel="Segmento do cliente"
+              onCommit={async (next) => {
+                setSegmentDraft(next)
+                const res = await updateJob(job.id, { client_segment: next || null })
+                if (res.success && res.data) setJob(res.data)
+              }}
+            />
           </InfoRow>
         </div>
       </div>
@@ -974,6 +1006,18 @@ export default function JobDetail({
           {toast.message}
         </div>
       )}
+
+      {/* ── Modal de upload compartilhado ────────────────────────────────────
+          Único modal pra toda a página. Acionado pelo botão "Comprovante"
+          na seção Repasses e pelo botão "Adicionar arquivo" na seção
+          Arquivos. Atualiza jobFiles via onUploaded. */}
+      <JobFileUploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        workspaceId={job.workspace_id}
+        jobId={job.id}
+        onUploaded={(file) => setJobFiles(prev => [file, ...prev])}
+      />
     </div>
   )
 }
@@ -1039,9 +1083,16 @@ function ServiceTable({ total, currency, items, onAdd, onUpdate, onDelete }: Ser
   const [editDesc,      setEditDesc]      = useState('')
   const [editQty,       setEditQty]       = useState('')
   const [editVal,       setEditVal]       = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
 
-  async function submitAdd() {
-    if (!newDesc.trim()) return
+  function cancelAdd() {
+    setAdding(false); setNewCat('outros'); setNewDesc(''); setNewQty('1'); setNewVal('')
+  }
+
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
     const qty      = parseFloat(newQty.replace(',', '.')) || 1
     const val      = parseFloat(newVal.replace(',', '.')) || 0
     const fullDesc = buildDesc(newCat, newDesc)
@@ -1049,12 +1100,34 @@ function ServiceTable({ total, currency, items, onAdd, onUpdate, onDelete }: Ser
     const result = await onAdd(fullDesc, qty, val)
     setIsSubmitting(false)
     if (result.success) {
-      setNewCat('outros'); setNewDesc(''); setNewQty('1'); setNewVal(''); setAdding(false)
+      setNewCat('outros'); setNewDesc(''); setNewQty('1'); setNewVal('')
+      setAdding(false)
       if (result.id) {
         setNewlyAddedId(result.id)
         setTimeout(() => setNewlyAddedId(null), 1200)
       }
+      return true
     }
+    return false
+  }
+
+  function handleHeaderButtonClick() {
+    // Botão do topo = APENAS abre nova linha. Se já aberta, foca no campo
+    // de descrição para o usuário continuar preenchendo (evita "no-op mudo").
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
   }
 
   function startEdit(item: JobRevenueItem) {
@@ -1085,17 +1158,17 @@ function ServiceTable({ total, currency, items, onAdd, onUpdate, onDelete }: Ser
               : 'o que você cobra do cliente'}
           </p>
         </div>
-        {!adding && (
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Adicionar serviço
-          </button>
-        )}
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar serviço
+        </button>
       </div>
 
       {/* Cabeçalho de colunas */}
@@ -1168,92 +1241,90 @@ function ServiceTable({ total, currency, items, onAdd, onUpdate, onDelete }: Ser
           )
         })}
 
-        {/* Nova linha */}
+        {/* Nova linha — salva no Enter, blur, botão "Adicionar" inline.
+            Descarta via ícone 🗑 inline. */}
         {adding && (
-          <div className="grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20">
-            <select
-              value={newCat}
-              onChange={e => setNewCat(e.target.value as ServiceCat)}
-              disabled={isSubmitting}
-              className={inputSm}
-            >
-              <option value="outros" className="bg-[#141414]">Tipo</option>
-              {catOptions.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
-            </select>
-            <input
-              autoFocus
-              placeholder="Descrição do serviço"
-              value={newDesc}
-              onChange={e => setNewDesc(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') submitAdd()
-                if (e.key === 'Escape') { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }
-              }}
-              disabled={isSubmitting}
-              className={inputSm}
-            />
-            <input
-              placeholder="1"
-              value={newQty}
-              onChange={e => setNewQty(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              disabled={isSubmitting}
-              className={`${inputSm} text-right`}
-            />
-            <input
-              placeholder="0,00"
-              value={newVal}
-              onChange={e => setNewVal(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              disabled={isSubmitting}
-              className={`${inputSm} text-right`}
-            />
-            <span className="text-xs text-right text-[#525252]">
-              {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
-            </span>
-            <div className="flex flex-col gap-0.5">
-              <button
-                onClick={submitAdd}
-                disabled={isSubmitting || !newDesc.trim()}
-                title="Confirmar (Enter)"
-                className="text-[#D4A853] hover:text-[#E8C47A] disabled:opacity-40 p-0.5 transition-colors"
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[72px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as ServiceCat)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
               >
-                {isSubmitting ? <Spinner /> : (
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                <option value="outros" className="bg-[#141414]">Tipo</option>
+                {catOptions.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Descrição do serviço"
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newVal}
+                onChange={e => setNewVal(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
               </button>
-              {!isSubmitting && (
-                <button
-                  onClick={() => { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }}
-                  className="text-[#3a3a3a] hover:text-[#525252] p-0.5 transition-colors"
-                  title="Cancelar (Esc)"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Empty state */}
+      {/* Empty state — só o texto, o botão é o do header */}
       {items.length === 0 && !adding && (
-        <div className="text-center py-6">
-          <p className="text-xs text-[#525252] mb-3">Nenhum serviço adicionado ainda.</p>
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-3 py-2 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 mx-auto"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Adicionar serviço
-          </button>
-        </div>
+        <p className="text-xs text-[#525252] text-center py-6">Nenhum serviço adicionado ainda.</p>
       )}
 
       {/* Total */}
@@ -1275,9 +1346,18 @@ interface RepassTableProps {
   onAdd:    (description: string, category: JobCostCategory, quantity: number, unit_value: number) => Promise<AddResult>
   onUpdate: (id: string, fields: { description?: string; category?: JobCostCategory; quantity?: number; unit_value?: number }) => void
   onDelete: (id: string) => void
+  /** Abre o modal de upload de comprovante (botão "Comprovante" no header). */
+  onAddFile?: () => void
+  /** Comprovantes do job — renderizados como sub-seção no fim do card. */
+  files?: JobFile[]
+  onFileDeletedOptimistic?: (fileId: string) => void
+  onFileDeleteRollback?:    (file: JobFile) => void
 }
 
-function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: RepassTableProps) {
+function RepassTable({
+  total, currency, items, onAdd, onUpdate, onDelete,
+  onAddFile, files, onFileDeletedOptimistic, onFileDeleteRollback,
+}: RepassTableProps) {
   const [adding,        setAdding]        = useState(false)
   const [isSubmitting,  setIsSubmitting]  = useState(false)
   const [newDesc,       setNewDesc]       = useState('')
@@ -1290,21 +1370,49 @@ function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: Repa
   const [editCat,       setEditCat]       = useState<JobCostCategory>('other')
   const [editQty,       setEditQty]       = useState('')
   const [editVal,       setEditVal]       = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
 
-  async function submitAdd() {
-    if (!newDesc.trim()) return
+  function cancelAdd() {
+    setAdding(false); setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewVal('')
+  }
+
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
     const qty = parseFloat(newQty.replace(',', '.')) || 1
     const val = parseFloat(newVal.replace(',', '.')) || 0
     setIsSubmitting(true)
     const result = await onAdd(newDesc.trim(), newCat, qty, val)
     setIsSubmitting(false)
     if (result.success) {
-      setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewVal(''); setAdding(false)
+      setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewVal('')
+      setAdding(false)
       if (result.id) {
         setNewlyAddedId(result.id)
         setTimeout(() => setNewlyAddedId(null), 1200)
       }
+      return true
     }
+    return false
+  }
+
+  function handleHeaderButtonClick() {
+    // Topo = só abre. Já aberta? foca descrição (evita no-op invisível).
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
   }
 
   function startEdit(item: JobCostItem) {
@@ -1339,17 +1447,34 @@ function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: Repa
               : 'aluguel de gear, viagem cobrada, diária de assistente...'}
           </p>
         </div>
-        {!adding && (
+        <div className="flex items-center gap-2 shrink-0">
+          {onAddFile && (
+            <button
+              type="button"
+              onClick={onAddFile}
+              title="Anexar comprovante de repasse (PDF ou foto)"
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#a3a3a3] hover:text-white transition-colors px-2.5 py-1.5 rounded-lg border border-[#2a2a2a] hover:border-[#3a3a3a] hover:bg-[#1f1f1f]"
+            >
+              {/* paperclip */}
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              Comprovante
+            </button>
+          )}
           <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={handleHeaderButtonClick}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Adicionar repasse
           </button>
-        )}
+        </div>
       </div>
 
       {(items.length > 0 || adding) && (
@@ -1411,90 +1536,87 @@ function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: Repa
         })}
 
         {adding && (
-          <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20">
-            <select
-              value={newCat}
-              onChange={e => setNewCat(e.target.value as JobCostCategory)}
-              disabled={isSubmitting}
-              className={inputSm}
-            >
-              {catOptions.map(([v, l]) => <option key={v} value={v} className="bg-[#141414]">{l}</option>)}
-            </select>
-            <input
-              autoFocus
-              placeholder="Ex: Aluguel drone, viagem..."
-              value={newDesc}
-              onChange={e => setNewDesc(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') submitAdd()
-                if (e.key === 'Escape') { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }
-              }}
-              disabled={isSubmitting}
-              className={inputSm}
-            />
-            <input
-              placeholder="1"
-              value={newQty}
-              onChange={e => setNewQty(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              disabled={isSubmitting}
-              className={`${inputSm} text-right`}
-            />
-            <input
-              placeholder="0,00"
-              value={newVal}
-              onChange={e => setNewVal(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') submitAdd() }}
-              disabled={isSubmitting}
-              className={`${inputSm} text-right`}
-            />
-            <span className="text-xs text-right text-[#525252]">
-              {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
-            </span>
-            <div className="flex flex-col gap-0.5">
-              <button
-                onClick={submitAdd}
-                disabled={isSubmitting || !newDesc.trim()}
-                title="Confirmar (Enter)"
-                className="text-[#D4A853] hover:text-[#E8C47A] disabled:opacity-40 p-0.5 transition-colors"
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as JobCostCategory)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
               >
-                {isSubmitting ? <Spinner /> : (
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                {catOptions.map(([v, l]) => <option key={v} value={v} className="bg-[#141414]">{l}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Ex: Aluguel drone, viagem..."
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newVal}
+                onChange={e => setNewVal(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newVal.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
               </button>
-              {!isSubmitting && (
-                <button
-                  onClick={() => { setAdding(false); setNewDesc(''); setNewQty('1'); setNewVal('') }}
-                  className="text-[#3a3a3a] hover:text-[#525252] p-0.5 transition-colors"
-                  title="Cancelar (Esc)"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
             </div>
           </div>
         )}
       </div>
 
       {items.length === 0 && !adding && (
-        <div className="text-center py-6">
-          <p className="text-xs text-[#525252] mb-3">
-            Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
-          </p>
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-3 py-2 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 mx-auto"
-          >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Adicionar repasse
-          </button>
-        </div>
+        <p className="text-xs text-[#525252] text-center py-6">
+          Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
+        </p>
       )}
 
       {items.length > 0 && (
@@ -1502,6 +1624,18 @@ function RepassTable({ total, currency, items, onAdd, onUpdate, onDelete }: Repa
           <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
           <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
         </div>
+      )}
+
+      {/* ── Comprovantes (sub-seção) ──────────────────────────────────────────
+          Comprovantes pertencem ao job mas vivem aqui porque fazem parte do
+          fluxo financeiro do repasse. Se não há nenhum, o componente retorna
+          null — o botão "Comprovante" no header já orienta o usuário. */}
+      {files && onFileDeletedOptimistic && onFileDeleteRollback && (
+        <ComprovantesList
+          files={files}
+          onFileDeletedOptimistic={onFileDeletedOptimistic}
+          onFileDeleteRollback={onFileDeleteRollback}
+        />
       )}
     </div>
   )
@@ -1576,3 +1710,235 @@ const labelCls = 'block text-[10px] font-semibold text-[#525252] tracking-widest
 const inputCls = 'w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors'
 const inputSm  = 'w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 transition-colors'
 const btnGold  = 'flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-60 text-[#0a0a0a] font-semibold text-xs px-4 py-2 rounded-lg transition-colors'
+
+// ─── JobExpensesSection — despesas operacionais DESTE freelance ──────────────
+//
+// Form minimalista (descrição + valor) + lista + total + lucro estimado.
+// Sem categorias, parcelas ou moeda — se precisar disso, a página /expenses
+// já faz tudo. Aqui o foco é velocidade: "acabei de pagar o motoboy, registra".
+
+function JobExpensesSection({
+  expenses,
+  currency,
+  totalJob,
+  totalExpenses,
+  lucro,
+  onAdd,
+  onDelete,
+}: {
+  expenses:      Expense[]
+  currency:      string
+  totalJob:      number
+  totalExpenses: number
+  lucro:         number
+  onAdd:         (description: string, amount: number) => Promise<AddResult>
+  onDelete:      (id: string) => Promise<void>
+}) {
+  const [desc,      setDesc]       = useState('')
+  const [amountStr, setAmountStr]  = useState('')
+  const [adding,    setAdding]     = useState(false)   // linha aberta?
+  const [submitting, setSubmitting] = useState(false)  // salvando no servidor?
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
+
+  function cancelAdd() {
+    setAdding(false); setDesc(''); setAmountStr('')
+  }
+
+  async function submitAdd(): Promise<boolean> {
+    if (submitting) return false
+    const parsed = parseFloat(amountStr.replace(',', '.'))
+    if (!desc.trim() || !(parsed > 0)) { cancelAdd(); return false }
+    setSubmitting(true)
+    const res = await onAdd(desc, parsed)
+    setSubmitting(false)
+    if (res.success) {
+      setDesc(''); setAmountStr('')
+      setAdding(false)
+      return true
+    }
+    return false
+  }
+
+  function handleHeaderButtonClick() {
+    // Topo = só abre. Já aberta? foca descrição.
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (submitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
+  }
+
+  async function remove(id: string) {
+    setDeletingId(id)
+    await onDelete(id)
+    setDeletingId(null)
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-6">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Despesas deste freelance</h2>
+          <p className="text-[11px] text-[#737373] mt-0.5">
+            {expenses.length > 0
+              ? `${expenses.length} despesa${expenses.length !== 1 ? 's' : ''} · ${formatCurrency(totalExpenses, currency)}`
+              : 'o que saiu do seu bolso neste job (motoboy, estacionamento, etc).'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar despesa
+        </button>
+      </div>
+
+      {/* Lista */}
+      {expenses.length > 0 && (
+        <ul className="divide-y divide-[#1f1f1f] mb-3">
+          {expenses.map(e => {
+            const deleting = deletingId === e.id
+            return (
+              <li key={e.id} className="flex items-center gap-3 py-2 group">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate" title={e.description}>
+                    {e.description}
+                  </p>
+                  <p className="text-[10px] text-[#525252]">
+                    {formatDate(e.expense_date)}
+                  </p>
+                </div>
+                <div className="text-sm text-white tabular-nums">
+                  {formatCurrency(Number(e.amount), e.currency || currency)}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => remove(e.id)}
+                  disabled={deleting}
+                  className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5 disabled:opacity-40"
+                  aria-label="Remover despesa"
+                  title="Remover"
+                >
+                  {deleting ? <Spinner /> : <TrashIcon />}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {/* Linha editável — salva no Enter, blur, ou botão "Adicionar" inline.
+          Descarta via ícone 🗑 inline. */}
+      {adding && (
+        <div
+          ref={addRowRef}
+          tabIndex={-1}
+          onBlur={handleAddBlur}
+          className="mb-4 bg-[#1c1c1c] rounded-lg p-2 border border-[#D4A853]/20 outline-none"
+        >
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              ref={addDescRef}
+              autoFocus
+              type="text"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              onKeyDown={handleAddKeyDown}
+              placeholder="Descrição (ex: motoboy, diária extra…)"
+              disabled={submitting}
+              className={`${inputSm} flex-1`}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              value={amountStr}
+              onChange={(e) => setAmountStr(e.target.value)}
+              onKeyDown={handleAddKeyDown}
+              placeholder="0,00"
+              disabled={submitting}
+              className={`${inputSm} sm:w-32`}
+            />
+          </div>
+          <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+            {submitting && <Spinner />}
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => submitAdd()}
+              disabled={
+                submitting ||
+                !desc.trim() ||
+                !(parseFloat(amountStr.replace(',', '.')) > 0)
+              }
+              className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              Adicionar
+            </button>
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={cancelAdd}
+              disabled={submitting}
+              aria-label="Descartar linha"
+              title="Descartar"
+              className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+            >
+              <TrashIcon />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state — só o texto, o botão é o do header */}
+      {expenses.length === 0 && !adding && (
+        <p className="text-xs text-[#525252] text-center py-6">Nenhuma despesa registrada ainda.</p>
+      )}
+
+      {/* Resumo: valor do job - despesas = lucro estimado */}
+      <div className="border-t border-[#1f1f1f] pt-3 mt-1">
+        <dl className="grid grid-cols-3 gap-2 text-xs">
+          <div>
+            <dt className="text-[10px] text-[#525252] tracking-widest">VALOR DO JOB</dt>
+            <dd className="text-sm text-white tabular-nums">{formatCurrency(totalJob, currency)}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] text-[#525252] tracking-widest">DESPESAS</dt>
+            <dd className="text-sm text-[#a3a3a3] tabular-nums">
+              − {formatCurrency(totalExpenses, currency)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] text-[#D4A853] tracking-widest">LUCRO ESTIMADO</dt>
+            <dd
+              className={`text-sm font-semibold tabular-nums ${
+                lucro >= 0 ? 'text-emerald-400' : 'text-red-400'
+              }`}
+              title="Valor do job − despesas deste freelance. Aproximação simples; não considera repasses pagos a terceiros nem impostos."
+            >
+              {formatCurrency(lucro, currency)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  )
+}

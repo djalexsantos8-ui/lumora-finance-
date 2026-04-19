@@ -51,6 +51,11 @@ export async function createExpense(fields: {
   // Multimoeda (migration 011)
   exchange_rate?:      number          // 1 moeda = X BRL — fixado no momento da criação
   iof_applied?:        boolean         // se IOF (6,38%) deve ser somado
+  /**
+   * Vínculo opcional com um job — despesa operacional deste freelance
+   * especificamente. Default: null (despesa geral do workspace).
+   */
+  job_id?:             string | null
 }): Promise<ExpenseActionResult & { installments?: Expense[] }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -96,6 +101,7 @@ export async function createExpense(fields: {
       .from('expenses')
       .insert({
         workspace_id:       workspaceId,
+        job_id:             fields.job_id ?? null,
         description,
         category:           fields.category,
         amount:             simpleAmt,
@@ -121,6 +127,7 @@ export async function createExpense(fields: {
     }
 
     revalidatePath('/expenses')
+    if (fields.job_id) revalidatePath(`/freelances/${fields.job_id}`)
     return { success: true, data }
   }
 
@@ -151,6 +158,7 @@ export async function createExpense(fields: {
     return {
       id:                 allIds[i],   // id explícito em TODOS os records
       workspace_id:       workspaceId,
+      job_id:             fields.job_id ?? null,
       description:        `${description} (${idx}/${n})`,
       category:           fields.category,
       amount:             parcelAmt,
@@ -455,6 +463,15 @@ export async function deleteExpense(id: string): Promise<ExpenseActionResult> {
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
+  // Busca o job_id ANTES do soft-delete para revalidar a rota certa se for
+  // uma despesa vinculada a freelance.
+  const { data: existing } = await supabase
+    .from('expenses')
+    .select('job_id')
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('expenses')
     .update({ deleted_at: new Date().toISOString() })
@@ -467,5 +484,43 @@ export async function deleteExpense(id: string): Promise<ExpenseActionResult> {
   }
 
   revalidatePath('/expenses')
+  if (existing?.job_id) revalidatePath(`/freelances/${existing.job_id}`)
   return { success: true }
+}
+
+// ─── LIST JOB EXPENSES — despesas operacionais deste freelance ───────────────
+//
+// Filtro: expenses.job_id = jobId, não soft-deleted, do workspace do usuário.
+// Ordem: mais recentes primeiro.
+//
+// Usado pelo detalhe do freelance para exibir despesas vinculadas + calcular
+// lucro estimado. Página /expenses continua listando TODAS (com e sem job_id).
+
+export async function listJobExpenses(jobId: string): Promise<{
+  success:  boolean
+  data?:    Expense[]
+  message?: string
+}> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('job_id', jobId)
+    .is('deleted_at', null)
+    .order('expense_date', { ascending: false })
+    .order('created_at',   { ascending: false })
+
+  if (error) {
+    console.error('[expenses/list-by-job]', JSON.stringify(error))
+    return { success: false, message: translateSupabaseError(error) }
+  }
+
+  return { success: true, data: (data ?? []) as Expense[] }
 }

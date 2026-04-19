@@ -9,6 +9,7 @@ import {
   updateBudgetStatus,
   deleteBudget,
 } from '@/lib/actions/budgets'
+import { updateClient } from '@/lib/actions/clients'
 import { deleteBudgetItem } from '@/lib/actions/budget-items'
 import {
   formatCurrency,
@@ -18,6 +19,11 @@ import {
   SUPPORTED_CURRENCIES,
 } from '@/lib/utils/format'
 import AddItemModal from './add-item-modal'
+import { ClientPicker } from '@/components/clients/client-picker'
+import {
+  EMPTY_CLIENT_FULL_FORM,
+  type ClientFullFormValue,
+} from '@/components/clients/client-full-form'
 import type { Budget, BudgetItem, BudgetMarginType, BudgetStatus } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
@@ -69,12 +75,27 @@ export default function BudgetEditor({
     budget.margin_input > 0 ? String(budget.margin_input) : ''
   )
 
+  // ─── cliente (modo expandido — ClientPicker) ─────────────────────────────────
+  // Budgets NÃO têm client_id no schema, então os extras SEMPRE começam vazios.
+  // Usuário só preenche quando clica "+ Adicionar detalhes" e digita. O save
+  // encadeado persiste em `clients` via updateClient (cliente foi resolvido
+  // pelo updateBudgetInfo via getOrCreateClient e retornado no response).
+  const [expandedClientEdit, setExpandedClientEdit] = useState(false)
+  const [clientExtras, setClientExtras] = useState<ClientFullFormValue>(EMPTY_CLIENT_FULL_FORM)
+  const [clientSaveError, setClientSaveError] = useState<string | null>(null)
+
   // ─── auto-save (latest-ref pattern) ─────────────────────────────────────────
   // Ref sempre sincronizado com o estado mais recente dos campos
   const latestFields = useRef({
     title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
   })
   latestFields.current = { title, client, desc, delivers, evtDate, validUntil, currency, notesInt }
+
+  // Refs paralelos pro modo expandido de cliente (usado pela auto-save).
+  const latestClientExtras = useRef(clientExtras)
+  latestClientExtras.current = clientExtras
+  const expandedClientEditRef = useRef(expandedClientEdit)
+  expandedClientEditRef.current = expandedClientEdit
 
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -95,12 +116,41 @@ export default function BudgetEditor({
       })
       if (result.success && result.data) {
         setBudget(result.data)
+
+        // Save encadeado (soft-fail): se o modo expandido está ativo e o
+        // cliente foi resolvido, persiste os extras em `clients`. Falha aqui
+        // NÃO desfaz o save do orçamento — apenas mostra um aviso discreto.
+        if (expandedClientEditRef.current && result.client?.id) {
+          const e = latestClientExtras.current
+          const clientRes = await updateClient(result.client.id, {
+            phone:     e.phone,
+            instagram: e.instagram,
+            email:     e.email,
+            document:  e.document,
+            notes:     e.notes,
+          })
+          if (!clientRes.success) {
+            setClientSaveError(
+              'Cliente criado, mas não conseguimos salvar todos os dados. Você pode completar depois em Clientes.'
+            )
+          } else {
+            setClientSaveError(null)
+          }
+        }
+
         setSaveState('saved')
         setTimeout(() => setSaveState('idle'), 2500)
       } else {
         setSaveState('error')
       }
     }, 1500)
+  }
+
+  // Handler pros extras — controlled pelo pai (padrão ClientPicker). Muda
+  // local e dispara auto-save pra persistir na próxima janela de debounce.
+  function handleExtrasChange(v: ClientFullFormValue) {
+    setClientExtras(v)
+    scheduleAutoSave()
   }
 
   // ─── helpers de campo ────────────────────────────────────────────────────────
@@ -357,18 +407,27 @@ export default function BudgetEditor({
           <div className="lg:col-span-2 bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 space-y-4">
             <h2 className="text-sm font-semibold text-white">Dados do Projeto</h2>
 
-            {/* Cliente */}
+            {/* Cliente — padrão ÚNICO do sistema (ClientPicker) */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                 Cliente <span className="text-[#D4A853]">*</span>
               </label>
-              <input
-                type="text"
-                value={client}
-                onChange={e => field(setClient)(e.target.value)}
+              <ClientPicker
+                name={client}
+                onNameChange={(v) => field(setClient)(v)}
+                extras={clientExtras}
+                onExtrasChange={handleExtrasChange}
+                expanded={expandedClientEdit}
+                onExpandedChange={setExpandedClientEdit}
+                resetAnchor={budget.client_name}
                 placeholder="Nome do cliente ou empresa"
-                className={inputCls}
+                disabled={isPending}
               />
+              {clientSaveError && (
+                <p className="mt-2 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                  {clientSaveError}
+                </p>
+              )}
             </div>
 
             {/* Descrição */}

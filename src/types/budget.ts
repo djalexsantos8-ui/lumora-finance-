@@ -1,3 +1,5 @@
+import type { Client } from './client'
+
 export type BudgetStatus = 'draft' | 'sent' | 'approved' | 'rejected' | 'expired'
 export type BudgetMarginType = 'percentage' | 'fixed'
 export type BudgetItemCategory =
@@ -52,8 +54,11 @@ export interface BudgetItem {
   created_at: string
 }
 
+// `client` é opcional — populado quando a action tocou em client_name e
+// resolveu o cadastro via getOrCreateClient. Permite o save encadeado no
+// modo expandido (ClientPicker) sem endpoint novo.
 export type BudgetActionResult =
-  | { success: true; data?: Budget }
+  | { success: true; data?: Budget; client?: Client }
   | { success: false; message: string }
 
 export type BudgetItemActionResult =

@@ -3,11 +3,13 @@ import {
   Page,
   Text,
   View,
+  Image,
   StyleSheet,
 } from '@react-pdf/renderer'
 import type { Job, JobRevenueItem, JobCostItem } from '@/types/job'
 import { calcJobFinancials } from '@/types/job'
 import { formatDate } from '@/lib/utils/format'
+import type { PdfJobFile } from '@/app/api/jobs/[id]/pdf/route'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +32,6 @@ function todayFormatted(): string {
 }
 
 // Desmonta o prefixo de categoria de serviço codificado na descrição.
-// Ex: "Filmagem • Captação casamento" → { category: "Filmagem", text: "Captação casamento" }
 const SERVICE_PREFIXES = [
   'Filmagem', 'Fotografia', 'Edição', 'Drone', 'Direção', 'Motion', 'Produção',
 ]
@@ -44,7 +45,13 @@ function parseDesc(description: string): { category: string | null; text: string
   return { category: null, text: description }
 }
 
-// ─── Tokens de design (alinhados ao budget-document) ─────────────────────────
+function prettyBytes(n: number): string {
+  if (n < 1024)        return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// ─── Tokens de design ─────────────────────────────────────────────────────────
 
 const GOLD  = '#C49A2C'
 const DARK  = '#1a1a1a'
@@ -68,7 +75,7 @@ const S = StyleSheet.create({
     color:         DARK,
   },
 
-  // ── Cabeçalho ─────────────────────────────────────────────────────────────
+  // Cabeçalho
   headerRow: {
     flexDirection:  'row',
     justifyContent: 'space-between',
@@ -114,7 +121,6 @@ const S = StyleSheet.create({
     color:      DARK,
   },
 
-  // ── Divisor ───────────────────────────────────────────────────────────────
   divider: {
     height:          1.5,
     backgroundColor: LINE,
@@ -127,7 +133,6 @@ const S = StyleSheet.create({
     marginBottom:    20,
   },
 
-  // ── Título de seção ────────────────────────────────────────────────────────
   sectionTitle: {
     fontSize:      8,
     fontFamily:    'Helvetica-Bold',
@@ -136,7 +141,7 @@ const S = StyleSheet.create({
     marginBottom:  8,
   },
 
-  // ── Tabela ─────────────────────────────────────────────────────────────────
+  // Tabela
   tableHead: {
     flexDirection:  'row',
     paddingBottom:  6,
@@ -193,7 +198,6 @@ const S = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // ── Estado vazio da seção ──────────────────────────────────────────────────
   emptyRow: {
     paddingVertical: 10,
     marginBottom:   20,
@@ -203,7 +207,7 @@ const S = StyleSheet.create({
     color:    GRAY,
   },
 
-  // ── Box de resumo financeiro ───────────────────────────────────────────────
+  // Resumo financeiro
   summaryBox: {
     backgroundColor: LGRAY,
     borderLeft:      '4px solid #C49A2C',
@@ -248,8 +252,6 @@ const S = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color:      DARK,
   },
-
-  // ── A RECEBER (destaque máximo) ────────────────────────────────────────────
   dueRow: {
     flexDirection:  'row',
     justifyContent: 'space-between',
@@ -271,7 +273,63 @@ const S = StyleSheet.create({
     color:      GREEN,
   },
 
-  // ── Rodapé ─────────────────────────────────────────────────────────────────
+  // Comprovantes
+  comprovantesPage: {
+    backgroundColor: WHITE,
+    paddingTop:    52,
+    paddingBottom: 60,
+    paddingLeft:   60,
+    paddingRight:  60,
+    fontFamily:    'Helvetica',
+    fontSize:      9,
+    color:         DARK,
+  },
+  comprovantesIntro: {
+    fontSize:     8,
+    color:        GRAY,
+    marginBottom: 20,
+  },
+  comprovanteBlock: {
+    marginBottom: 24,
+  },
+  comprovanteImage: {
+    width:       '100%',
+    maxHeight:   560,
+    objectFit:   'contain',
+    borderRadius: 2,
+    border:       '1px solid #eeeeee',
+  },
+  comprovanteCaption: {
+    fontSize:  7,
+    color:     GRAY,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  comprovanteFallbackBox: {
+    backgroundColor: '#fafafa',
+    border:          '1px solid #e8e8e8',
+    padding:         14,
+    borderRadius:    4,
+    marginBottom:    12,
+  },
+  comprovanteFallbackLabel: {
+    fontSize:      7,
+    fontFamily:    'Helvetica-Bold',
+    color:         GRAY,
+    letterSpacing: 1,
+    marginBottom:  4,
+  },
+  comprovanteFallbackName: {
+    fontSize: 9,
+    color:    DARK,
+  },
+  comprovanteFallbackMeta: {
+    fontSize:  7,
+    color:     GRAY,
+    marginTop: 2,
+  },
+
+  // Rodapé
   footer: {
     position:  'absolute',
     bottom:    32,
@@ -294,6 +352,8 @@ interface JobDocumentProps {
   job:          Job
   revenueItems: JobRevenueItem[]
   costItems:    JobCostItem[]
+  /** Comprovantes já preparados no server (imagens vêm como data URL JPEG). */
+  files?:       PdfJobFile[]
 }
 
 // ─── Documento ────────────────────────────────────────────────────────────────
@@ -302,12 +362,12 @@ export default function JobDocument({
   job,
   revenueItems,
   costItems,
+  files = [],
 }: JobDocumentProps) {
   const fin     = calcJobFinancials(job)
   const today   = todayFormatted()
   const jobDate = formatDate(job.job_date)
 
-  // Período: multi-day mostra "Período: X a Y", single mostra "Data: X"
   const isMultiDay   = (job as Job & { is_multi_day?: boolean }).is_multi_day
   const dateStart    = (job as Job & { job_date_start?: string | null }).job_date_start
   const dateEnd      = (job as Job & { job_date_end?: string | null }).job_date_end
@@ -325,23 +385,26 @@ export default function JobDocument({
     .replace(/^-|-$/g, '')
     .slice(0, 60)
 
+  // Imagens vão embedadas; anexos sem data_url (PDFs) viram texto no fim.
+  const imageFiles    = files.filter(f => !!f.data_url)
+  const nonImageFiles = files.filter(f => !f.data_url)
+
   return (
     <Document
       title={`${job.title} — ${job.client_name || 'Cliente'}`}
       author="Lumora Finance"
       subject={`Cobrança · ${slug}`}
     >
+      {/* ═══════════════════════ PÁGINA 1: COBRANÇA ═══════════════════════ */}
       <Page size="A4" style={S.page}>
 
-        {/* ── Cabeçalho ─────────────────────────────────────────────────────── */}
+        {/* Cabeçalho */}
         <View style={S.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={S.headerLabel}>COBRANÇA DE JOB</Text>
             <Text style={S.jobTitle}>{job.title || 'Job sem título'}</Text>
             <Text style={S.clientName}>{job.client_name || 'Cliente não informado'}</Text>
-            {periodLabel && (
-              <Text style={S.jobDateLine}>{periodLabel}</Text>
-            )}
+            {periodLabel && <Text style={S.jobDateLine}>{periodLabel}</Text>}
           </View>
           <View style={S.headerRight}>
             <Text style={S.emissionLabel}>EMISSÃO</Text>
@@ -351,7 +414,7 @@ export default function JobDocument({
 
         <View style={S.dividerGold} />
 
-        {/* ── SERVIÇOS ──────────────────────────────────────────────────────── */}
+        {/* SERVIÇOS */}
         <Text style={S.sectionTitle}>SERVIÇOS</Text>
 
         {revenueItems.length > 0 ? (
@@ -369,9 +432,7 @@ export default function JobDocument({
                 <View key={item.id} style={S.tableRow}>
                   <View style={S.colDesc}>
                     <Text style={S.cellText}>{text || item.description}</Text>
-                    {category && (
-                      <Text style={S.cellSub}>{category}</Text>
-                    )}
+                    {category && <Text style={S.cellSub}>{category}</Text>}
                   </View>
                   <Text style={[S.cellText, S.colQty]}>{item.quantity}</Text>
                   <Text style={[S.cellText, S.colUnit]}>
@@ -395,7 +456,7 @@ export default function JobDocument({
           </View>
         )}
 
-        {/* ── REPASSES AO CLIENTE ───────────────────────────────────────────── */}
+        {/* REPASSES AO CLIENTE */}
         <Text style={S.sectionTitle}>REPASSES AO CLIENTE</Text>
         <Text style={{ fontSize: 7, color: GRAY, marginBottom: 8 }}>
           Valores pagos em nome do cliente e reembolsáveis.
@@ -414,7 +475,6 @@ export default function JobDocument({
               <View key={item.id} style={S.tableRow}>
                 <View style={S.colDesc}>
                   <Text style={S.cellText}>{item.description}</Text>
-                  {/* Future: receipt_url — já tipado, aguardando migration 006 */}
                   {item.receipt_url && (
                     <Text style={S.receiptTag}>Comprovante disponível</Text>
                   )}
@@ -440,17 +500,14 @@ export default function JobDocument({
           </View>
         )}
 
-        {/* ── Resumo financeiro ─────────────────────────────────────────────── */}
+        {/* Resumo financeiro */}
         <View style={S.divider} />
         <View style={S.summaryBox}>
-
-          {/* Serviços */}
           <View style={S.summaryRow}>
             <Text style={S.summaryLabel}>Serviços</Text>
             <Text style={S.summaryValue}>{formatMoney(fin.revenue, job.currency)}</Text>
           </View>
 
-          {/* Repasses (só se existirem) */}
           {fin.cost > 0 && (
             <View style={S.summaryRow}>
               <Text style={S.summaryLabel}>Repasses</Text>
@@ -458,7 +515,6 @@ export default function JobDocument({
             </View>
           )}
 
-          {/* Total */}
           <View style={S.summaryTotalRow}>
             <Text style={S.summaryTotalLabel}>Total do Job</Text>
             <Text style={S.summaryTotalValue}>{formatMoney(fin.total, job.currency)}</Text>
@@ -466,7 +522,6 @@ export default function JobDocument({
 
           <View style={S.summaryDivider} />
 
-          {/* Recebido (só se > 0) */}
           {fin.received > 0 && (
             <View style={S.summaryRow}>
               <Text style={S.summaryLabel}>
@@ -480,7 +535,6 @@ export default function JobDocument({
             </View>
           )}
 
-          {/* A RECEBER — destaque */}
           <View style={S.dueRow}>
             <Text style={S.dueLabel}>A Receber</Text>
             <Text style={fin.due <= 0 ? S.dueValuePaid : S.dueValue}>
@@ -489,15 +543,63 @@ export default function JobDocument({
           </View>
         </View>
 
-        {/* ── Rodapé ────────────────────────────────────────────────────────── */}
         <View style={S.footer} fixed>
           <Text style={S.footerText}>Lumora Finance</Text>
           <Text style={S.footerText}>
             {job.title || 'Job'} · Emitido em {today}
           </Text>
         </View>
-
       </Page>
+
+      {/* ═══════════════ PÁGINA(S) 2+: COMPROVANTES (imagens) ═══════════════
+          Só renderizamos esta página quando há pelo menos um arquivo
+          anexado. Imagens entram com 100% da largura útil; o react-pdf
+          quebra página automaticamente quando o bloco não cabe. */}
+      {files.length > 0 && (
+        <Page size="A4" style={S.comprovantesPage}>
+          <Text style={S.headerLabel}>COMPROVANTES</Text>
+          <Text style={S.jobTitle}>Anexos do job</Text>
+          <View style={S.dividerGold} />
+
+          <Text style={S.comprovantesIntro}>
+            {files.length} comprovante{files.length > 1 ? 's' : ''} anexado{files.length > 1 ? 's' : ''} a este job.
+          </Text>
+
+          {/* Imagens — cada bloco wrap={false} pra imagem + legenda sempre juntas */}
+          {imageFiles.map((f, i) => (
+            <View key={f.id} style={S.comprovanteBlock} wrap={false}>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <Image style={S.comprovanteImage} src={f.data_url!} />
+              <Text style={S.comprovanteCaption}>
+                {i + 1}. {f.file_name} · {prettyBytes(f.size_bytes)}
+              </Text>
+            </View>
+          ))}
+
+          {/* PDFs/anexos não-imagem listados no fim como referência */}
+          {nonImageFiles.length > 0 && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={[S.sectionTitle, { marginTop: 12 }]}>OUTROS ANEXOS</Text>
+              {nonImageFiles.map(f => (
+                <View key={f.id} style={S.comprovanteFallbackBox} wrap={false}>
+                  <Text style={S.comprovanteFallbackLabel}>
+                    {f.mime_type === 'application/pdf' ? 'PDF' : 'ARQUIVO'}
+                  </Text>
+                  <Text style={S.comprovanteFallbackName}>{f.file_name}</Text>
+                  <Text style={S.comprovanteFallbackMeta}>
+                    {prettyBytes(f.size_bytes)} · disponível no sistema
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={S.footer} fixed>
+            <Text style={S.footerText}>Lumora Finance</Text>
+            <Text style={S.footerText}>Comprovantes · {job.title || 'Job'}</Text>
+          </View>
+        </Page>
+      )}
     </Document>
   )
 }
