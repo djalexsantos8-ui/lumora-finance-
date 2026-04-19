@@ -43,21 +43,29 @@ export function SaveStatus({ tracker, onSave, disabled = false }: Props) {
     if (busy || disabled) return
     setBusy(true)
     try {
-      // 1. Aguarda qualquer autosave em andamento terminar
+      // 1. Aguarda qualquer autosave em andamento terminar.
+      //    IMPORTANTE: waitForIdle resolve também em caso de falha dos
+      //    autosaves (o contador é zerado no finally). Então NÃO inferir
+      //    sucesso a partir daqui — quem decide é onSave() abaixo.
       await tracker.waitForIdle()
 
-      // 2. Dispara persistência manual (parent decide o que salvar)
+      // 2. Dispara persistência manual (parent faz round-trip real no backend).
       const res = await onSave()
 
-      // 3. Feedback
+      // 3. Feedback — apenas baseado na resposta REAL do onSave.
+      //    Não chamamos markSuccess aqui: o tracker.track dentro do onSave
+      //    já cuida do lastSavedAt/lastError. Se chamássemos markSuccess,
+      //    estaríamos limpando um lastError legítimo de autosave anterior.
       if (res.success) {
-        tracker.markSuccess()
         toast.success('Salvo com sucesso')
       } else {
-        tracker.markError(res.message || 'Erro ao salvar.')
-        toast.error(res.message || 'Erro ao salvar.')
+        const msg = res.message || 'Erro ao salvar.'
+        tracker.markError(msg)
+        toast.error(msg)
       }
     } catch (err) {
+      // Só cai aqui se onSave() lançar. Nosso handler atual captura internamente,
+      // mas deixamos o catch como rede de segurança para implementações futuras.
       const msg = err instanceof Error ? err.message : 'Erro ao salvar.'
       tracker.markError(msg)
       toast.error(msg)

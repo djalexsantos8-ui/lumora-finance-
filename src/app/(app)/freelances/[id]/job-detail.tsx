@@ -394,31 +394,41 @@ export default function JobDetail({
 
   // ── Save manual ────────────────────────────────────────────────────────────
   //
-  // O botão "Salvar" existe como segurança para o usuário:
-  //   1. O SaveStatus chama waitForIdle() ANTES — então qualquer autosave
-  //      em andamento termina primeiro (evita request duplicado).
-  //   2. Em seguida invoca este handler, que persiste qualquer *rascunho*
-  //      não commitado (atualmente só `title` tem estado de rascunho aberto).
-  //   3. Retorna { success, message } — o SaveStatus cuida de toast + tracker.
+  // Invariante crítica: NUNCA reportar sucesso sem confirmação real do backend.
   //
-  // Concorrência:
-  //   · tracker garante contador global de saves in-flight
-  //   · busy local no SaveStatus impede double-click
-  //   · clientSwitching desabilita o botão durante troca de cliente
+  // Por quê não basta waitForIdle()? Porque o contador do tracker é zerado no
+  // `.finally()` da promise — ou seja, ele cai pra 0 tanto em sucesso QUANTO
+  // em falha. Se dependêssemos apenas dele, um autosave que crashou por falta
+  // de rede ainda faria o botão reportar "Salvo" (falso positivo).
+  //
+  // Solução: SEMPRE fazer um round-trip real no backend quando o usuário
+  // clica em Salvar.
+  //   · Se há rascunho de título (editingField === 'title') → persiste o draft
+  //   · Caso contrário → reescreve o título atual como checkpoint (no-op no
+  //     conteúdo, mas força uma transação real — updated_at será atualizado)
+  //
+  // Resultado: o sucesso do botão só aparece se a request concluir com
+  // resposta válida. Offline / 5xx / auth-fail → {success:false} real.
   const handleManualSave = useCallback(async (): Promise<{ success: boolean; message?: string }> => {
-    // Commit do rascunho de título se houver (outros campos já fazem blur-save)
-    if (editingField === 'title') {
-      const res = await updateJob(job.id, { title: titleDraft })
+    const payload = editingField === 'title'
+      ? { title: titleDraft }
+      : { title: job.title }
+
+    try {
+      const res = await tracker.track(updateJob(job.id, payload))
       if (res.success) {
         if (res.data) setJob(res.data)
-        setEditingField(null)
+        if (editingField === 'title') setEditingField(null)
         return { success: true }
       }
-      return { success: false, message: res.message || 'Erro ao salvar título.' }
+      return { success: false, message: res.message || 'Erro ao salvar.' }
+    } catch (err) {
+      // Rede caiu (TypeError: Failed to fetch) ou timeout. tracker.track já
+      // setou lastError via .catch(); aqui só propagamos a mensagem.
+      const msg = err instanceof Error ? err.message : 'Sem conexão com o servidor.'
+      return { success: false, message: msg }
     }
-    // Caso contrário, waitForIdle já garantiu que tudo foi persistido.
-    return { success: true }
-  }, [editingField, titleDraft, job.id])
+  }, [editingField, titleDraft, job.id, job.title, tracker])
 
   // ── Payments ───────────────────────────────────────────────────────────────
 
