@@ -231,7 +231,7 @@ export default async function NotificationsPage() {
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge={`${r.days_delta}d de atraso`}
                   badgeColor="red"
-                  href="/jobs"
+                  href="/freelances"
                 />
               ))}
               {dueTodayJobs.map(r => (
@@ -241,7 +241,7 @@ export default async function NotificationsPage() {
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge="vence hoje"
                   badgeColor="amber"
-                  href="/jobs"
+                  href="/freelances"
                 />
               ))}
             </Section>
@@ -273,7 +273,7 @@ export default async function NotificationsPage() {
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge="pendente"
                   badgeColor="gray"
-                  href="/jobs"
+                  href="/freelances"
                 />
               ))}
             </Section>
@@ -296,7 +296,7 @@ export default async function NotificationsPage() {
                     amount={totalValue > 0 ? formatCurrency(totalValue, job.currency) : '—'}
                     badge={label}
                     badgeColor={color}
-                    href={`/jobs/${job.id}`}
+                    href={`/freelances/${job.id}`}
                   />
                 )
               })}

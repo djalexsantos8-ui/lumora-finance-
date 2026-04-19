@@ -59,7 +59,7 @@ export async function addRevenueItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, data, job: updatedJob }
 }
 
@@ -108,7 +108,7 @@ export async function updateRevenueItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, data, job: updatedJob }
 }
 
@@ -132,7 +132,7 @@ export async function deleteRevenueItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, job: updatedJob }
 }
 
@@ -184,7 +184,7 @@ export async function addCostItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, data, job: updatedJob }
 }
 
@@ -238,7 +238,7 @@ export async function updateCostItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, data, job: updatedJob }
 }
 
@@ -262,6 +262,6 @@ export async function deleteCostItem(
   }
 
   const updatedJob = await fetchUpdatedJob(supabase, jobId)
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, job: updatedJob }
 }

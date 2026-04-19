@@ -1,11 +1,27 @@
 'use server'
 
+/**
+ * DEPLOY 3 — Fluxo de criação refatorado
+ *
+ * Removido:
+ * - createJob (legacy redirect flow)
+ * - createJobFromForm (/new form flow)
+ *
+ * Substituído por:
+ * - createFreelanceDraft()
+ *
+ * Motivo:
+ * - eliminar fricção
+ * - alinhar com fluxo real do usuário
+ */
+
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
-import { AppError } from '@/lib/errors/app-error'
 import { getErrorMessage } from '@/lib/errors/get-error-message'
+import { getOrCreateClient } from '@/lib/actions/clients'
+import { cleanName } from '@/lib/utils/normalize-name'
 import type {
   JobStatus,
   JobType,
@@ -16,62 +32,19 @@ import type {
   JobWithPaymentsResult,
 } from '@/types/job'
 
-// ─── CREATE — cria job e redireciona para o detalhe ──────────────────────────
-
-export async function createJob(): Promise<{ success: false; message: string }> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser()
-
-  if (authErr || !user) redirect('/login')
-
-  const workspaceId = await getWorkspaceId(user.id)
-  if (!workspaceId) redirect('/dashboard')
-
-  try {
-    const { data, error } = await supabase
-      .from('jobs')
-      .insert({
-        workspace_id:      workspaceId,
-        created_by:        user.id,
-        title:             'Job sem título',
-        client_name:       '',
-        status:            'in_progress' as JobStatus,
-        job_type:          'freelance'   as JobType,
-        payment_condition: 'upfront'     as PaymentCondition,
-        currency:          'BRL',
-        total_value:       0,
-        job_date:          new Date().toISOString().split('T')[0],
-      })
-      .select('id')
-      .single()
-
-    if (error || !data) {
-      console.error('[jobs/create]', error)
-      throw new AppError('JOB_CREATE_FAILED')
-    }
-
-    revalidatePath('/jobs')
-    redirect(`/jobs/${data.id}`)
-  } catch (err) {
-    if (err instanceof AppError) {
-      return { success: false, message: getErrorMessage(err.code) }
-    }
-    // redirect() lança um erro especial do Next.js — deve propagar
-    throw err
-  }
-}
-
-// ─── CREATE FROM FORM — cria job com dados mínimos e volta para a lista ───────
+// ─── CREATE DRAFT — cria rascunho e devolve {id} sem redirecionar ─────────────
 //
-// Fluxo: /jobs/new → preenche título + data → clica "Salvar Job" → /jobs
-// Nunca insere um job vazio no banco.
+// Deploy 3: fluxo de criação direta. O botão "Novo Freelance" chama esta action
+// e o cliente (Client Component) faz o router.push para /freelances/:id.
+//
+// Por que não reusar createJob? createJob é legado (órfão após Deploy 3) e
+// redireciona internamente, o que impede o chamador de controlar a navegação.
+// Mantemos esta action independente para simplicidade e rollback cirúrgico.
 
-export async function createJobFromForm(
-  formData: FormData
-): Promise<{ success: false; message: string }> {
+export async function createFreelanceDraft(): Promise<
+  | { success: true; id: string }
+  | { success: false; message: string }
+> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -83,43 +56,30 @@ export async function createJobFromForm(
   const workspaceId = await getWorkspaceId(user.id)
   if (!workspaceId) redirect('/dashboard')
 
-  const title      = (formData.get('title')       as string | null)?.trim() ?? ''
-  const jobDate    = (formData.get('job_date')    as string | null)?.trim() ?? ''
-  const clientName = (formData.get('client_name') as string | null)?.trim() ?? ''
+  const { data, error } = await supabase
+    .from('jobs')
+    .insert({
+      workspace_id:      workspaceId,
+      created_by:        user.id,
+      title:             'Freelance sem título',
+      client_name:       '',
+      status:            'in_progress' as JobStatus,
+      job_type:          'freelance'   as JobType,
+      payment_condition: 'upfront'     as PaymentCondition,
+      currency:          'BRL',
+      total_value:       0,
+      job_date:          new Date().toISOString().split('T')[0],
+    })
+    .select('id')
+    .single()
 
-  if (!title)   return { success: false, message: 'Título é obrigatório.' }
-  if (!jobDate) return { success: false, message: 'Data é obrigatória.' }
-
-  try {
-    const { error } = await supabase
-      .from('jobs')
-      .insert({
-        workspace_id:      workspaceId,
-        created_by:        user.id,
-        title,
-        client_name:       clientName,
-        status:            'in_progress' as JobStatus,
-        job_type:          'freelance'   as JobType,
-        payment_condition: 'upfront'     as PaymentCondition,
-        currency:          'BRL',
-        total_value:       0,
-        job_date:          jobDate,
-        payment_due_date:  jobDate, // upfront = mesmo dia
-      })
-
-    if (error) {
-      console.error('[jobs/create-form]', error)
-      throw new AppError('JOB_CREATE_FAILED')
-    }
-
-    revalidatePath('/jobs')
-    redirect('/jobs')
-  } catch (err) {
-    if (err instanceof AppError) {
-      return { success: false, message: getErrorMessage(err.code) }
-    }
-    throw err
+  if (error || !data) {
+    console.error('[jobs/create-draft]', error)
+    return { success: false, message: getErrorMessage('JOB_CREATE_FAILED') }
   }
+
+  revalidatePath('/freelances')
+  return { success: true, id: data.id }
 }
 
 // ─── UPDATE INFO — campos editáveis do job ────────────────────────────────────
@@ -146,6 +106,11 @@ export async function updateJob(
     is_multi_day?:      boolean
     lead_source?:       string | null
     client_segment?:    string | null
+    // ── Deploy 4 (F.6) — adapter UI unificado: {date_start, date_end} ──────
+    // Quando informados, substituem a escrita direta dos 4 campos legados.
+    // Produto trabalha em "intervalo"; banco mantém colunas separadas.
+    date_start?:        string
+    date_end?:          string | null
   }
 ): Promise<JobActionResult> {
   const supabase = await createClient()
@@ -161,8 +126,23 @@ export async function updateJob(
 
   if (fields.title !== undefined)
     payload.title = fields.title.trim() || 'Job sem título'
-  if (fields.client_name !== undefined)
-    payload.client_name = fields.client_name.trim()
+
+  // Cliente: se o nome foi editado, resolve o client_id via getOrCreateClient.
+  // Se virou vazio → solta a relação (client_id = null) mas preserva client_name.
+  if (fields.client_name !== undefined) {
+    const cleaned = cleanName(fields.client_name)
+    payload.client_name = cleaned
+
+    if (cleaned) {
+      const workspaceId = await getWorkspaceId(user.id)
+      if (workspaceId) {
+        const client = await getOrCreateClient(workspaceId, cleaned)
+        payload.client_id = client?.id ?? null
+      }
+    } else {
+      payload.client_id = null
+    }
+  }
   if (fields.client_email !== undefined)
     payload.client_email = fields.client_email.trim() || null
   if ('category' in fields)
@@ -196,6 +176,29 @@ export async function updateJob(
   if ('client_segment' in fields)
     payload.client_segment = fields.client_segment?.trim() || null
 
+  // ── Deploy 4 (F.6) — Adapter {date_start, date_end} → 4 colunas legadas ──
+  //
+  // Entrada (produto):            Mapeamento (banco):
+  //   date_start (obrigatório)  →  job_date         = start
+  //                                 job_date_start   = start
+  //   date_end   (opcional)     →  job_date_end     = end ?? start
+  //                                 is_multi_day     = end > start
+  //
+  // Defesa em profundidade (além do normalizador do componente):
+  //   · end < start   → coagido a null (single-day)
+  //   · end === start → coagido a null (single-day, is_multi_day=false)
+  //
+  // Aggregators/narrativa continuam lendo as 4 colunas legadas — zero impacto.
+  if (fields.date_start !== undefined) {
+    const start = fields.date_start
+    const rawEnd = fields.date_end ?? null
+    const safeEnd = rawEnd && rawEnd > start ? rawEnd : null
+    payload.job_date       = start
+    payload.job_date_start = start
+    payload.job_date_end   = safeEnd ?? start
+    payload.is_multi_day   = safeEnd !== null
+  }
+
   if (Object.keys(payload).length === 0)
     return { success: false, message: 'Nenhum campo para atualizar.' }
 
@@ -212,8 +215,8 @@ export async function updateJob(
     return { success: false, message: 'Erro ao salvar job.' }
   }
 
-  revalidatePath('/jobs')
-  revalidatePath(`/jobs/${id}`)
+  revalidatePath('/freelances')
+  revalidatePath(`/freelances/${id}`)
   return { success: true, data }
 }
 
@@ -244,8 +247,8 @@ export async function updateJobStatus(
     return { success: false, message: 'Erro ao atualizar status.' }
   }
 
-  revalidatePath('/jobs')
-  revalidatePath(`/jobs/${id}`)
+  revalidatePath('/freelances')
+  revalidatePath(`/freelances/${id}`)
   return { success: true, data }
 }
 
@@ -271,7 +274,7 @@ export async function deleteJob(id: string): Promise<JobActionResult> {
     return { success: false, message: 'Erro ao excluir job.' }
   }
 
-  revalidatePath('/jobs')
+  revalidatePath('/freelances')
   return { success: true }
 }
 
@@ -337,8 +340,8 @@ export async function addPayment(
     .is('deleted_at', null)
     .maybeSingle()
 
-  revalidatePath('/jobs')
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath('/freelances')
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, data: payment, job: updatedJob ?? undefined }
 }
 
@@ -374,8 +377,8 @@ export async function deletePayment(
     .is('deleted_at', null)
     .maybeSingle()
 
-  revalidatePath('/jobs')
-  revalidatePath(`/jobs/${jobId}`)
+  revalidatePath('/freelances')
+  revalidatePath(`/freelances/${jobId}`)
   return { success: true, job: updatedJob ?? undefined }
 }
 
@@ -405,7 +408,7 @@ export async function bulkDeleteJobs(
     return { success: false, message: 'Erro ao excluir jobs.' }
   }
 
-  revalidatePath('/jobs')
+  revalidatePath('/freelances')
   return { success: true }
 }
 

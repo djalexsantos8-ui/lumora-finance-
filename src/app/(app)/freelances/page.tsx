@@ -4,7 +4,7 @@ import { NewJobButton } from './new-job-button'
 import { JobsListClient } from './jobs-list-client'
 import type { Job } from '@/types/job'
 
-export const metadata = { title: 'Jobs — Lumora Finance' }
+export const metadata = { title: 'Freelances — Lumora Finance' }
 
 // ─── Filtro de mês atual ──────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ export default async function JobsPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-6 gap-4">
-        <h1 className="text-xl font-bold text-white">Jobs</h1>
+        <h1 className="text-xl font-bold text-white">Freelances</h1>
         <NewJobButton />
       </div>
 

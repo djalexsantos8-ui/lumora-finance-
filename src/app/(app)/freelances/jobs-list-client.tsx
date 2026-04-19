@@ -9,6 +9,8 @@ import type { Job, PaymentReminderStatus } from '@/types/job'
 import { getJobState } from '@/lib/domain/job-state'
 import type { JobStateResult } from '@/lib/domain/job-state'
 import { NewJobButton } from './new-job-button'
+import { isDraftFreelance } from '@/lib/utils/is-draft-freelance'
+import { DraftBadge } from '@/components/freelances/draft-badge'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -99,9 +101,9 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
         </div>
         <p className="text-white font-semibold mb-1">Tudo pronto pra começar</p>
         <p className="text-[#525252] text-sm max-w-xs mb-6">
-          Crie seu primeiro job para acompanhar seus recebimentos e o andamento dos seus projetos.
+          Crie seu primeiro freelance para acompanhar seus recebimentos e o andamento dos seus projetos.
         </p>
-        <NewJobButton label="Criar primeiro job" />
+        <NewJobButton label="Criar primeiro freelance" />
       </div>
     )
   }
@@ -216,6 +218,7 @@ function JobCard({ job, className = '', today }: { job: Job; className?: string;
   const isPaidFull     = payStatus === 'paid'
   const hasPartial     = payStatus === 'partial'
   const reminderStatus = getPaymentReminderStatus(job, today)
+  const isDraft        = isDraftFreelance(job)
   // total_job = serviços + repasses — o que o cliente efetivamente paga
   const serviceBase = Number(job.revenue_total) || Number(job.total_value)
   const totalJob    = serviceBase + Number(job.cost_total)
@@ -229,16 +232,17 @@ function JobCard({ job, className = '', today }: { job: Job; className?: string;
 
   return (
     <Link
-      href={`/jobs/${job.id}`}
+      href={`/freelances/${job.id}`}
       className={`block bg-[#141414] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-xl p-4 transition-all group ${className}`}
     >
       {/* Linha principal */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p className="text-sm font-semibold text-white truncate">
-              {job.title || 'Job sem título'}
+            <p className={`text-sm font-semibold truncate ${isDraft ? 'text-[#a3a3a3] italic' : 'text-white'}`}>
+              {isDraft ? 'Freelance sem título' : (job.title || 'Freelance sem título')}
             </p>
+            {isDraft && <DraftBadge />}
             <JobStateBadge {...jobState} />
             {job.category && <CategoryBadge category={job.category} />}
             {reminderStatus === 'overdue'   && <PaymentReminderBadge status="overdue" />}

@@ -16,6 +16,9 @@ import type {
   Job, JobRevenueItem, JobCostItem, JobPayment,
   JobStatus, JobCategory, JobCostCategory, PaymentCondition,
 } from '@/types/job'
+import { StatusStepper } from '@/components/freelances/status-stepper'
+import { FreelanceDateRange } from '@/components/freelances/date-range'
+import { ClientCombobox } from '@/components/clients/client-combobox'
 
 // ─── Categorias de serviço (frontend apenas) ──────────────────────────────────
 // Codificadas no campo `description` como prefixo: "Filmagem • Captação casamento"
@@ -105,12 +108,10 @@ export default function JobDetail({
   const [editingField, setEditingField] = useState<string | null>(null)
   const [titleDraft,   setTitleDraft]   = useState(job.title)
   const [clientDraft,  setClientDraft]  = useState(job.client_name)
-  const [dateDraft,    setDateDraft]    = useState(job.job_date)
+  // Deploy 4 (F.6): dateDraft / isMultiDay / dateStartDraft / dateEndDraft
+  // foram removidos — o estado de datas agora vive dentro de FreelanceDateRange.
 
   // Analytics fields (migration 014)
-  const [isMultiDay,      setIsMultiDay]      = useState(job.is_multi_day ?? false)
-  const [dateStartDraft,  setDateStartDraft]  = useState(job.job_date_start ?? job.job_date ?? '')
-  const [dateEndDraft,    setDateEndDraft]    = useState(job.job_date_end ?? '')
   const [leadSourceDraft, setLeadSourceDraft] = useState(job.lead_source ?? '')
   const [segmentDraft,    setSegmentDraft]    = useState(job.client_segment ?? '')
 
@@ -140,8 +141,7 @@ export default function JobDetail({
 
   // ── Status ─────────────────────────────────────────────────────────────────
 
-  function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newStatus = e.target.value as JobStatus
+  function applyStatus(newStatus: JobStatus) {
     startTransition(async () => {
       const res = await updateJobStatus(job.id, newStatus)
       if (res.success && res.data) setJob(res.data)
@@ -149,14 +149,27 @@ export default function JobDetail({
     })
   }
 
+  function handleStepperChange(next: JobStatus) {
+    applyStatus(next)
+  }
+
+  function handleCancelFreelance() {
+    if (!window.confirm('Cancelar este freelance? Você poderá reabrir depois.')) return
+    applyStatus('cancelled')
+  }
+
+  function handleReopenFreelance() {
+    applyStatus('in_progress')
+  }
+
   // ── Delete job ─────────────────────────────────────────────────────────────
 
   async function handleDeleteJob() {
-    if (!window.confirm('Excluir este job? Esta ação não pode ser desfeita.')) return
+    if (!window.confirm('Excluir este freelance? Esta ação não pode ser desfeita.')) return
     setIsDeleting(true)
     const res = await deleteJob(job.id)
     if (res.success) {
-      router.push('/jobs')
+      router.push('/freelances')
     } else {
       setIsDeleting(false)
       showToast('error', res.message)
@@ -208,17 +221,39 @@ export default function JobDetail({
   }
 
   // ── Field save ─────────────────────────────────────────────────────────────
+  //
+  // TECH DEBT:
+  // Inconsistência entre comportamentos de edição inline:
+  //   · title        → salva via onBlur (input puro, sem dropdown)
+  //   · client_name  → NÃO salva via onBlur; exige Salvar/Enter/Escape
+  //                    (usa ClientCombobox com dropdown — blur-save conflitaria
+  //                    com o ciclo de seleção da lista de sugestões)
+  //
+  // Decisão atual: manter a divergência para evitar regressão de UX no dropdown.
+  // Futuro: padronizar o comportamento de save (provavelmente REMOVER o
+  // onBlur-save do title, exigindo ação explícita em todos os campos inline).
+  //
+  // Tracked: DEPLOY_TECH_DEBT #F.save-consistency
 
   async function saveField(field: string, value?: string) {
     const payload: Parameters<typeof updateJob>[1] = {}
     if (field === 'title')              payload.title              = titleDraft
     if (field === 'client_name')        payload.client_name        = clientDraft
-    if (field === 'job_date')           payload.job_date           = dateDraft
     if (field === 'payment_condition')  payload.payment_condition  = value as PaymentCondition
     const res = await updateJob(job.id, payload)
     if (res.success && res.data) setJob(res.data)
     else if (!res.success) showToast('error', res.message)
     if (field !== 'payment_condition') setEditingField(null)
+  }
+
+  // Deploy 4 (F.6): handler unificado para o FreelanceDateRange.
+  // Chama updateJob com o adapter {date_start, date_end}, que sincroniza
+  // os 4 campos legados no banco atomicamente (job_date, *_start, *_end, is_multi_day).
+  async function handleDateRangeCommit(start: string, end: string | null) {
+    if (!start) return
+    const res = await updateJob(job.id, { date_start: start, date_end: end })
+    if (res.success && res.data) setJob(res.data)
+    else if (!res.success) showToast('error', res.message)
   }
 
   // ── Payments ───────────────────────────────────────────────────────────────
@@ -337,7 +372,6 @@ export default function JobDetail({
   const progressPct = fin.total > 0
     ? Math.min(100, Math.round((fin.received / fin.total) * 100))
     : 0
-  const { label: statusLabel, cls: statusCls } = STATUS_MAP[job.status] ?? STATUS_MAP.in_progress
 
   // ── Due date label ─────────────────────────────────────────────────────────
   const { label: dueDaysLabel, isOverdue } = calcDueDaysLabel(job.payment_due_date, fin.due)
@@ -355,7 +389,7 @@ export default function JobDetail({
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-6 text-sm text-[#525252]">
-        <Link href="/jobs" className="hover:text-white transition-colors">Jobs</Link>
+        <Link href="/freelances" className="hover:text-white transition-colors">Freelances</Link>
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
@@ -366,21 +400,75 @@ export default function JobDetail({
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="min-w-0 flex-1">
           {editingField === 'title' ? (
-            <input autoFocus value={titleDraft} onChange={e => setTitleDraft(e.target.value)}
-              onBlur={() => saveField('title')}
-              onKeyDown={e => { if (e.key === 'Enter') saveField('title'); if (e.key === 'Escape') setEditingField(null) }}
-              className="text-2xl font-bold bg-transparent border-b border-[#D4A853] text-white outline-none w-full pb-0.5" />
+            <div className="flex flex-col gap-2">
+              <input autoFocus value={titleDraft} onChange={e => setTitleDraft(e.target.value)}
+                onBlur={() => saveField('title')}
+                onKeyDown={e => { if (e.key === 'Enter') saveField('title'); if (e.key === 'Escape') setEditingField(null) }}
+                className="text-2xl font-bold bg-transparent border-b border-[#D4A853] text-white outline-none w-full pb-0.5" />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => saveField('title')}
+                  className="text-[11px] font-semibold px-3 py-1 rounded-md bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] transition-colors"
+                >
+                  Salvar
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => setEditingField(null)}
+                  className="text-[11px] font-medium px-3 py-1 rounded-md text-[#a3a3a3] hover:text-white border border-[#2a2a2a] hover:border-[#3a3a3a] transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
           ) : (
             <h1 className="text-2xl font-bold text-white cursor-pointer hover:text-[#D4A853] transition-colors truncate"
               onClick={() => { setTitleDraft(job.title); setEditingField('title') }} title="Clique para editar">
-              {job.title || 'Job sem título'}
+              {job.title || 'Freelance sem título'}
             </h1>
           )}
           {editingField === 'client_name' ? (
-            <input autoFocus value={clientDraft} onChange={e => setClientDraft(e.target.value)}
-              onBlur={() => saveField('client_name')}
-              onKeyDown={e => { if (e.key === 'Enter') saveField('client_name'); if (e.key === 'Escape') setEditingField(null) }}
-              className="text-sm bg-transparent border-b border-[#D4A853] text-[#a3a3a3] outline-none mt-1 w-full" />
+            <div
+              className="flex flex-col gap-2 mt-1"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { e.stopPropagation(); setEditingField(null) }
+              }}
+            >
+              <ClientCombobox
+                autoFocus
+                defaultValue={clientDraft}
+                disabled={isPending}
+                placeholder="Nome do cliente"
+                onChange={(v) => setClientDraft(v)}
+                onSelectExisting={(c) => setClientDraft(c.name)}
+              />
+              <p className="text-[10px] text-[#525252]">
+                Selecione um cliente existente ou digite um nome novo — ele será criado ao salvar.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => saveField('client_name')}
+                  disabled={isPending}
+                  className="text-[11px] font-semibold px-3 py-1 rounded-md bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] transition-colors disabled:opacity-60"
+                >
+                  Salvar
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => setEditingField(null)}
+                  disabled={isPending}
+                  className="text-[11px] font-medium px-3 py-1 rounded-md text-[#a3a3a3] hover:text-white border border-[#2a2a2a] hover:border-[#3a3a3a] transition-colors disabled:opacity-60"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-[#a3a3a3] mt-1 cursor-pointer hover:text-white transition-colors"
               onClick={() => { setClientDraft(job.client_name); setEditingField('client_name') }} title="Clique para editar">
@@ -394,41 +482,69 @@ export default function JobDetail({
           )}
         </div>
 
-        {/* Status + PDF + Delete */}
-        <div className="flex items-center gap-2 shrink-0">
-          <select value={job.status} onChange={handleStatusChange} disabled={isPending}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer outline-none appearance-none disabled:opacity-60 ${statusCls}`}>
-            {(Object.keys(STATUS_MAP) as JobStatus[]).map(s => (
-              <option key={s} value={s} className="bg-[#141414] text-white">{STATUS_MAP[s].label}</option>
-            ))}
-          </select>
-
-          {/* Gerar PDF */}
-          <button
-            onClick={handleDownloadPdf}
-            disabled={downloadingPdf}
-            title="Baixar cobrança em PDF"
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] border border-[#D4A853]/30 hover:border-[#D4A853]/60 hover:bg-[#D4A853]/5 rounded-lg px-3 py-1.5 transition-all disabled:opacity-50 disabled:cursor-wait"
-          >
-            {downloadingPdf ? (
-              <Spinner />
+        {/* Status stepper + ações (PDF, Excluir) + cancelar/reabrir lateral */}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <div className="flex items-center gap-2">
+            {job.status === 'cancelled' ? (
+              <span className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS_MAP.cancelled.cls}`}>
+                {STATUS_MAP.cancelled.label}
+              </span>
             ) : (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
+              <StatusStepper
+                status={job.status}
+                disabled={isPending}
+                onChange={handleStepperChange}
+              />
             )}
-            {downloadingPdf ? 'Gerando...' : 'PDF'}
-          </button>
 
-          <button
-            onClick={handleDeleteJob}
-            disabled={isDeleting}
-            title="Excluir job"
-            className="p-1.5 rounded-lg text-[#525252] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
-          >
-            {isDeleting ? <Spinner /> : <TrashIcon />}
-          </button>
+            {/* Gerar PDF */}
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              title="Baixar cobrança em PDF"
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] border border-[#D4A853]/30 hover:border-[#D4A853]/60 hover:bg-[#D4A853]/5 rounded-lg px-3 py-1.5 transition-all disabled:opacity-50 disabled:cursor-wait"
+            >
+              {downloadingPdf ? (
+                <Spinner />
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+              )}
+              {downloadingPdf ? 'Gerando...' : 'PDF'}
+            </button>
+
+            <button
+              onClick={handleDeleteJob}
+              disabled={isDeleting}
+              title="Excluir freelance"
+              className="p-1.5 rounded-lg text-[#525252] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+            >
+              {isDeleting ? <Spinner /> : <TrashIcon />}
+            </button>
+          </div>
+
+          {/* Ação lateral: cancelar / reabrir freelance */}
+          {job.status === 'cancelled' ? (
+            <button
+              type="button"
+              onClick={handleReopenFreelance}
+              disabled={isPending}
+              className="text-[10px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-50"
+            >
+              Reabrir freelance
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCancelFreelance}
+              disabled={isPending}
+              className="text-[10px] font-medium text-[#525252] hover:text-red-400 transition-colors disabled:opacity-50"
+            >
+              Cancelar freelance
+            </button>
+          )}
         </div>
       </div>
 
@@ -550,18 +666,16 @@ export default function JobDetail({
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-6">
         <h2 className="text-sm font-semibold text-white mb-3">Detalhes</h2>
         <div className="space-y-2.5">
-          <InfoRow label="Data do job">
-            {editingField === 'job_date' ? (
-              <input autoFocus type="date" value={dateDraft} onChange={e => setDateDraft(e.target.value)}
-                onBlur={() => saveField('job_date')}
-                onKeyDown={e => { if (e.key === 'Enter') saveField('job_date'); if (e.key === 'Escape') setEditingField(null) }}
-                className="text-xs bg-[#1c1c1c] border border-[#D4A853]/50 rounded px-2 py-1 text-white outline-none" />
-            ) : (
-              <span className="text-xs text-white cursor-pointer hover:text-[#D4A853] transition-colors"
-                onClick={() => { setDateDraft(job.job_date); setEditingField('job_date') }}>
-                {formatDate(job.job_date)}
-              </span>
-            )}
+          {/* ── Deploy 4 (F.6): UI unificada de datas ─────────────────────── */}
+          {/* Único ponto de verdade para período do freelance.                */}
+          {/* Adapter em updateJob sincroniza job_date / *_start / *_end /    */}
+          {/* is_multi_day transparentemente.                                  */}
+          <InfoRow label="Período">
+            <FreelanceDateRange
+              startDate={job.job_date_start ?? job.job_date}
+              endDate={job.is_multi_day ? (job.job_date_end ?? null) : null}
+              onCommit={handleDateRangeCommit}
+            />
           </InfoRow>
           <InfoRow label="Vencimento">
             <span className="text-xs text-white">{formatDate(job.payment_due_date)}</span>
@@ -587,57 +701,6 @@ export default function JobDetail({
                 <option key={v} value={v} className="bg-[#141414] text-white">{l}</option>
               ))}
             </select>
-          </InfoRow>
-
-          {/* ── Período do job ────────────────────────────────────────────── */}
-          <InfoRow label="Período do job">
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    const newVal = !isMultiDay
-                    setIsMultiDay(newVal)
-                    const res = await updateJob(job.id, {
-                      is_multi_day:   newVal,
-                      job_date_start: dateStartDraft || job.job_date,
-                      job_date_end:   newVal ? (dateEndDraft || null) : null,
-                    })
-                    if (res.success && res.data) setJob(res.data)
-                  }}
-                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isMultiDay ? 'bg-[#D4A853]' : 'bg-[#3a3a3a]'}`}
-                >
-                  <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${isMultiDay ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-                </button>
-                <span className="text-xs text-[#888]">{isMultiDay ? 'Múltiplos dias' : '1 dia'}</span>
-              </div>
-              {isMultiDay ? (
-                <div className="flex items-center gap-1.5">
-                  <input type="date" value={dateStartDraft}
-                    onChange={e => setDateStartDraft(e.target.value)}
-                    onBlur={async () => {
-                      const res = await updateJob(job.id, { job_date_start: dateStartDraft || null })
-                      if (res.success && res.data) setJob(res.data)
-                    }}
-                    className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
-                  <span className="text-xs text-[#555]">até</span>
-                  <input type="date" value={dateEndDraft}
-                    onChange={e => setDateEndDraft(e.target.value)}
-                    onBlur={async () => {
-                      const res = await updateJob(job.id, { job_date_end: dateEndDraft || null })
-                      if (res.success && res.data) setJob(res.data)
-                    }}
-                    className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
-                </div>
-              ) : (
-                <input type="date" value={dateStartDraft}
-                  onChange={e => setDateStartDraft(e.target.value)}
-                  onBlur={async () => {
-                    const res = await updateJob(job.id, { job_date_start: dateStartDraft || null })
-                    if (res.success && res.data) setJob(res.data)
-                  }}
-                  className="text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 w-32" />
-              )}
-            </div>
           </InfoRow>
 
           {/* ── Origem do lead ────────────────────────────────────────────── */}

@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: Props) {
     .select('title, client_name')
     .eq('id', id)
     .maybeSingle()
-  const title  = data?.title ?? 'Job'
+  const title  = data?.title ?? 'Freelance'
   const client = data?.client_name ? ` · ${data.client_name}` : ''
   return { title: `${title}${client} — Lumora Finance` }
 }
