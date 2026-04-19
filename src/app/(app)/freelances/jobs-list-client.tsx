@@ -14,6 +14,7 @@ import { NewJobButton } from './new-job-button'
 import { isDraftFreelance } from '@/lib/utils/is-draft-freelance'
 import { DraftBadge } from '@/components/freelances/draft-badge'
 import { BulkPayConfirm, type BulkPayPreviewItem } from '@/components/freelances/bulk-pay-confirm'
+import { DebtorsDrawer } from '@/components/freelances/debtors-drawer'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,9 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
   // para evitar duplo-clique disparar múltiplas requests concorrentes.
   const [bulkPayOpen,       setBulkPayOpen]       = useState(false)
   const [bulkPayProcessing, setBulkPayProcessing] = useState(false)
+
+  // ── Debtors drawer state ────────────────────────────────────────────────
+  const [debtorsOpen, setDebtorsOpen] = useState(false)
 
   // Data local estável (calculada uma vez no mount)
   const [today] = useState<string>(() => new Date().toLocaleDateString('en-CA'))
@@ -207,11 +211,36 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
           <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-1">RECEBIDO</p>
           <p className="text-base font-bold text-emerald-400">{formatCurrency(totalRecebido)}</p>
         </div>
-        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
-          <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-1">A RECEBER</p>
-          <p className="text-base font-bold text-[#D4A853]">{formatCurrency(totalPendente)}</p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setDebtorsOpen(true)}
+          disabled={totalPendente <= 0}
+          title={totalPendente > 0 ? 'Ver freelances com valor em aberto' : 'Nenhum valor em aberto'}
+          className="text-left bg-[#141414] border border-[#2a2a2a] hover:border-[#D4A853]/40 rounded-xl p-4 transition-colors group disabled:cursor-default disabled:hover:border-[#2a2a2a]"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold text-[#525252] tracking-widest">A RECEBER</p>
+            {totalPendente > 0 && (
+              <svg className="w-3 h-3 text-[#525252] group-hover:text-[#D4A853] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            )}
+          </div>
+          <p className="text-base font-bold text-[#D4A853] mt-1">{formatCurrency(totalPendente)}</p>
+          {totalPendente > 0 && (
+            <p className="text-[10px] text-[#525252] mt-1 group-hover:text-[#a3a3a3] transition-colors">
+              Ver em aberto →
+            </p>
+          )}
+        </button>
       </div>
+
+      {/* ── Drawer de devedores ───────────────────────────────────────────── */}
+      <DebtorsDrawer
+        open={debtorsOpen}
+        jobs={jobs}
+        onClose={() => setDebtorsOpen(false)}
+      />
 
       {/* ── Barra de seleção múltipla ─────────────────────────────────────────── */}
       {hasSelection && (
