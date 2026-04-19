@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, todayISO } from '@/lib/utils/format'
 import {
   updateJobStatus, updateJob, addPayment, deletePayment, deleteJob,
 } from '@/lib/actions/jobs'
+import { updateClient } from '@/lib/actions/clients'
 import {
   addRevenueItem, updateRevenueItem, deleteRevenueItem,
   addCostItem,    updateCostItem,    deleteCostItem,
@@ -19,6 +20,27 @@ import type {
 import { StatusStepper } from '@/components/freelances/status-stepper'
 import { FreelanceDateRange } from '@/components/freelances/date-range'
 import { ClientCombobox } from '@/components/clients/client-combobox'
+import {
+  ClientFullForm,
+  EMPTY_CLIENT_FULL_FORM,
+  type ClientFullFormValue,
+} from '@/components/clients/client-full-form'
+
+// ─── Helper: extrai extras do cliente embutido no job (join do page.tsx) ─────
+// Regra crítica (item 7 do brief): NUNCA busca por nome — só usa os dados já
+// vinculados via FK. Se `job.client_id` é null ou `job.client` não foi
+// carregado, devolve vazio. Não tenta adivinhar.
+function extrasFromJob(job: Job): ClientFullFormValue {
+  const c = job.client
+  if (!job.client_id || !c) return EMPTY_CLIENT_FULL_FORM
+  return {
+    phone:     c.phone     ?? '',
+    instagram: c.instagram ?? '',
+    email:     c.email     ?? '',
+    document:  c.document  ?? '',
+    notes:     c.notes     ?? '',
+  }
+}
 
 // ─── Categorias de serviço (frontend apenas) ──────────────────────────────────
 // Codificadas no campo `description` como prefixo: "Filmagem • Captação casamento"
@@ -110,6 +132,26 @@ export default function JobDetail({
   const [clientDraft,  setClientDraft]  = useState(job.client_name)
   // Deploy 4 (F.6): dateDraft / isMultiDay / dateStartDraft / dateEndDraft
   // foram removidos — o estado de datas agora vive dentro de FreelanceDateRange.
+
+  // ─── Modo expandido do cliente (F.4 — ficha completa) ──────────────────────
+  // Quando `expandedClientEdit = true`, abaixo do combobox aparece o
+  // ClientFullForm com phone/instagram/email/document/notes. Source of truth
+  // do NOME continua sendo `clientDraft` (o form renderiza nome em read-only).
+  const [expandedClientEdit, setExpandedClientEdit] = useState(false)
+  const [clientExtras,       setClientExtras]       = useState<ClientFullFormValue>(
+    extrasFromJob(initialJob)
+  )
+
+  // Reset crítico: se o usuário trocar o nome do cliente no combobox (digitou
+  // outro / selecionou outro existente), os extras do cliente anterior NÃO
+  // podem vazar pro novo. Regra item 8 do brief: sempre que `clientDraft`
+  // diverge do nome atual do job, zera e recolhe o modo expandido.
+  useEffect(() => {
+    if (clientDraft !== job.client_name) {
+      setClientExtras(EMPTY_CLIENT_FULL_FORM)
+      setExpandedClientEdit(false)
+    }
+  }, [clientDraft, job.client_name])
 
   // Analytics fields (migration 014)
   const [leadSourceDraft, setLeadSourceDraft] = useState(job.lead_source ?? '')
@@ -244,6 +286,71 @@ export default function JobDetail({
     if (res.success && res.data) setJob(res.data)
     else if (!res.success) showToast('error', res.message)
     if (field !== 'payment_condition') setEditingField(null)
+  }
+
+  // ─── Salvar cliente (modo simples OU expandido) ────────────────────────────
+  //
+  // Fluxo encadeado (regra item 9 do brief — zero novo endpoint):
+  //   1. updateJob({ client_name })   — cria/linka via getOrCreateClient no
+  //                                     backend; retorna job com client_id.
+  //   2. (só se expandido) updateClient(client_id, extras) — enriquece a ficha.
+  //
+  // Falha no passo 2 é SOFT-FAIL: o vínculo com o job já foi feito, o cliente
+  // existe com pelo menos o nome — o usuário pode completar depois em /clientes.
+  async function saveClientField() {
+    startTransition(async () => {
+      // Passo 1 — nome + vínculo
+      const jobRes = await updateJob(job.id, { client_name: clientDraft })
+      if (!jobRes.success) {
+        showToast('error', jobRes.message)
+        return
+      }
+      if (jobRes.data) setJob(jobRes.data)
+
+      // Modo simples: fecha e volta.
+      if (!expandedClientEdit) {
+        setEditingField(null)
+        return
+      }
+
+      // Passo 2 — ficha completa. Precisa de client_id (pode ser null se o
+      // nome ficou vazio, aí não há o que enriquecer).
+      const clientId = jobRes.data?.client_id
+      if (!clientId) {
+        setEditingField(null)
+        setExpandedClientEdit(false)
+        return
+      }
+
+      const extrasRes = await updateClient(clientId, {
+        phone:     clientExtras.phone,
+        instagram: clientExtras.instagram,
+        email:     clientExtras.email,
+        document:  clientExtras.document,
+        notes:     clientExtras.notes,
+      })
+
+      if (!extrasRes.success) {
+        // Regra item 10 do brief — mensagem explícita, não falhar silenciosamente.
+        showToast(
+          'error',
+          'Cliente criado, mas não conseguimos salvar todos os dados. Você pode completar depois em Clientes.'
+        )
+      } else {
+        showToast('success', 'Cliente atualizado.')
+      }
+
+      setEditingField(null)
+      setExpandedClientEdit(false)
+    })
+  }
+
+  // Cancelar modo edição do cliente: restaura drafts/extras pro snapshot do job.
+  function cancelClientEdit() {
+    setEditingField(null)
+    setExpandedClientEdit(false)
+    setClientDraft(job.client_name ?? '')
+    setClientExtras(extrasFromJob(job))
   }
 
   // Deploy 4 (F.6): handler unificado para o FreelanceDateRange.
@@ -434,7 +541,7 @@ export default function JobDetail({
             <div
               className="flex flex-col gap-2 mt-1"
               onKeyDown={(e) => {
-                if (e.key === 'Escape') { e.stopPropagation(); setEditingField(null) }
+                if (e.key === 'Escape') { e.stopPropagation(); cancelClientEdit() }
               }}
             >
               <ClientCombobox
@@ -448,26 +555,60 @@ export default function JobDetail({
               <p className="text-[10px] text-[#525252]">
                 Selecione um cliente existente ou digite um nome novo — ele será criado ao salvar.
               </p>
+
+              {/* Linha 1: ação principal */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onMouseDown={e => e.preventDefault()}
-                  onClick={() => saveField('client_name')}
+                  onClick={() => saveClientField()}
                   disabled={isPending}
                   className="text-[11px] font-semibold px-3 py-1 rounded-md bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] transition-colors disabled:opacity-60"
                 >
-                  Salvar
+                  {isPending ? 'Salvando…' : 'Salvar'}
                 </button>
                 <button
                   type="button"
                   onMouseDown={e => e.preventDefault()}
-                  onClick={() => setEditingField(null)}
+                  onClick={cancelClientEdit}
                   disabled={isPending}
                   className="text-[11px] font-medium px-3 py-1 rounded-md text-[#a3a3a3] hover:text-white border border-[#2a2a2a] hover:border-[#3a3a3a] transition-colors disabled:opacity-60"
                 >
                   Cancelar
                 </button>
               </div>
+
+              {/* Linha 2 (ABAIXO do Salvar/Cancelar) — toggle do modo expandido.
+                  Regra item 4 do brief: NÃO na mesma linha da ação principal. */}
+              <div>
+                <button
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => setExpandedClientEdit(v => !v)}
+                  disabled={isPending || !clientDraft.trim()}
+                  className="text-[11px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {expandedClientEdit ? '− Recolher' : '+ Adicionar detalhes'}
+                </button>
+              </div>
+
+              {/* Painel expandido — ficha completa reutilizando o componente
+                  de /clientes. Nome fica read-only (source of truth = combobox). */}
+              {expandedClientEdit && (
+                <div className="mt-1 p-3 rounded-xl bg-[#101010] border border-[#1f1f1f]">
+                  <p className="text-xs text-[#737373] leading-relaxed">
+                    Você pode cadastrar apenas o nome para criar rapidamente o cliente.
+                    Ou adicionar mais detalhes agora para manter seu cadastro organizado.
+                  </p>
+                  <ClientFullForm
+                    name={clientDraft}
+                    nameReadOnly
+                    value={clientExtras}
+                    onChange={setClientExtras}
+                    disabled={isPending}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm text-[#a3a3a3] mt-1 cursor-pointer hover:text-white transition-colors"

@@ -27,9 +27,12 @@ export default async function JobDetailPage({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // Join com clients via FK client_id → permite pré-popular a ficha completa
+  // do cliente no modo expandido do freelance sem endpoint extra.
+  // Quando client_id é null, `client` vem null (nada quebra).
   const { data: job, error } = await supabase
     .from('jobs')
-    .select('*')
+    .select('*, client:clients(id, name, phone, instagram, email, document, notes)')
     .eq('id', id)
     .is('deleted_at', null)
     .maybeSingle()

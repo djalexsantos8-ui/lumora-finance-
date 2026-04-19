@@ -9,6 +9,10 @@
 //
 // Zero fricção: a página nunca pede criação. Cliente só aparece aqui se já
 // nasceu via job/orçamento.
+//
+// O formulário em si vive em <ClientFullForm> — mesmo componente usado dentro
+// do freelance (modo expandido da combobox). Garante paridade visual e evita
+// divergir 2 formulários no futuro.
 
 'use client'
 
@@ -16,6 +20,10 @@ import { useMemo, useState, useTransition } from 'react'
 import { updateClient, deleteClient } from '@/lib/actions/clients'
 import { normalizeName } from '@/lib/utils/normalize-name'
 import type { Client } from '@/types/client'
+import {
+  ClientFullForm,
+  type ClientFullFormValue,
+} from '@/components/clients/client-full-form'
 
 interface Props {
   initialClients: Client[]
@@ -92,12 +100,17 @@ interface RowProps {
 }
 
 function ClientRow({ client, isOpen, onToggle, onUpdated, onDeleted }: RowProps) {
-  const [name,      setName]      = useState(client.name)
-  const [phone,     setPhone]     = useState(client.phone     ?? '')
-  const [instagram, setInstagram] = useState(client.instagram ?? '')
-  const [email,     setEmail]     = useState(client.email     ?? '')
-  const [document,  setDocument]  = useState(client.document  ?? '')
-  const [notes,     setNotes]     = useState(client.notes     ?? '')
+  // Nome fica fora do `form` porque aqui ele É editável (renomear o cliente).
+  // Em /freelances esse mesmo componente renderiza o nome como read-only.
+  const [name, setName] = useState(client.name)
+
+  const [form, setForm] = useState<ClientFullFormValue>({
+    phone:     client.phone     ?? '',
+    instagram: client.instagram ?? '',
+    email:     client.email     ?? '',
+    document:  client.document  ?? '',
+    notes:     client.notes     ?? '',
+  })
 
   const [error,     setError]     = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -107,11 +120,11 @@ function ClientRow({ client, isOpen, onToggle, onUpdated, onDeleted }: RowProps)
     startTransition(async () => {
       const res = await updateClient(client.id, {
         name,
-        phone,
-        instagram,
-        email,
-        document,
-        notes,
+        phone:     form.phone,
+        instagram: form.instagram,
+        email:     form.email,
+        document:  form.document,
+        notes:     form.notes,
       })
       if (res.success) {
         onUpdated(res.data)
@@ -155,26 +168,13 @@ function ClientRow({ client, isOpen, onToggle, onUpdated, onDeleted }: RowProps)
       {/* Editor inline */}
       {isOpen && (
         <div className="px-4 pb-4 pt-1 bg-[#101010] border-t border-[#1f1f1f]">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
-            <Field label="Nome" value={name} onChange={setName} required />
-            <Field label="Telefone" value={phone} onChange={setPhone} placeholder="(11) 99999-9999" />
-            <Field label="Instagram" value={instagram} onChange={setInstagram} placeholder="@handle" />
-            <Field label="Email" value={email} onChange={setEmail} placeholder="email@exemplo.com" />
-            <Field label="Documento" value={document} onChange={setDocument} placeholder="CPF/CNPJ" />
-          </div>
-
-          <div className="mt-3">
-            <label className="block text-[10px] font-semibold text-[#525252] tracking-widest mb-2">
-              NOTAS
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Referência interna, estilo de contrato, preferências…"
-              className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl px-3 py-2 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors resize-none"
-            />
-          </div>
+          <ClientFullForm
+            value={form}
+            onChange={setForm}
+            disabled={isPending}
+            name={name}
+            onNameChange={setName}
+          />
 
           {/* Histórico — placeholder */}
           <div className="mt-4 p-3 rounded-xl border border-dashed border-[#2a2a2a] bg-[#0c0c0c]">
@@ -214,36 +214,5 @@ function ClientRow({ client, isOpen, onToggle, onUpdated, onDeleted }: RowProps)
         </div>
       )}
     </li>
-  )
-}
-
-// ─── Campo simples ───────────────────────────────────────────────────────────
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-}: {
-  label:       string
-  value:       string
-  onChange:    (v: string) => void
-  placeholder?: string
-  required?:   boolean
-}) {
-  return (
-    <div>
-      <label className="block text-[10px] font-semibold text-[#525252] tracking-widest mb-2">
-        {label.toUpperCase()} {required && <span className="text-[#D4A853]">*</span>}
-      </label>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl px-3 py-2 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
-      />
-    </div>
   )
 }

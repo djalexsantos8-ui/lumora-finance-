@@ -67,9 +67,29 @@ export interface Job {
   is_multi_day:      boolean         // true = período, false = 1 dia
   lead_source:       string | null   // Origem do lead (texto livre)
   client_segment:    string | null   // Segmento do cliente (texto livre)
+  // ─── Cliente estruturado (migration 020) ───────────────────────────────────
+  // `client_id` existe no banco mas pode vir null (jobs antigos / client_name vazio).
+  // `client` é o join opcional — populado quando o caller faz
+  // select('*, client:clients(*)'). Fora disso vem undefined. Não é fonte da
+  // verdade: o nome canônico ainda vive em `client_name` (para jobs sem
+  // relação estruturada).
+  client_id?:        string | null
+  client?:           ClientEmbedded | null
   deleted_at:        string | null
   created_at:        string
   updated_at:        string
+}
+
+// Shape mínimo do cliente quando embutido via join (evita dependência circular
+// com types/client.ts — mantém apenas o que o detalhe do freelance consome).
+export interface ClientEmbedded {
+  id:        string
+  name:      string
+  phone:     string | null
+  instagram: string | null
+  email:     string | null
+  document:  string | null
+  notes:     string | null
 }
 
 // ─── Item de receita ──────────────────────────────────────────────────────────
