@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { formatCurrency, formatJobDateRange } from '@/lib/utils/format'
-import { bulkDeleteJobs } from '@/lib/actions/jobs'
+import { bulkDeleteJobs, bulkMarkJobsAsPaid } from '@/lib/actions/jobs'
 import { getPaymentStatus, getAmountDue, getPaymentReminderStatus } from '@/types/job'
 import type { Job, PaymentReminderStatus } from '@/types/job'
 import { getJobState } from '@/lib/domain/job-state'
@@ -11,6 +13,7 @@ import type { JobStateResult } from '@/lib/domain/job-state'
 import { NewJobButton } from './new-job-button'
 import { isDraftFreelance } from '@/lib/utils/is-draft-freelance'
 import { DraftBadge } from '@/components/freelances/draft-badge'
+import { BulkPayConfirm, type BulkPayPreviewItem } from '@/components/freelances/bulk-pay-confirm'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -22,15 +25,50 @@ interface Props {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
+  const router = useRouter()
   const [jobs,        setJobs]        = useState<Job[]>(initialJobs)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isPending,   startTransition] = useTransition()
+
+  // ── Bulk pay state ──────────────────────────────────────────────────────
+  // `bulkPayOpen` controla o modal. `bulkPayProcessing` é mutex dedicado
+  // para evitar duplo-clique disparar múltiplas requests concorrentes.
+  const [bulkPayOpen,       setBulkPayOpen]       = useState(false)
+  const [bulkPayProcessing, setBulkPayProcessing] = useState(false)
 
   // Data local estável (calculada uma vez no mount)
   const [today] = useState<string>(() => new Date().toLocaleDateString('en-CA'))
 
   const allSelected = jobs.length > 0 && selectedIds.size === jobs.length
   const hasSelection = selectedIds.size > 0
+
+  // ── Preview dos selecionados para o modal (memoizado) ─────────────────────
+  // Source of truth: mesmo cálculo que o server fará.
+  //   · já pago (status=paid) → marca skip='already_paid' (não entra no total)
+  //   · sem client_id         → marca skip='no_client'     (não entra no total)
+  //   · senão                 → amount = getAmountDue(job) (remaining)
+  const bulkPayPreview = useMemo<BulkPayPreviewItem[]>(() => {
+    return jobs
+      .filter(j => selectedIds.has(j.id))
+      .map<BulkPayPreviewItem>(j => {
+        if (j.status === 'paid') {
+          return { id: j.id, title: j.title, amount: 0, skip: 'already_paid' }
+        }
+        if (!j.client_id) {
+          return { id: j.id, title: j.title, amount: 0, skip: 'no_client' }
+        }
+        return {
+          id:     j.id,
+          title:  j.title,
+          amount: getAmountDue(j),
+        }
+      })
+  }, [jobs, selectedIds])
+
+  const payableCount = bulkPayPreview.filter(i => !i.skip).length
+  const payableTotal = bulkPayPreview
+    .filter(i => !i.skip)
+    .reduce((s, i) => s + i.amount, 0)
 
   // Totalizadores — total_job inclui repasses (o que o cliente paga de fato)
   const totalBruto    = jobs.reduce((s, j) => {
@@ -88,6 +126,50 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
     })
   }
 
+  // ── Bulk pay handler ────────────────────────────────────────────────────
+  //
+  // Mutex (`bulkPayProcessing`) + desabilita botão no modal → garante que o
+  // usuário não consiga disparar duas requests concorrentes. O backend já é
+  // idempotente (lê status atual e skipa se paid), mas evitamos o round-trip.
+  async function handleConfirmBulkPay() {
+    if (bulkPayProcessing) return
+    const ids = bulkPayPreview.filter(i => !i.skip).map(i => i.id)
+    if (ids.length === 0) { setBulkPayOpen(false); return }
+
+    setBulkPayProcessing(true)
+    try {
+      const res = await bulkMarkJobsAsPaid(ids)
+
+      if (!res.success && res.processed.length === 0) {
+        toast.error(res.message ?? 'Nenhum freelance pôde ser pago.')
+        return
+      }
+
+      // Feedback: toast verde com contagem + valor, e avisos dos ignorados
+      if (res.processed.length > 0) {
+        const totalPaid = res.processed.reduce((s, p) => s + p.amount, 0)
+        toast.success(
+          `${res.processed.length} freelance${res.processed.length !== 1 ? 's' : ''} marcado${res.processed.length !== 1 ? 's' : ''} como pago — ${formatCurrency(totalPaid)}`,
+        )
+      }
+
+      const errorSkips = res.skipped.filter(s => s.reason === 'error' || s.reason === 'not_found')
+      if (errorSkips.length > 0) {
+        toast.error(`${errorSkips.length} falharam. Tente novamente.`)
+      }
+
+      setBulkPayOpen(false)
+      setSelectedIds(new Set())
+      // Sincroniza lista com o banco (cards de topo recalculam automaticamente)
+      router.refresh()
+    } catch (err) {
+      console.error('[bulk-pay]', err)
+      toast.error('Erro inesperado. Tente novamente.')
+    } finally {
+      setBulkPayProcessing(false)
+    }
+  }
+
   // ── Empty state ──────────────────────────────────────────────────────────────
 
   if (jobs.length === 0) {
@@ -133,38 +215,72 @@ export function JobsListClient({ jobs: initialJobs, monthLabel }: Props) {
 
       {/* ── Barra de seleção múltipla ─────────────────────────────────────────── */}
       {hasSelection && (
-        <div className="flex items-center justify-between bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl px-4 py-3 mb-3 gap-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl px-4 py-3 mb-3 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <input
               type="checkbox"
               checked={allSelected}
               onChange={toggleAll}
               className="w-4 h-4 rounded border-[#3a3a3a] bg-[#0a0a0a] accent-[#D4A853] cursor-pointer"
             />
-            <span className="text-sm text-[#a3a3a3]">
-              {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
-            </span>
+            <div className="min-w-0">
+              <p className="text-sm text-[#a3a3a3]">
+                {selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}
+              </p>
+              {payableCount > 0 && (
+                <p className="text-[11px] text-[#525252] truncate">
+                  {payableCount} a pagar · <span className="text-[#D4A853] font-semibold">{formatCurrency(payableTotal)}</span>
+                </p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={handleBulkDelete}
-            disabled={isPending}
-            className="flex items-center gap-2 text-xs font-semibold text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40"
-          >
-            {isPending ? (
-              <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : (
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Pagar selecionados — dourado */}
+            <button
+              onClick={() => setBulkPayOpen(true)}
+              disabled={isPending || bulkPayProcessing || payableCount === 0}
+              title={payableCount === 0 ? 'Nenhum freelance válido para pagar' : 'Pagar freelances selecionados'}
+              className="flex items-center gap-2 text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] disabled:bg-[#2a2a2a] disabled:text-[#525252] disabled:cursor-not-allowed transition-colors px-3 py-1.5 rounded-lg"
+            >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M5 13l4 4L19 7" />
               </svg>
-            )}
-            Excluir selecionados
-          </button>
+              Pagar selecionados
+            </button>
+
+            {/* Excluir — vermelho */}
+            <button
+              onClick={handleBulkDelete}
+              disabled={isPending || bulkPayProcessing}
+              className="flex items-center gap-2 text-xs font-semibold text-red-400 hover:text-red-300 disabled:opacity-50 transition-colors px-3 py-1.5 rounded-lg border border-red-500/20 hover:border-red-500/40"
+            >
+              {isPending ? (
+                <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              )}
+              Excluir selecionados
+            </button>
+          </div>
         </div>
       )}
+
+      {/* ── Modal de confirmação de pagamento em lote ─────────────────────── */}
+      <BulkPayConfirm
+        open={bulkPayOpen}
+        items={bulkPayPreview}
+        isProcessing={bulkPayProcessing}
+        onClose={() => !bulkPayProcessing && setBulkPayOpen(false)}
+        onConfirm={handleConfirmBulkPay}
+      />
 
       {/* ── Banner de alertas de vencimento ──────────────────────────────────── */}
       {(overdueJobs.length > 0 || dueTodayJobs.length > 0) && (

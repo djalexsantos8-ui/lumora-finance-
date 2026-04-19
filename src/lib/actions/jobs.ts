@@ -490,6 +490,166 @@ export async function bulkDeleteJobs(
   return { success: true }
 }
 
+// ─── BULK MARK AS PAID — pagamento em lote ───────────────────────────────────
+//
+// Regras de negócio (server-side, NÃO confia em valores da UI):
+//
+//   · Para cada id recebido:
+//       1. Lê o estado atual do banco (status, totais, amount_paid, client_id)
+//       2. Se status = 'paid' → skip ('already_paid')
+//       3. Se client_id = null → skip ('no_client')
+//          (mesma invariante do updateJobStatus('paid'): sem cliente não gera
+//          receita paga — previne lixo financeiro)
+//       4. Calcula total = (revenue_total || total_value) + cost_total
+//          e remaining = max(0, total - amount_paid)
+//       5. Se remaining > 0:
+//            · INSERT em job_payments (amount = remaining, received_at = hoje,
+//              notes = 'Pagamento em lote'). O trigger recalcula amount_paid.
+//            · UPDATE jobs.status = 'paid'
+//       6. Se remaining = 0 (já quitado mas status ainda não é paid):
+//            · só atualiza status = 'paid'
+//
+// Processamento SEQUENCIAL por design — evita race conditions quando múltiplos
+// cliques disparam simultaneamente (o segundo loop vê status = 'paid' do primeiro
+// e faz skip). Também respeita o princípio de "um por vez" do usuário.
+//
+// Nunca aborta em erro parcial: itens com falha vão para `skipped[]` com
+// motivo, itens OK vão para `processed[]`. O chamador decide o que mostrar.
+//
+// Invariantes garantidas ao final:
+//   · nenhum job já pago foi alterado
+//   · nenhum amount_paid ficou > total (usamos remaining = max(0, diff))
+//   · status = 'paid' sempre vem junto com amount_paid >= total (ou amount_paid
+//     já era >= total antes)
+
+export type BulkPaySkipReason = 'already_paid' | 'no_client' | 'not_found' | 'error'
+
+export interface BulkPayProcessed {
+  id:     string
+  title:  string
+  amount: number    // quanto foi registrado neste pagamento em lote (0 se só flag)
+}
+
+export interface BulkPaySkipped {
+  id:       string
+  title?:   string
+  reason:   BulkPaySkipReason
+  message?: string
+}
+
+export interface BulkPayResult {
+  success:   boolean
+  message?:  string
+  processed: BulkPayProcessed[]
+  skipped:   BulkPaySkipped[]
+}
+
+export async function bulkMarkJobsAsPaid(ids: string[]): Promise<BulkPayResult> {
+  if (!ids?.length) {
+    return {
+      success:   false,
+      message:   'Nenhum freelance selecionado.',
+      processed: [],
+      skipped:   [],
+    }
+  }
+
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser()
+
+  if (authErr || !user) {
+    return { success: false, message: 'Não autorizado.', processed: [], skipped: [] }
+  }
+
+  const processed: BulkPayProcessed[] = []
+  const skipped:   BulkPaySkipped[]   = []
+  const today = new Date().toISOString().split('T')[0]
+
+  // Sequencial por design — ver bloco de comentário acima.
+  for (const id of ids) {
+    // 1. Lê estado atual — RLS já filtra por workspace via policy em jobs.
+    const { data: job, error: readErr } = await supabase
+      .from('jobs')
+      .select('id, title, status, client_id, revenue_total, cost_total, total_value, amount_paid, currency')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (readErr || !job) {
+      skipped.push({ id, reason: 'not_found' })
+      continue
+    }
+
+    // 2. Já pago → skip silencioso (UX: não soma, não processa)
+    if (job.status === 'paid') {
+      skipped.push({ id, title: job.title, reason: 'already_paid' })
+      continue
+    }
+
+    // 3. Invariante de consistência: pago sem cliente não pode existir
+    if (!job.client_id) {
+      skipped.push({ id, title: job.title, reason: 'no_client' })
+      continue
+    }
+
+    // 4. Cálculo server-side (nunca confia em valor enviado pela UI)
+    const base      = Number(job.revenue_total) || Number(job.total_value)
+    const total     = base + Number(job.cost_total)
+    const paid      = Number(job.amount_paid)
+    const remaining = Math.max(0, total - paid)
+    const rounded   = Math.round(remaining * 100) / 100
+
+    // 5. Registra pagamento se houver valor em aberto
+    if (rounded > 0) {
+      const { error: payErr } = await supabase
+        .from('job_payments')
+        .insert({
+          job_id:      id,
+          amount:      rounded,
+          currency:    job.currency ?? 'BRL',
+          received_at: today,
+          notes:       'Pagamento em lote',
+        })
+
+      if (payErr) {
+        console.error('[jobs/bulk-pay/payment-insert]', id, payErr)
+        skipped.push({
+          id, title: job.title, reason: 'error',
+          message: 'Falha ao registrar pagamento.',
+        })
+        continue
+      }
+    }
+
+    // 6. Atualiza status → 'paid'
+    const { error: statusErr } = await supabase
+      .from('jobs')
+      .update({ status: 'paid' })
+      .eq('id', id)
+      .is('deleted_at', null)
+
+    if (statusErr) {
+      // Payment foi inserido mas status falhou. Do ponto de vista derivado
+      // (getPaymentStatus) o job já é 'paid' porque amount_paid >= total.
+      // Logamos mas contamos como processado para não confundir o usuário.
+      console.error('[jobs/bulk-pay/status-update]', id, statusErr)
+    }
+
+    processed.push({ id, title: job.title, amount: rounded })
+  }
+
+  revalidatePath('/freelances')
+
+  return {
+    success: processed.length > 0,
+    processed,
+    skipped,
+  }
+}
+
 // ─── GET WITH PAYMENTS — para a tela de detalhe ───────────────────────────────
 
 export async function getJobWithPayments(id: string): Promise<JobWithPaymentsResult> {
