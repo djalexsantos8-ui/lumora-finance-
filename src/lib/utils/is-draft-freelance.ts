@@ -5,9 +5,12 @@
 //   · não tem custo   (cost_total === 0)
 //   · o título é o default gerado automaticamente na criação
 //
-// Reconhecemos AMBOS os defaults — legado ('Job sem título') e novo
-// ('Freelance sem título') — para não quebrar rascunhos antigos quando
-// o default for trocado no Deploy 3.
+// Reconhecemos os defaults usados ao longo do tempo:
+//   · 'Rascunho' — default atual (DB-safe: passa o CHECK jobs_title_valid)
+//   · 'Freelance sem título' — legado pré-hardening
+//   · 'Job sem título' — legado pré-Deploy 3
+// A UI continua exibindo "Freelance sem título" para qualquer rascunho,
+// independente do placeholder que está no DB.
 //
 // NÃO olhamos para `status` — um rascunho pode ser criado direto em
 // `in_progress`. Só deixamos de ser rascunho quando o usuário insere
@@ -16,6 +19,7 @@
 import type { Job } from '@/types/job'
 
 export const DEFAULT_FREELANCE_TITLES: readonly string[] = [
+  'Rascunho',
   'Freelance sem título',
   'Job sem título',
 ] as const

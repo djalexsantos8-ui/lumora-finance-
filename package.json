@@ -7,6 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "db:new": "supabase migration new",
+    "db:push": "supabase db push",
+    "db:status": "supabase migration list",
+    "db:ship": "supabase db push && echo '\\n✓ Migrations aplicadas e validadas'",
     "deploy": "npm run build && git add -A && (git diff --cached --quiet || git commit -m \"deploy: $(date +'%Y-%m-%d %H:%M')\") && git push origin main && echo '\\n✓ Push feito. Vercel vai buildar em ~60s → https://vercel.com/dashboard'"
   },
   "dependencies": {

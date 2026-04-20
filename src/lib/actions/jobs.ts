@@ -61,7 +61,9 @@ export async function createFreelanceDraft(): Promise<
     .insert({
       workspace_id:      workspaceId,
       created_by:        user.id,
-      title:             'Freelance sem título',
+      // DB armazena 'Rascunho' (título neutro que passa o CHECK jobs_title_valid).
+      // A UI exibe "Freelance sem título" quando isDraftFreelance(job) === true.
+      title:             'Rascunho',
       client_name:       '',
       status:            'in_progress' as JobStatus,
       job_type:          'freelance'   as JobType,
@@ -132,7 +134,7 @@ export async function updateJob(
   const payload: Record<string, unknown> = {}
 
   if (fields.title !== undefined)
-    payload.title = fields.title.trim() || 'Job sem título'
+    payload.title = fields.title.trim() || 'Rascunho'
 
   // Cliente — dois caminhos:
   //   (a) client_ref (novo, preferido): { id, name } | null — ponteiro direto.
