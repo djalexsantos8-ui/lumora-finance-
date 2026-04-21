@@ -28,38 +28,47 @@ export default async function BudgetPage({ params }: Props) {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Busca o orçamento (RLS garante acesso apenas ao workspace do usuário)
-  const { data: budget, error } = await supabase
-    .from('budgets')
-    .select('*')
-    .eq('id', id)
-    .is('deleted_at', null)
-    .single()
+  // PERFORMANCE: as 3 queries (budget, items, freelancers) eram SEQUENCIAIS
+  // e somavam ~1s em produção. Agora rodam em PARALELO via Promise.all.
+  // `freelancers` não depende de `budget.workspace_id` porque a RLS já filtra
+  // pelo workspace do usuário logado — basta não passar o filtro explícito.
+  const [budgetRes, itemsRes, freelancersRes] = await Promise.all([
+    supabase
+      .from('budgets')
+      .select('*')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .single(),
+    supabase
+      .from('budget_items')
+      .select('*')
+      .eq('budget_id', id)
+      .is('deleted_at', null)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('freelancers')
+      .select('id, name, role, daily_rate, currency, workspace_id')
+      .is('deleted_at', null)
+      .order('name', { ascending: true }),
+  ])
 
+  const { data: budget, error } = budgetRes
   if (error || !budget) notFound()
 
-  // Busca itens do orçamento ordenados por sort_order
-  const { data: items } = await supabase
-    .from('budget_items')
-    .select('*')
-    .eq('budget_id', id)
-    .is('deleted_at', null)
-    .order('sort_order', { ascending: true })
-    .order('created_at', { ascending: true })
-
-  // Busca freelancers ativos do workspace para o dropdown
-  const { data: freelancers } = await supabase
-    .from('freelancers')
-    .select('id, name, role, daily_rate, currency')
-    .eq('workspace_id', budget.workspace_id)
-    .is('deleted_at', null)
-    .order('name', { ascending: true })
+  const items = itemsRes.data
+  // Garante que só passa freelancers do MESMO workspace do orçamento
+  // (a RLS filtra pelo workspace do usuário, mas o budget pode ser de
+  // um workspace diferente se o usuário tiver múltiplos — defensivo).
+  const freelancers = (freelancersRes.data ?? []).filter(
+    f => f.workspace_id === budget.workspace_id
+  )
 
   return (
     <BudgetEditor
       budget={budget as Budget}
       items={(items ?? []) as BudgetItem[]}
-      freelancers={(freelancers ?? []) as Freelancer[]}
+      freelancers={freelancers as Freelancer[]}
     />
   )
 }
