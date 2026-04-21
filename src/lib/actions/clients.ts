@@ -363,3 +363,39 @@ export async function deleteClient(id: string): Promise<{ success: boolean; mess
   revalidatePath('/clientes')
   return { success: true }
 }
+
+// ─── bulkDeleteClients — soft delete em lote ─────────────────────────────────
+//
+// Mesmo padrão de budgets/orders. Soft delete; jobs seguem referenciando
+// por client_id (não afeta dashboard/histórico).
+
+export async function bulkDeleteClients(
+  ids: string[]
+): Promise<{ success: boolean; count: number; message?: string }> {
+  const supabase = await createSupabase()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { success: false, count: 0, message: 'Não autorizado.' }
+
+  if (!ids || ids.length === 0) return { success: true, count: 0 }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, count: 0, message: 'Workspace não encontrado.' }
+
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ deleted_at: new Date().toISOString() })
+    .in('id', ids)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .select('id')
+
+  if (error) {
+    console.error('[clients/bulk-delete]', error)
+    return { success: false, count: 0, message: 'Erro ao remover clientes.' }
+  }
+
+  revalidatePath('/clientes')
+  return { success: true, count: data?.length ?? 0 }
+}

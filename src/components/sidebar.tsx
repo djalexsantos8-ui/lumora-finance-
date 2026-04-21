@@ -132,8 +132,8 @@ const navEntries: NavEntry[] = [
       items: [
         { href: '/budgets',              label: 'Orçamentos',         icon: Icon.budget },
         { href: '/freelances',           label: 'Freelances',         icon: Icon.freelance },
-        { href: '/pedidos',              label: 'Pedidos',            icon: Icon.order,     badge: 'Em breve' },
-        { href: '/receitas-recorrentes', label: 'Receita Recorrente', icon: Icon.recurring, badge: 'Em breve' },
+        { href: '/pedidos',              label: 'Pedidos',            icon: Icon.order },
+        { href: '/receitas-recorrentes', label: 'Receita Recorrente', icon: Icon.recurring },
         { href: '/contracts',            label: 'Contratos',          icon: Icon.contracts, badge: 'Em breve' },
       ],
     },

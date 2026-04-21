@@ -1,19 +1,52 @@
-import PagePlaceholder from '@/components/page-placeholder'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import RecurringList from './recurring-list'
+import { NewRecurringButton } from './new-recurring-button'
+import type { RecurringRevenue } from '@/types/recurring-revenue'
 
 export const metadata = { title: 'Receita Recorrente — Lumora Finance' }
 
-export default function ReceitasRecorrentesPage() {
+export default async function ReceitasRecorrentesPage() {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: member } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+  if (!member) redirect('/dashboard')
+
+  const { data: items } = await supabase
+    .from('recurring_revenue')
+    .select('*')
+    .eq('workspace_id', member.workspace_id)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+
+  const list = (items ?? []) as RecurringRevenue[]
+
   return (
-    <PagePlaceholder
-      icon={
-        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      }
-      title="Receita Recorrente"
-      description="Cadastre receitas fixas mensais — mensalidades, retainers e contratos recorrentes — e acompanhe o MRR do seu negócio direto no dashboard."
-      badge="Em breve"
-    />
+    <div className="min-h-full p-6 md:p-8">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Receita Recorrente</h1>
+          <p className="text-[#a3a3a3] text-sm mt-0.5">
+            {list.length === 0
+              ? 'Nenhum contrato recorrente cadastrado'
+              : `${list.length} contrato${list.length !== 1 ? 's' : ''} ativo${list.length !== 1 ? 's' : ''} / cadastrado${list.length !== 1 ? 's' : ''}`}
+          </p>
+        </div>
+        <NewRecurringButton />
+      </div>
+
+      <RecurringList items={list} />
+    </div>
   )
 }
