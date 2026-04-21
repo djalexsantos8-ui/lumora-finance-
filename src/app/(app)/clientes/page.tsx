@@ -48,6 +48,12 @@ export default async function ClientesPage() {
             Aqui você pode enriquecer a ficha.
           </p>
         </div>
+        <a
+          href="/clientes/origem"
+          className="text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] bg-[#D4A853]/10 hover:bg-[#D4A853]/20 border border-[#D4A853]/30 px-3 py-1.5 rounded-lg transition-colors"
+        >
+          Ver origem dos clientes →
+        </a>
       </div>
 
       <ClientesClient initialClients={(clients ?? []) as Client[]} />
