@@ -73,6 +73,23 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
   const [signatureTitle, setSignatureTitle] = useState(settings?.signature_title ?? '')
   const [footerText,     setFooterText]     = useState(settings?.footer_text     ?? '')
 
+  // Dados contratuais (para Contract Builder)
+  const [companyLegalName,   setCompanyLegalName]   = useState(settings?.company_legal_name   ?? '')
+  const [companyCnpj,        setCompanyCnpj]        = useState(settings?.company_cnpj         ?? '')
+  const [companyCpf,         setCompanyCpf]         = useState(settings?.company_cpf          ?? '')
+  const [companyAddressLine, setCompanyAddressLine] = useState(settings?.company_address_line ?? '')
+  const [companyAddressCity, setCompanyAddressCity] = useState(settings?.company_address_city ?? '')
+  const [companyAddressState, setCompanyAddressState] = useState(settings?.company_address_state ?? '')
+  const [companyAddressZip,  setCompanyAddressZip]  = useState(settings?.company_address_zip  ?? '')
+  const [companyEmail,       setCompanyEmail]       = useState(settings?.company_email        ?? '')
+  const [companyPhone,       setCompanyPhone]       = useState(settings?.company_phone        ?? '')
+  const [defaultNoticeDays,  setDefaultNoticeDays]  = useState(
+    settings?.default_cancellation_notice_days?.toString() ?? '30'
+  )
+  const [defaultPenaltyPct,  setDefaultPenaltyPct]  = useState(
+    settings?.default_cancellation_penalty_pct?.toString() ?? '50'
+  )
+
   // ─── logo upload ───────────────────────────────────────────────────────────
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -277,9 +294,93 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
             </>
           )}
 
-          {/* ─── Empresa (assinatura/rodapé) ─────────────────────────────── */}
+          {/* ─── Empresa (assinatura/rodapé + contratuais) ──────────────── */}
           {section === 'company' && (
             <>
+              {/* Dados contratuais — usados pelo Contract Builder */}
+              <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-[#a3a3a3] tracking-wider uppercase">Dados contratuais da empresa</h3>
+                  <span className="text-[9px] font-semibold text-[#D4A853] bg-[#D4A853]/10 border border-[#D4A853]/20 px-2 py-0.5 rounded-full tracking-wider">
+                    CONTRATOS
+                  </span>
+                </div>
+                <p className="text-xs text-[#a3a3a3] leading-relaxed -mt-2">
+                  Esses dados vão preencher automaticamente a parte da <strong>CONTRATADA</strong> em todos os contratos que você gerar.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Razão social</label>
+                    <input type="text" name="company_legal_name" value={companyLegalName}
+                      onChange={e => setCompanyLegalName(e.target.value)}
+                      placeholder="Nome jurídico registrado da empresa" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CNPJ</label>
+                    <input type="text" name="company_cnpj" value={companyCnpj}
+                      onChange={e => setCompanyCnpj(e.target.value)}
+                      placeholder="00.000.000/0000-00" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CPF (se MEI/autônomo)</label>
+                    <input type="text" name="company_cpf" value={companyCpf}
+                      onChange={e => setCompanyCpf(e.target.value)}
+                      placeholder="000.000.000-00" className={inputCls} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Endereço</label>
+                    <input type="text" name="company_address_line" value={companyAddressLine}
+                      onChange={e => setCompanyAddressLine(e.target.value)}
+                      placeholder="Rua, número, complemento, bairro" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Cidade</label>
+                    <input type="text" name="company_address_city" value={companyAddressCity}
+                      onChange={e => setCompanyAddressCity(e.target.value)}
+                      placeholder="São Paulo" className={inputCls} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">UF</label>
+                      <input type="text" name="company_address_state" value={companyAddressState}
+                        onChange={e => setCompanyAddressState(e.target.value)}
+                        placeholder="SP" maxLength={2} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CEP</label>
+                      <input type="text" name="company_address_zip" value={companyAddressZip}
+                        onChange={e => setCompanyAddressZip(e.target.value)}
+                        placeholder="00000-000" className={inputCls} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">E-mail comercial</label>
+                    <input type="email" name="company_email" value={companyEmail}
+                      onChange={e => setCompanyEmail(e.target.value)}
+                      placeholder="contato@empresa.com.br" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Telefone</label>
+                    <input type="text" name="company_phone" value={companyPhone}
+                      onChange={e => setCompanyPhone(e.target.value)}
+                      placeholder="(11) 99999-9999" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Aviso prévio (dias)</label>
+                    <input type="number" name="default_cancellation_notice_days" value={defaultNoticeDays}
+                      onChange={e => setDefaultNoticeDays(e.target.value)}
+                      placeholder="30" min="0" max="365" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Multa cancelamento (%)</label>
+                    <input type="number" name="default_cancellation_penalty_pct" value={defaultPenaltyPct}
+                      onChange={e => setDefaultPenaltyPct(e.target.value)}
+                      placeholder="50" min="0" max="100" step="0.1" className={inputCls} />
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 space-y-4">
                 <h3 className="text-xs font-semibold text-[#a3a3a3] tracking-wider uppercase">Assinatura nos documentos</h3>
 

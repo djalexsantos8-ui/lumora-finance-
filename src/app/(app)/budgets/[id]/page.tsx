@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import BudgetEditor from './budget-editor'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { listContractsByOrigin } from '@/lib/actions/contracts'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
@@ -64,11 +66,24 @@ export default async function BudgetPage({ params }: Props) {
     f => f.workspace_id === budget.workspace_id
   )
 
+  // Contratos já vinculados a este orçamento (vínculo reverso)
+  const contractsRes = await listContractsByOrigin('budget', budget.id)
+  const linkedContracts = contractsRes.success ? contractsRes.data : []
+
   return (
-    <BudgetEditor
-      budget={budget as Budget}
-      items={(items ?? []) as BudgetItem[]}
-      freelancers={freelancers as Freelancer[]}
-    />
+    <>
+      <BudgetEditor
+        budget={budget as Budget}
+        items={(items ?? []) as BudgetItem[]}
+        freelancers={freelancers as Freelancer[]}
+      />
+      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
+        <ContractEntryPoint
+          originKind="budget"
+          originId={budget.id}
+          contracts={linkedContracts}
+        />
+      </div>
+    </>
   )
 }

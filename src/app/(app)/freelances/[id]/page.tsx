@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import JobDetail from './job-detail'
+import { listContractsByOrigin } from '@/lib/actions/contracts'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import type { Job, JobRevenueItem, JobCostItem, JobPayment } from '@/types/job'
 import type { Expense } from '@/types/expense'
 import type { JobFile } from '@/types/job-file'
@@ -84,14 +86,26 @@ export default async function JobDetailPage({ params }: Props) {
       .order('created_at', { ascending: false }),
   ])
 
+  const contractsRes = await listContractsByOrigin('freelance', id)
+  const linkedContracts = contractsRes.success ? contractsRes.data : []
+
   return (
-    <JobDetail
-      job={job as Job}
-      initialRevenueItems={(revenueItems ?? []) as JobRevenueItem[]}
-      initialCostItems={(costItems    ?? []) as JobCostItem[]}
-      initialPayments={(payments      ?? []) as JobPayment[]}
-      initialJobExpenses={(jobExpenses ?? []) as Expense[]}
-      initialJobFiles={(jobFiles      ?? []) as JobFile[]}
-    />
+    <>
+      <JobDetail
+        job={job as Job}
+        initialRevenueItems={(revenueItems ?? []) as JobRevenueItem[]}
+        initialCostItems={(costItems    ?? []) as JobCostItem[]}
+        initialPayments={(payments      ?? []) as JobPayment[]}
+        initialJobExpenses={(jobExpenses ?? []) as Expense[]}
+        initialJobFiles={(jobFiles      ?? []) as JobFile[]}
+      />
+      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
+        <ContractEntryPoint
+          originKind="freelance"
+          originId={id}
+          contracts={linkedContracts}
+        />
+      </div>
+    </>
   )
 }

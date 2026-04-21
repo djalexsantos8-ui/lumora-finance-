@@ -1,20 +1,30 @@
 import ContractsClient from './contracts-client'
-import { CONTRACT_TEMPLATES } from '@/lib/data/contract-templates'
+import { listContracts } from '@/lib/actions/contracts'
+import { CONTRACT_TYPES_LIST } from '@/lib/contracts/catalog'
 
 export const metadata = { title: 'Contratos — Lumora Finance' }
 
-// ─── Contratos V1 — templates de arranque ─────────────────────────────────────
+// ─── Contratos V2 — Builder real ────────────────────────────────────────────
 //
-// V1 entrega os 9 templates base (foto/vídeo casamento, institucional, moda,
-// book, evento, freelance B2B) como texto markdown pra copiar e adaptar. SEM
-// merge automático de dados do orçamento ainda — isso entra na V2.
+// V1 (galeria de templates) → V2 (Contract Builder integrado):
+//  · contratos nascem das entidades operacionais (budget/freelance/order/recurring)
+//  · dados do cliente e da empresa preenchidos automaticamente
+//  · persistência em tabela contracts (snapshot + metadata)
+//  · hub lista os contratos REAIS; templates são só o catálogo de tipos
 //
-// A aba serve pra (1) desbloquear quem precisa de contrato HOJE, (2) manter
-// o usuário dentro do Lumora em vez de buscar template no Google, (3) coletar
-// feedback sobre quais templates fazem mais sentido expandir.
-//
-// DISCLAIMER obrigatório: texto gerado por IA, não substitui advogado. Exibido
-// em destaque no topo da página e em cada template aberto.
-export default function ContractsPage() {
-  return <ContractsClient templates={CONTRACT_TEMPLATES} />
+// Esta página agora mostra:
+//  1. Lista de contratos já criados (filtros por status/tipo)
+//  2. Picker de tipo para criar contrato standalone
+//  3. Disclaimer permanece (mas mais discreto — já tá claro no fluxo)
+
+export default async function ContractsPage() {
+  const result = await listContracts()
+  const contracts = result.success ? result.data : []
+
+  return (
+    <ContractsClient
+      contracts={contracts}
+      catalog={CONTRACT_TYPES_LIST}
+    />
+  )
 }
