@@ -1,7 +1,6 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
 import { getOrCreateClient } from '@/lib/actions/clients'
@@ -47,26 +46,38 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
     .eq('id', budgetId)
 }
 
-// ─── CREATE — cria rascunho e redireciona para o editor ───────────────────────
+// ─── CREATE — INSERT do primeiro save de um orçamento novo ───────────────────
 //
-// PERFORMANCE: criado para responder em <500ms.
-//   · Reusa UM único cliente Supabase (evita dupla instancia).
-//   · Busca workspace_members + auth.getUser() em UM round-trip só
-//     (auth.getUser é cacheado no SSR client após a primeira leitura do cookie).
-//   · Não chama revalidatePath: o redirect já navega para uma rota nova,
-//     e /budgets será re-fetchada naturalmente pelo RSC quando o usuário
-//     voltar para a lista.
-export async function createBudget(): Promise<{ success: false; message: string }> {
+// Chamado pelo BudgetEditor em modo "isNew" no primeiro auto-save. Antes,
+// esta action criava um rascunho vazio e redirecionava — resultado: 82 drafts
+// R$ 0,00 no banco e ~4s de latência no clique.
+//
+// Agora o fluxo é optimistic:
+//   · botão "Novo Orçamento" navega CLIENT-SIDE pra /budgets/new (instantâneo)
+//   · /budgets/new renderiza o editor vazio
+//   · No primeiro auto-save, esta action cria o registro COM os dados já
+//     digitados. Se o usuário sair sem editar nada, ZERO INSERT acontece.
+//   · Retorna o id pro cliente trocar a URL via history.replaceState
+export async function createBudget(
+  fields: {
+    title?:               string
+    client_name?:         string
+    project_description?: string
+    deliverables?:        string
+    event_date?:          string
+    valid_until?:         string
+    currency?:            string
+    notes_internal?:      string
+  } = {}
+): Promise<BudgetActionResult> {
   const supabase = await createClient()
 
   const {
     data: { user },
     error: authErr,
   } = await supabase.auth.getUser()
-  if (authErr || !user) redirect('/login')
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
 
-  // Reaproveita MESMO supabase client — evita criar um segundo SSR client
-  // só pra ler workspace_members (economia de 50-150ms de setup).
   const { data: member } = await supabase
     .from('workspace_members')
     .select('workspace_id')
@@ -75,19 +86,33 @@ export async function createBudget(): Promise<{ success: false; message: string 
     .limit(1)
     .maybeSingle()
 
-  if (!member?.workspace_id) redirect('/dashboard')
+  if (!member?.workspace_id) {
+    return { success: false, message: 'Workspace não encontrado.' }
+  }
+
+  // Resolve cliente se nome foi passado
+  let resolvedClient: Awaited<ReturnType<typeof getOrCreateClient>> | undefined
+  const clientName = fields.client_name?.trim() ?? ''
+  if (clientName) {
+    resolvedClient = await getOrCreateClient(member.workspace_id, clientName)
+  }
 
   const { data, error } = await supabase
     .from('budgets')
     .insert({
-      workspace_id: member.workspace_id,
-      created_by:   user.id,
-      title:        'Orçamento sem título',
-      client_name:  '',
-      status:       'draft',
-      currency:     'BRL',
+      workspace_id:        member.workspace_id,
+      created_by:          user.id,
+      title:               fields.title?.trim() || 'Orçamento sem título',
+      client_name:         clientName,
+      project_description: fields.project_description?.trim() || null,
+      deliverables:        fields.deliverables?.trim() || null,
+      event_date:          fields.event_date || null,
+      valid_until:         fields.valid_until || null,
+      status:              'draft',
+      currency:            fields.currency || 'BRL',
+      notes_internal:      fields.notes_internal?.trim() || null,
     })
-    .select('id')
+    .select()
     .single()
 
   if (error || !data) {
@@ -95,7 +120,7 @@ export async function createBudget(): Promise<{ success: false; message: string 
     return { success: false, message: 'Erro ao criar orçamento. Tente novamente.' }
   }
 
-  redirect(`/budgets/${data.id}`)
+  return { success: true, data, client: resolvedClient ?? undefined }
 }
 
 // ─── UPDATE INFO — salva dados do projeto (chamado pelo auto-save) ─────────────

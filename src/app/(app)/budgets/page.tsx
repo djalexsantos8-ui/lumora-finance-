@@ -1,17 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createBudget } from '@/lib/actions/budgets'
 import { formatCurrency } from '@/lib/utils/format'
 import type { Budget, BudgetStatus } from '@/types/budget'
 
 export const metadata = { title: 'Orçamentos — Lumora Finance' }
 
-async function handleCreateBudget(_data: FormData): Promise<void> {
-  'use server'
-  await createBudget()
-}
-
+// Botão "Novo Orçamento" = Link client-side com prefetch para /budgets/new.
+// Antes era <form action=createBudget> que criava um draft vazio antes de abrir
+// a tela — latência de ~3.6s no clique e 82 rascunhos R$0,00 no banco.
+// Agora: clicou, abriu. O INSERT só acontece no primeiro auto-save do editor.
 export default async function BudgetsPage() {
   const supabase = await createClient()
   const {
@@ -50,17 +48,16 @@ export default async function BudgetsPage() {
               : `${list.length} orçamento${list.length !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <form action={handleCreateBudget}>
-          <button
-            type="submit"
-            className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Novo Orçamento
-          </button>
-        </form>
+        <Link
+          href="/budgets/new"
+          prefetch
+          className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Novo Orçamento
+        </Link>
       </div>
 
       {/* Empty state */}
@@ -76,17 +73,16 @@ export default async function BudgetsPage() {
           <p className="text-[#525252] text-sm max-w-xs mb-6">
             Crie orçamentos profissionais com cálculo de margem e PDFs apresentáveis para seus clientes.
           </p>
-          <form action={handleCreateBudget}>
-            <button
-              type="submit"
-              className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Criar primeiro orçamento
-            </button>
-          </form>
+          <Link
+            href="/budgets/new"
+            prefetch
+            className="flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Criar primeiro orçamento
+          </Link>
         </div>
       ) : (
         <div className="space-y-2">

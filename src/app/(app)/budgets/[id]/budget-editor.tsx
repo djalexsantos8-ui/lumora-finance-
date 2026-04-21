@@ -4,6 +4,7 @@ import { useState, useRef, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
+  createBudget,
   updateBudgetInfo,
   updateBudgetMargin,
   updateBudgetStatus,
@@ -33,6 +34,10 @@ interface Props {
   budget:      Budget
   items:       BudgetItem[]
   freelancers: Freelancer[]
+  // Quando `true`, o budget ainda NÃO existe no banco (rota /budgets/new).
+  // O primeiro auto-save chama createBudget() em vez de updateBudgetInfo(),
+  // recebe o id real e faz history.replaceState pra trocar a URL sem navegar.
+  isNew?:      boolean
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -43,11 +48,22 @@ export default function BudgetEditor({
   budget: initialBudget,
   items:  initialItems,
   freelancers,
+  isNew = false,
 }: Props) {
   const router = useRouter()
 
   // Estado central
   const [budget, setBudget]     = useState(initialBudget)
+  // Ref espelhando o id. Precisa ser ref (e não só state) porque o auto-save
+  // roda em setTimeout e o closure não enxerga atualizações de state. Depois
+  // do primeiro INSERT (modo isNew), o id passa a existir e saves subsequentes
+  // vão direto pro updateBudgetInfo.
+  const budgetIdRef = useRef(initialBudget.id)
+  // Evita corrida quando o usuário digita rápido e o timer dispara duas vezes
+  // antes do primeiro INSERT terminar. Enquanto `creatingRef.current` for true,
+  // o próximo auto-save é ignorado (os valores mais recentes estão no
+  // latestFields ref e serão persistidos no save seguinte).
+  const creatingRef = useRef(false)
   const [items,  setItems]      = useState(initialItems)
   const [saveState, setSaveState] = useState<SaveState>('idle')
   const [menuOpen, setMenuOpen]   = useState(false)
@@ -103,8 +119,68 @@ export default function BudgetEditor({
     setSaveState('saving')
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(async () => {
+      // Se um INSERT do modo isNew já está em andamento, desiste deste tick —
+      // os valores ficam no latestFields ref e o próximo save persiste tudo.
+      if (creatingRef.current) return
+
       const f = latestFields.current
-      const result = await updateBudgetInfo(budget.id, {
+      const currentId = budgetIdRef.current
+
+      // ── Primeiro save em modo isNew: INSERT via createBudget ──────────────
+      if (!currentId) {
+        creatingRef.current = true
+        const createRes = await createBudget({
+          title:               f.title,
+          client_name:         f.client,
+          project_description: f.desc,
+          deliverables:        f.delivers,
+          event_date:          f.evtDate,
+          valid_until:         f.validUntil,
+          currency:            f.currency,
+          notes_internal:      f.notesInt,
+        })
+        creatingRef.current = false
+
+        if (!createRes.success || !createRes.data) {
+          setSaveState('error')
+          return
+        }
+
+        // Atualiza state + ref com o id real e troca a URL sem navegar
+        // (history.replaceState mantém o editor montado, preserva scroll,
+        // não dispara RSC refetch — é o que o usuário quer: zero flicker).
+        budgetIdRef.current = createRes.data.id
+        setBudget(createRes.data)
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', `/budgets/${createRes.data.id}`)
+        }
+
+        // Save encadeado de cliente — mesma lógica do update path.
+        if (expandedClientEditRef.current && createRes.client?.id) {
+          const e = latestClientExtras.current
+          const clientRes = await updateClient(createRes.client.id, {
+            phone:     e.phone,
+            instagram: e.instagram,
+            email:     e.email,
+            document:  e.document,
+            notes:     e.notes,
+          })
+          if (!clientRes.success) {
+            setClientSaveError(
+              'Cliente criado, mas não conseguimos salvar todos os dados. Você pode completar depois em Clientes.'
+            )
+          } else {
+            setClientSaveError(null)
+          }
+        }
+
+        setSaveState('saved')
+        setTimeout(() => setSaveState('idle'), 2500)
+        return
+      }
+
+      // ── Saves subsequentes: UPDATE via updateBudgetInfo ────────────────────
+      const result = await updateBudgetInfo(currentId, {
         title:               f.title,
         client_name:         f.client,
         project_description: f.desc,
@@ -165,14 +241,20 @@ export default function BudgetEditor({
   async function handleMarginChange(type: BudgetMarginType, raw: string) {
     setMarginType(type)
     setMarginInput(raw)
+    // Em modo isNew sem id: só atualiza state local. O INSERT do budget carrega
+    // margin_type/margin_input defaults; o usuário pode ajustar depois.
+    // (Alternativa futura: incluir margem no primeiro createBudget.)
+    const currentId = budgetIdRef.current
+    if (!currentId) return
     const parsed = parseFloat(raw.replace(',', '.')) || 0
-    const result = await updateBudgetMargin(budget.id, type, parsed)
+    const result = await updateBudgetMargin(currentId, type, parsed)
     if (result.success && result.data) setBudget(result.data)
   }
 
   // ─── status ──────────────────────────────────────────────────────────────────
   function handleStatusChange(next: string) {
     setMenuOpen(false)
+    if (!budget.id) return // isNew sem save ainda — ignora (menu já não mostra opções relevantes)
     startTransition(async () => {
       const result = await updateBudgetStatus(budget.id, next as BudgetStatus)
       if (result.success && result.data) setBudget(result.data)
@@ -212,6 +294,11 @@ export default function BudgetEditor({
   // ─── delete orçamento ────────────────────────────────────────────────────────
   function handleDeleteBudget() {
     setMenuOpen(false)
+    // Em modo isNew sem id: não existe nada no DB pra deletar, só volta.
+    if (!budget.id) {
+      router.push('/budgets')
+      return
+    }
     if (!confirm('Excluir este orçamento? Esta ação não pode ser desfeita.')) return
     startTransition(async () => {
       await deleteBudget(budget.id)
@@ -312,7 +399,8 @@ export default function BudgetEditor({
               <span className="text-xs text-red-400 hidden sm:inline">Erro ao salvar</span>
             )}
 
-            {/* Preview */}
+            {/* Preview — oculto até o primeiro save criar o registro */}
+            {budget.id && (
             <Link
               href={`/budgets/${budget.id}/preview`}
               target="_blank"
@@ -326,8 +414,10 @@ export default function BudgetEditor({
               </svg>
               Preview
             </Link>
+            )}
 
-            {/* Gerar PDF */}
+            {/* Gerar PDF — só depois do primeiro save */}
+            {budget.id && (
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf || isPending}
@@ -351,6 +441,7 @@ export default function BudgetEditor({
                 </>
               )}
             </button>
+            )}
 
             {/* Menu de ações */}
             <div className="relative">
@@ -594,7 +685,9 @@ export default function BudgetEditor({
             </div>
             <button
               onClick={openAddItem}
-              className="flex items-center gap-1.5 bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] text-[#a3a3a3] hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors"
+              disabled={!budget.id}
+              title={!budget.id ? 'Digite um título pra começar — o orçamento é criado automaticamente' : undefined}
+              className="flex items-center gap-1.5 bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] text-[#a3a3a3] hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#1c1c1c] disabled:hover:text-[#a3a3a3]"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
