@@ -315,3 +315,128 @@ export async function deleteBudget(id: string): Promise<BudgetActionResult> {
   revalidatePath('/budgets')
   return { success: true }
 }
+
+// ─── BULK SOFT DELETE ─────────────────────────────────────────────────────────
+//
+// Soft-deleta múltiplos orçamentos em uma única chamada. A RLS garante que
+// o usuário só pode tocar em budgets do workspace dele — não precisamos
+// filtrar por workspace_id aqui (e não temos acesso fácil a ele sem 1 query
+// a mais). Usado pela toolbar de seleção em massa e pelo botão "limpar
+// rascunhos vazios" (via `deleteEmptyDraftBudgets`).
+export async function bulkDeleteBudgets(
+  ids: string[]
+): Promise<{ success: boolean; count: number; message?: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser()
+
+  if (authErr || !user) return { success: false, count: 0, message: 'Não autorizado.' }
+  if (!ids || ids.length === 0) return { success: true, count: 0 }
+
+  const { error, data } = await supabase
+    .from('budgets')
+    .update({ deleted_at: new Date().toISOString() })
+    .in('id', ids)
+    .is('deleted_at', null)
+    .select('id')
+
+  if (error) {
+    console.error('[budgets/bulk-delete]', error)
+    return { success: false, count: 0, message: 'Erro ao excluir orçamentos.' }
+  }
+
+  revalidatePath('/budgets')
+  return { success: true, count: data?.length ?? 0 }
+}
+
+// ─── CLEANUP — rascunhos vazios ───────────────────────────────────────────────
+//
+// Remove (soft delete) apenas orçamentos que claramente são lixo:
+//   · status = 'draft'
+//   · subtotal = 0 E total = 0 (nenhum item com valor real)
+//   · title default ou vazio
+//   · client_name vazio
+//   · sem descrição, sem entregas, sem notas internas
+//   · sem items ativos associados (budget_items)
+//
+// Tudo soft delete. Se algo for deletado por engano, basta um UPDATE zerando
+// deleted_at no Supabase (reversível).
+//
+// Esta action NÃO aceita filtros do usuário — o critério é fixo e conservador
+// (a favor de NÃO deletar quando em dúvida). Para deletar casos específicos,
+// use a seleção em lote manual.
+export async function deleteEmptyDraftBudgets(): Promise<{
+  success: boolean
+  count:   number
+  message?: string
+}> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authErr,
+  } = await supabase.auth.getUser()
+
+  if (authErr || !user) return { success: false, count: 0, message: 'Não autorizado.' }
+
+  // 1. Workspace do usuário (scoping extra, além da RLS).
+  const { data: member } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+
+  if (!member?.workspace_id) {
+    return { success: false, count: 0, message: 'Workspace não encontrado.' }
+  }
+
+  // 2. Busca candidatos a "vazio" — critério conservador.
+  const { data: candidates, error: selErr } = await supabase
+    .from('budgets')
+    .select('id, budget_items!left(id, deleted_at)')
+    .eq('workspace_id', member.workspace_id)
+    .eq('status', 'draft')
+    .eq('subtotal', 0)
+    .eq('total', 0)
+    .or('title.is.null,title.eq.,title.eq.Orçamento sem título')
+    .or('client_name.is.null,client_name.eq.')
+    .is('project_description', null)
+    .is('deliverables', null)
+    .is('notes_internal', null)
+    .is('deleted_at', null)
+
+  if (selErr) {
+    console.error('[budgets/cleanup-empty]', selErr)
+    return { success: false, count: 0, message: 'Erro ao buscar rascunhos vazios.' }
+  }
+
+  // 3. Filtra só os que NÃO têm items ativos (join pode trazer itens soft-deleted,
+  // que não contam como conteúdo real).
+  const emptyIds = (candidates ?? [])
+    .filter(b => {
+      const items = (b.budget_items as Array<{ deleted_at: string | null }> | null) ?? []
+      return items.every(it => it.deleted_at !== null)
+    })
+    .map(b => b.id)
+
+  if (emptyIds.length === 0) return { success: true, count: 0 }
+
+  // 4. Soft delete em lote.
+  const { error: delErr, data: deleted } = await supabase
+    .from('budgets')
+    .update({ deleted_at: new Date().toISOString() })
+    .in('id', emptyIds)
+    .is('deleted_at', null)
+    .select('id')
+
+  if (delErr) {
+    console.error('[budgets/cleanup-empty/delete]', delErr)
+    return { success: false, count: 0, message: 'Erro ao excluir rascunhos vazios.' }
+  }
+
+  revalidatePath('/budgets')
+  return { success: true, count: deleted?.length ?? 0 }
+}
