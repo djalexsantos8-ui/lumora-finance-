@@ -51,7 +51,8 @@ export async function createOrderDraft(): Promise<
 
   if (error || !data) {
     console.error('[orders/create-draft]', error)
-    return { success: false, message: 'Erro ao criar pedido.' }
+    const detail = error ? `${error.code || '?'}: ${error.message || 'sem mensagem'}` : 'sem dados'
+    return { success: false, message: `Erro ao criar pedido — ${detail}` }
   }
 
   revalidatePath('/pedidos')
