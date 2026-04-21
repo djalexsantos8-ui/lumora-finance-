@@ -16,8 +16,8 @@ import {
   PaneCustos,
   PaneClientes,
   PaneDiagnostico,
-  PaneConclusao,
 } from '@/components/dashboard-executivo/panes'
+import { DashboardClassicoPane } from '@/components/dashboard-classico/pane'
 
 interface Props {
   data: ExecutiveDashboard
@@ -57,7 +57,7 @@ export function DashboardExecutivoClient({ data }: Props) {
         {aba === 'custos'        && <PaneCustos        agregados={agregados} narrativa={narrativa} />}
         {aba === 'clientes'      && <PaneClientes      agregados={agregados} narrativa={narrativa} />}
         {aba === 'diagnostico'   && <PaneDiagnostico   agregados={agregados} narrativa={narrativa} />}
-        {aba === 'conclusao'     && <PaneConclusao     agregados={agregados} narrativa={narrativa} />}
+        {aba === 'conclusao'     && <DashboardClassicoPane />}
       </main>
     </div>
   )
