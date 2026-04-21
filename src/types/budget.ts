@@ -2,6 +2,7 @@ import type { Client } from './client'
 
 export type BudgetStatus = 'draft' | 'sent' | 'approved' | 'rejected' | 'expired'
 export type BudgetMarginType = 'percentage' | 'fixed'
+export type BudgetIntendedDestination = 'order' | 'freelance' | 'recurring'
 export type BudgetItemCategory =
   | 'team'
   | 'food'
@@ -29,6 +30,11 @@ export interface Budget {
   margin_amount: number
   total: number
   notes_internal: string | null
+  // ─── Pente fino 2026-04-21: prazo + destino pretendido ──────────────────
+  // payment_term: texto livre ("50% assinatura + 50% entrega", "30/60/90")
+  // intended_destination: hint do fluxo ao converter — só guia UI, não trava
+  payment_term: string | null
+  intended_destination: BudgetIntendedDestination | null
   sent_at: string | null
   approved_at: string | null
   deleted_at: string | null

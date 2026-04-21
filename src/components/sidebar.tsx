@@ -134,7 +134,7 @@ const navEntries: NavEntry[] = [
         { href: '/freelances',           label: 'Freelances',         icon: Icon.freelance },
         { href: '/pedidos',              label: 'Pedidos',            icon: Icon.order },
         { href: '/receitas-recorrentes', label: 'Receita Recorrente', icon: Icon.recurring },
-        { href: '/contracts',            label: 'Contratos',          icon: Icon.contracts, badge: 'Em breve' },
+        { href: '/contracts',            label: 'Contratos',          icon: Icon.contracts },
       ],
     },
   },
@@ -151,7 +151,7 @@ const navEntries: NavEntry[] = [
     },
   },
   { kind: 'item', item: { href: '/clientes',      label: 'Clientes',      icon: Icon.clients } },
-  { kind: 'item', item: { href: '/insights',      label: 'Insights',      icon: Icon.insights } },
+  { kind: 'item', item: { href: '/insights',      label: 'Insights',      icon: Icon.insights, badge: 'Em breve' } },
   { kind: 'item', item: { href: '/notifications', label: 'Notificações',  icon: Icon.notifications } },
 ]
 

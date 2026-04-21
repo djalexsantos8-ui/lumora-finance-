@@ -31,11 +31,11 @@ export default async function SettingsPage() {
     .maybeSingle()
 
   return (
-    <div className="min-h-full p-6 md:p-8 max-w-2xl">
-      <div className="mb-8">
+    <div className="min-h-full p-6 md:p-8 max-w-4xl">
+      <div className="mb-6">
         <h1 className="text-xl font-bold text-white">Configurações</h1>
         <p className="text-[#a3a3a3] text-sm mt-0.5">
-          Identidade da sua empresa para orçamentos e documentos
+          Identidade, empresa e notificações do seu workspace
         </p>
       </div>
 

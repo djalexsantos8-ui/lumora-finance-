@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
 import { getOrCreateClient } from '@/lib/actions/clients'
-import type { BudgetActionResult, BudgetMarginType, BudgetStatus } from '@/types/budget'
+import type {
+  BudgetActionResult,
+  BudgetIntendedDestination,
+  BudgetMarginType,
+  BudgetStatus,
+} from '@/types/budget'
 
 // Recalcula subtotal, margin_amount e total a partir dos itens ativos
 export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
@@ -60,14 +65,16 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
 //   · Retorna o id pro cliente trocar a URL via history.replaceState
 export async function createBudget(
   fields: {
-    title?:               string
-    client_name?:         string
-    project_description?: string
-    deliverables?:        string
-    event_date?:          string
-    valid_until?:         string
-    currency?:            string
-    notes_internal?:      string
+    title?:                 string
+    client_name?:           string
+    project_description?:   string
+    deliverables?:          string
+    event_date?:            string
+    valid_until?:           string
+    currency?:              string
+    notes_internal?:        string
+    payment_term?:          string
+    intended_destination?:  BudgetIntendedDestination | null
   } = {}
 ): Promise<BudgetActionResult> {
   const supabase = await createClient()
@@ -111,6 +118,8 @@ export async function createBudget(
       status:              'draft',
       currency:            fields.currency || 'BRL',
       notes_internal:      fields.notes_internal?.trim() || null,
+      payment_term:        fields.payment_term?.trim() || null,
+      intended_destination: fields.intended_destination ?? null,
     })
     .select()
     .single()
@@ -128,14 +137,16 @@ export async function createBudget(
 export async function updateBudgetInfo(
   id: string,
   fields: {
-    title?:               string
-    client_name?:         string
-    project_description?: string
-    deliverables?:        string
-    event_date?:          string
-    valid_until?:         string
-    currency?:            string
-    notes_internal?:      string
+    title?:                 string
+    client_name?:           string
+    project_description?:   string
+    deliverables?:          string
+    event_date?:            string
+    valid_until?:           string
+    currency?:              string
+    notes_internal?:        string
+    payment_term?:          string
+    intended_destination?:  BudgetIntendedDestination | null
   }
 ): Promise<BudgetActionResult> {
   const supabase = await createClient()
@@ -181,6 +192,10 @@ export async function updateBudgetInfo(
     payload.currency = fields.currency
   if (fields.notes_internal !== undefined)
     payload.notes_internal = fields.notes_internal.trim() || null
+  if (fields.payment_term !== undefined)
+    payload.payment_term = fields.payment_term.trim() || null
+  if (fields.intended_destination !== undefined)
+    payload.intended_destination = fields.intended_destination ?? null
 
   const { data, error } = await supabase
     .from('budgets')

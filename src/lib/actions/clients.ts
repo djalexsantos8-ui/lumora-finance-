@@ -125,6 +125,21 @@ export async function createClientFull(
     email?:     string | null
     document?:  string | null
     notes?:     string | null
+    // ── expandidos (opcionais — clientes_expanded_fields) ──
+    person_type?:        'pf' | 'pj' | null
+    legal_name?:         string | null
+    trade_name?:         string | null
+    document_cpf?:       string | null
+    document_cnpj?:      string | null
+    address_line?:       string | null
+    address_city?:       string | null
+    address_state?:      string | null
+    address_zip?:        string | null
+    segment?:            string | null
+    lead_source?:        string | null
+    payment_condition?:  string | null
+    responsible_name?:   string | null
+    responsible_role?:   string | null
   }
 ): Promise<CreateClientFullResult> {
   const supabase = await createSupabase()
@@ -171,6 +186,20 @@ export async function createClientFull(
     email:     draft.email?.trim()     || null,
     document:  draft.document?.trim()  || null,
     notes:     draft.notes?.trim()     || null,
+    person_type:       draft.person_type       || null,
+    legal_name:        draft.legal_name?.trim()        || null,
+    trade_name:        draft.trade_name?.trim()        || null,
+    document_cpf:      draft.document_cpf?.trim()      || null,
+    document_cnpj:     draft.document_cnpj?.trim()     || null,
+    address_line:      draft.address_line?.trim()      || null,
+    address_city:      draft.address_city?.trim()      || null,
+    address_state:     draft.address_state?.trim()     || null,
+    address_zip:       draft.address_zip?.trim()       || null,
+    segment:           draft.segment?.trim()           || null,
+    lead_source:       draft.lead_source?.trim()       || null,
+    payment_condition: draft.payment_condition?.trim() || null,
+    responsible_name:  draft.responsible_name?.trim()  || null,
+    responsible_role:  draft.responsible_role?.trim()  || null,
   }
 
   const { data, error } = await supabase
@@ -288,6 +317,21 @@ export async function updateClient(
     email?:     string | null
     document?:  string | null
     notes?:     string | null
+    // ── expandidos ──
+    person_type?:        'pf' | 'pj' | null
+    legal_name?:         string | null
+    trade_name?:         string | null
+    document_cpf?:       string | null
+    document_cnpj?:      string | null
+    address_line?:       string | null
+    address_city?:       string | null
+    address_state?:      string | null
+    address_zip?:        string | null
+    segment?:            string | null
+    lead_source?:        string | null
+    payment_condition?:  string | null
+    responsible_name?:   string | null
+    responsible_role?:   string | null
   }
 ): Promise<ClientActionResult> {
   const supabase = await createSupabase()
@@ -310,6 +354,21 @@ export async function updateClient(
   if ('email'     in fields) payload.email     = fields.email?.trim()     || null
   if ('document'  in fields) payload.document  = fields.document?.trim()  || null
   if ('notes'     in fields) payload.notes     = fields.notes?.trim()     || null
+  // Expandidos
+  if ('person_type'       in fields) payload.person_type       = fields.person_type                  || null
+  if ('legal_name'        in fields) payload.legal_name        = fields.legal_name?.trim()           || null
+  if ('trade_name'        in fields) payload.trade_name        = fields.trade_name?.trim()           || null
+  if ('document_cpf'      in fields) payload.document_cpf      = fields.document_cpf?.trim()         || null
+  if ('document_cnpj'     in fields) payload.document_cnpj     = fields.document_cnpj?.trim()        || null
+  if ('address_line'      in fields) payload.address_line      = fields.address_line?.trim()         || null
+  if ('address_city'      in fields) payload.address_city      = fields.address_city?.trim()         || null
+  if ('address_state'     in fields) payload.address_state     = fields.address_state?.trim()        || null
+  if ('address_zip'       in fields) payload.address_zip       = fields.address_zip?.trim()          || null
+  if ('segment'           in fields) payload.segment           = fields.segment?.trim()              || null
+  if ('lead_source'       in fields) payload.lead_source       = fields.lead_source?.trim()          || null
+  if ('payment_condition' in fields) payload.payment_condition = fields.payment_condition?.trim()    || null
+  if ('responsible_name'  in fields) payload.responsible_name  = fields.responsible_name?.trim()     || null
+  if ('responsible_role'  in fields) payload.responsible_role  = fields.responsible_role?.trim()     || null
 
   if (Object.keys(payload).length === 0)
     return { success: false, message: 'Nenhum campo para atualizar.' }

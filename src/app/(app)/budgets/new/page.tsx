@@ -56,6 +56,8 @@ export default async function NewBudgetPage() {
     margin_amount:       0,
     total:               0,
     notes_internal:      null,
+    payment_term:        null,
+    intended_destination: null,
     sent_at:             null,
     approved_at:         null,
     deleted_at:          null,

@@ -27,7 +27,13 @@ import {
   EMPTY_CLIENT_FULL_FORM,
   type ClientFullFormValue,
 } from '@/components/clients/client-full-form'
-import type { Budget, BudgetItem, BudgetMarginType, BudgetStatus } from '@/types/budget'
+import type {
+  Budget,
+  BudgetItem,
+  BudgetIntendedDestination,
+  BudgetMarginType,
+  BudgetStatus,
+} from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
@@ -86,6 +92,11 @@ export default function BudgetEditor({
   const [validUntil, setValidUntil] = useState(budget.valid_until ?? '')
   const [currency, setCurrency] = useState(budget.currency)
   const [notesInt, setNotesInt] = useState(budget.notes_internal ?? '')
+  // ── Pente fino 2026-04-21: prazo + destino pretendido ─────────────────────
+  const [paymentTerm, setPaymentTerm] = useState(budget.payment_term ?? '')
+  const [intendedDest, setIntendedDest] = useState<BudgetIntendedDestination | ''>(
+    budget.intended_destination ?? ''
+  )
 
   // ─── margem ─────────────────────────────────────────────────────────────────
   const [marginType,  setMarginType]  = useState<BudgetMarginType>(budget.margin_type)
@@ -106,8 +117,12 @@ export default function BudgetEditor({
   // Ref sempre sincronizado com o estado mais recente dos campos
   const latestFields = useRef({
     title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
+    paymentTerm, intendedDest,
   })
-  latestFields.current = { title, client, desc, delivers, evtDate, validUntil, currency, notesInt }
+  latestFields.current = {
+    title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
+    paymentTerm, intendedDest,
+  }
 
   // Refs paralelos pro modo expandido de cliente (usado pela auto-save).
   const latestClientExtras = useRef(clientExtras)
@@ -132,14 +147,16 @@ export default function BudgetEditor({
       if (!currentId) {
         creatingRef.current = true
         const createRes = await createBudget({
-          title:               f.title,
-          client_name:         f.client,
-          project_description: f.desc,
-          deliverables:        f.delivers,
-          event_date:          f.evtDate,
-          valid_until:         f.validUntil,
-          currency:            f.currency,
-          notes_internal:      f.notesInt,
+          title:                f.title,
+          client_name:          f.client,
+          project_description:  f.desc,
+          deliverables:         f.delivers,
+          event_date:           f.evtDate,
+          valid_until:          f.validUntil,
+          currency:             f.currency,
+          notes_internal:       f.notesInt,
+          payment_term:         f.paymentTerm,
+          intended_destination: f.intendedDest === '' ? null : f.intendedDest,
         })
         creatingRef.current = false
 
@@ -183,14 +200,16 @@ export default function BudgetEditor({
 
       // ── Saves subsequentes: UPDATE via updateBudgetInfo ────────────────────
       const result = await updateBudgetInfo(currentId, {
-        title:               f.title,
-        client_name:         f.client,
-        project_description: f.desc,
-        deliverables:        f.delivers,
-        event_date:          f.evtDate,
-        valid_until:         f.validUntil,
-        currency:            f.currency,
-        notes_internal:      f.notesInt,
+        title:                f.title,
+        client_name:          f.client,
+        project_description:  f.desc,
+        deliverables:         f.delivers,
+        event_date:           f.evtDate,
+        valid_until:          f.validUntil,
+        currency:             f.currency,
+        notes_internal:       f.notesInt,
+        payment_term:         f.paymentTerm,
+        intended_destination: f.intendedDest === '' ? null : f.intendedDest,
       })
       if (result.success && result.data) {
         setBudget(result.data)
@@ -380,21 +399,70 @@ export default function BudgetEditor({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
-            <input
-              type="text"
-              value={title}
-              onChange={e => field(setTitle)(e.target.value)}
-              placeholder="Orçamento sem título"
-              className="bg-transparent text-base font-semibold text-white placeholder-[#525252] outline-none border-b border-transparent focus:border-[#D4A853]/40 transition-colors min-w-0 w-full max-w-xs"
-            />
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.cls}`}>
-              {statusCfg.label}
-            </span>
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              <h1 className="text-base font-semibold text-white truncate">
+                {title || <span className="text-[#525252]">Orçamento sem título</span>}
+              </h1>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${statusCfg.cls}`}>
+                {statusCfg.label}
+              </span>
+            </div>
           </div>
-          <div className="text-xs shrink-0 min-w-[80px] text-right">
-            {saveState === 'saving' && <span className="text-[#525252]">Salvando…</span>}
-            {saveState === 'saved'  && <span className="text-emerald-500">✓ Salvo</span>}
-            {saveState === 'error'  && <span className="text-red-400">Erro ao salvar</span>}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-xs min-w-[80px] text-right">
+              {saveState === 'saving' && <span className="text-[#525252]">Salvando…</span>}
+              {saveState === 'saved'  && <span className="text-emerald-500">✓ Salvo</span>}
+              {saveState === 'error'  && <span className="text-red-400">Erro ao salvar</span>}
+            </div>
+            {/* Botão Salvar explícito — força save imediato, dá feedback claro.
+                Auto-save continua rodando em background. Aqui só pulamos o debounce. */}
+            <button
+              onClick={() => {
+                if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+                autoSaveTimer.current = setTimeout(() => {}, 0)
+                // Dispara uma janela imediata de save reutilizando o scheduler
+                scheduleAutoSave()
+                // e força imediato limpando o timer pra rodar no próximo tick
+                if (autoSaveTimer.current) {
+                  clearTimeout(autoSaveTimer.current)
+                  // Re-chama com timer zero
+                  autoSaveTimer.current = setTimeout(async () => {
+                    const f = latestFields.current
+                    const currentId = budgetIdRef.current
+                    if (!currentId) {
+                      // Fica no fluxo normal — modo isNew cuida disso
+                      scheduleAutoSave()
+                      return
+                    }
+                    setSaveState('saving')
+                    const result = await updateBudgetInfo(currentId, {
+                      title:                f.title,
+                      client_name:          f.client,
+                      project_description:  f.desc,
+                      deliverables:         f.delivers,
+                      event_date:           f.evtDate,
+                      valid_until:          f.validUntil,
+                      currency:             f.currency,
+                      notes_internal:       f.notesInt,
+                      payment_term:         f.paymentTerm,
+                      intended_destination: f.intendedDest === '' ? null : f.intendedDest,
+                    })
+                    if (result.success && result.data) {
+                      setBudget(result.data)
+                      setSaveState('saved')
+                      toast.success('Orçamento salvo.')
+                      setTimeout(() => setSaveState('idle'), 2500)
+                    } else {
+                      setSaveState('error')
+                    }
+                  }, 0)
+                }
+              }}
+              className="text-xs font-semibold text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] px-3 py-1.5 rounded-lg transition-colors"
+              title="Salvar agora (auto-save está ativo)"
+            >
+              Salvar
+            </button>
           </div>
         </div>
 
@@ -527,6 +595,20 @@ export default function BudgetEditor({
           <div className="lg:col-span-2 bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 space-y-4">
             <h2 className="text-sm font-semibold text-white">Dados do Projeto</h2>
 
+            {/* Título do orçamento — movido pra dentro do bloco (pente fino 2026-04-21) */}
+            <div>
+              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                Título do orçamento <span className="text-[#D4A853]">*</span>
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => field(setTitle)(e.target.value)}
+                placeholder="Ex: Casamento João & Maria · Institucional Tech Corp"
+                className={inputCls}
+              />
+            </div>
+
             {/* Cliente — padrão ÚNICO do sistema (ClientPicker) */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
@@ -618,6 +700,56 @@ export default function BudgetEditor({
               </div>
             </div>
 
+            {/* Prazo de pagamento — aparece no PDF e orienta o cliente */}
+            <div>
+              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                Prazo / condição de pagamento
+                <span className="text-[#525252] font-normal ml-1">(aparece no PDF)</span>
+              </label>
+              <input
+                type="text"
+                value={paymentTerm}
+                onChange={e => field(setPaymentTerm)(e.target.value)}
+                placeholder="Ex: 50% na assinatura + 50% na entrega · 30/60/90 · boleto"
+                className={inputCls}
+              />
+            </div>
+
+            {/* Destino pretendido — hint de qual fluxo vira depois de aprovado.
+                NÃO trava nada — usuário ainda pode converter livremente pelo painel
+                de conversão. Só pré-seleciona o botão primário. */}
+            <div>
+              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                Destino quando aprovado
+                <span className="text-[#525252] font-normal ml-1">(opcional)</span>
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { v: '',          label: 'Definir depois', hint: 'Escolho depois que aprovar' },
+                  { v: 'freelance', label: 'Freelance',      hint: 'Job único com diárias/custos' },
+                  { v: 'order',     label: 'Pedido',         hint: 'Entrega pontual (pacote/produto)' },
+                  { v: 'recurring', label: 'Receita recorrente', hint: 'Mensalidade contínua' },
+                ] as const).map((opt) => {
+                  const active = intendedDest === opt.v
+                  return (
+                    <button
+                      key={opt.v || 'none'}
+                      type="button"
+                      onClick={() => field(setIntendedDest)(opt.v)}
+                      title={opt.hint}
+                      className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                        active
+                          ? 'bg-[#D4A853]/10 border-[#D4A853]/50 text-[#E8C47A]'
+                          : 'bg-[#1c1c1c] border-[#2a2a2a] text-[#a3a3a3] hover:border-[#3a3a3a]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
             {/* Notas internas */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
@@ -646,16 +778,17 @@ export default function BudgetEditor({
               </span>
             </div>
 
-            {/* Margem */}
+            {/* Margem — dual display: mostra SEMPRE % e R$ ao mesmo tempo.
+                Usuário digita no tipo escolhido; o outro é derivado automaticamente. */}
             <div className="py-3 border-b border-[#1a1a1a]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-[#a3a3a3]">Margem</span>
-                {/* Toggle %/R$ */}
                 <div className="flex bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-0.5">
                   {(['percentage', 'fixed'] as const).map(type => (
                     <button
                       key={type}
                       onClick={() => handleMarginChange(type, marginInput)}
+                      title={type === 'percentage' ? 'Digitar em porcentagem' : 'Digitar em reais'}
                       className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
                         marginType === type
                           ? 'bg-[#D4A853] text-[#0a0a0a]'
@@ -667,19 +800,39 @@ export default function BudgetEditor({
                   ))}
                 </div>
               </div>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={marginInput}
-                onChange={e => handleMarginChange(marginType, e.target.value)}
-                placeholder={marginType === 'percentage' ? '0' : '0,00'}
-                className={`${inputCls} text-right`}
-              />
-              {budget.margin_amount > 0 && (
-                <p className="text-xs text-[#525252] mt-1.5 text-right">
-                  = {formatCurrency(budget.margin_amount, budget.currency)}
-                </p>
-              )}
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={marginInput}
+                  onChange={e => handleMarginChange(marginType, e.target.value)}
+                  placeholder={marginType === 'percentage' ? '0' : '0,00'}
+                  className={`${inputCls} text-right pr-10`}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#525252] font-semibold pointer-events-none">
+                  {marginType === 'percentage' ? '%' : 'R$'}
+                </span>
+              </div>
+              {/* Dual display: % ↔ R$ derivados do subtotal */}
+              {budget.subtotal > 0 && (() => {
+                const inputNum = parseFloat(marginInput.replace(',', '.')) || 0
+                const marginPct = marginType === 'percentage'
+                  ? inputNum
+                  : (inputNum / budget.subtotal) * 100
+                const marginBrl = marginType === 'fixed'
+                  ? inputNum
+                  : (budget.subtotal * inputNum) / 100
+                return (
+                  <div className="flex items-center justify-between mt-2 text-xs">
+                    <span className="text-[#525252]">
+                      ≈ {marginPct.toFixed(1).replace('.', ',')}% do subtotal
+                    </span>
+                    <span className="text-[#a3a3a3] font-medium">
+                      {formatCurrency(marginBrl, budget.currency)}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Total */}

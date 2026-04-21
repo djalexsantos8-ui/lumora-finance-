@@ -1,19 +1,20 @@
-import PagePlaceholder from '@/components/page-placeholder'
+import ContractsClient from './contracts-client'
+import { CONTRACT_TEMPLATES } from '@/lib/data/contract-templates'
 
 export const metadata = { title: 'Contratos — Lumora Finance' }
 
+// ─── Contratos V1 — templates de arranque ─────────────────────────────────────
+//
+// V1 entrega os 9 templates base (foto/vídeo casamento, institucional, moda,
+// book, evento, freelance B2B) como texto markdown pra copiar e adaptar. SEM
+// merge automático de dados do orçamento ainda — isso entra na V2.
+//
+// A aba serve pra (1) desbloquear quem precisa de contrato HOJE, (2) manter
+// o usuário dentro do Lumora em vez de buscar template no Google, (3) coletar
+// feedback sobre quais templates fazem mais sentido expandir.
+//
+// DISCLAIMER obrigatório: texto gerado por IA, não substitui advogado. Exibido
+// em destaque no topo da página e em cada template aberto.
 export default function ContractsPage() {
-  return (
-    <PagePlaceholder
-      icon={
-        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      }
-      title="Contratos"
-      description="Geração automática de contratos com base no orçamento, incluindo dados do cliente, escopo do projeto e termos legais."
-      badge="Em breve"
-    />
-  )
+  return <ContractsClient templates={CONTRACT_TEMPLATES} />
 }

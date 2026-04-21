@@ -245,6 +245,21 @@ function ClientRow({
     email:     client.email     ?? '',
     document:  client.document  ?? '',
     notes:     client.notes     ?? '',
+    // ── Expandidos (opcionais) ──
+    person_type:       (client.person_type ?? '') as '' | 'pf' | 'pj',
+    legal_name:        client.legal_name        ?? '',
+    trade_name:        client.trade_name        ?? '',
+    document_cpf:      client.document_cpf      ?? '',
+    document_cnpj:     client.document_cnpj     ?? '',
+    address_line:      client.address_line      ?? '',
+    address_city:      client.address_city      ?? '',
+    address_state:     client.address_state     ?? '',
+    address_zip:       client.address_zip       ?? '',
+    segment:           client.segment           ?? '',
+    lead_source:       client.lead_source       ?? '',
+    payment_condition: client.payment_condition ?? '',
+    responsible_name:  client.responsible_name  ?? '',
+    responsible_role:  client.responsible_role  ?? '',
   })
 
   const [error,     setError]     = useState<string | null>(null)
@@ -260,6 +275,21 @@ function ClientRow({
         email:     form.email,
         document:  form.document,
         notes:     form.notes,
+        // Expandidos — mandamos só se mudou de string vazia ou tem valor
+        person_type:       form.person_type === '' ? null : form.person_type,
+        legal_name:        form.legal_name,
+        trade_name:        form.trade_name,
+        document_cpf:      form.document_cpf,
+        document_cnpj:     form.document_cnpj,
+        address_line:      form.address_line,
+        address_city:      form.address_city,
+        address_state:     form.address_state,
+        address_zip:       form.address_zip,
+        segment:           form.segment,
+        lead_source:       form.lead_source,
+        payment_condition: form.payment_condition,
+        responsible_name:  form.responsible_name,
+        responsible_role:  form.responsible_role,
       })
       if (res.success) {
         onUpdated(res.data)
