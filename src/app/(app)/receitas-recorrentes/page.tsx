@@ -23,14 +23,19 @@ export default async function ReceitasRecorrentesPage() {
     .maybeSingle()
   if (!member) redirect('/dashboard')
 
-  const { data: items } = await supabase
+  const { data: items, error: rrErr } = await supabase
     .from('recurring_revenue')
     .select('*')
     .eq('workspace_id', member.workspace_id)
     .is('deleted_at', null)
     .order('updated_at', { ascending: false })
 
-  const list = (items ?? []) as RecurringRevenue[]
+  const tableMissing =
+    rrErr?.code === '42P01' ||
+    rrErr?.message?.includes('relation "public.recurring_revenue" does not exist') ||
+    rrErr?.message?.includes('recurring_revenue" does not exist')
+
+  const list = tableMissing ? [] : ((items ?? []) as RecurringRevenue[])
 
   return (
     <div className="min-h-full p-6 md:p-8">
@@ -46,7 +51,18 @@ export default async function ReceitasRecorrentesPage() {
         <NewRecurringButton />
       </div>
 
-      <RecurringList items={list} />
+      {tableMissing ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">
+          <h3 className="text-amber-300 font-semibold text-sm mb-1">Migração pendente</h3>
+          <p className="text-[#a3a3a3] text-sm">
+            A tabela <code className="text-white">recurring_revenue</code> ainda não foi criada no Supabase. Aplique a migration
+            <code className="text-white"> 20260421021500_recurring_revenue.sql</code> (SQL Editor do Supabase) para cadastrar contratos recorrentes.
+            Veja <code className="text-white">SETUP-MIGRATIONS.md</code> no repositório para o passo a passo.
+          </p>
+        </div>
+      ) : (
+        <RecurringList items={list} />
+      )}
     </div>
   )
 }
