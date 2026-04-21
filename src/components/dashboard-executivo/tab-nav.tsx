@@ -21,7 +21,7 @@ export const ABA_LABELS: Record<AbaKey, string> = {
   custos:        'Custos',
   clientes:      'Clientes',
   diagnostico:   'Diagnóstico',
-  conclusao:     'Conclusão',
+  conclusao:     'Dashboard',
 }
 
 export const ABA_ORDER: AbaKey[] = [

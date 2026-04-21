@@ -262,8 +262,40 @@ function buildLeitura(ctx: Ctx): Leitura {
 //   · COMERCIAL   — quem paga bem, quem paga mal, onde insistir ou recuar
 
 function buildDescobertas(ctx: Ctx): Descoberta[] {
-  const { visao, custos, cli } = ctx
+  const { visao, custos, cli, receita } = ctx
   const out: Descoberta[] = []
+
+  // ── EXTRAS (variações adicionais da narrativa — Fase 5 blueprint) ───────
+
+  // Caixa com folga confortável
+  if (visao.runway_meses >= T.runway.confortavel * 2 && visao.custo_mes > 0) {
+    out.push({
+      codigo:    'D_CAIXA_FOLGA',
+      texto:     `Seu caixa atual cobre ${fmtMeses(visao.runway_meses)} de operação sem entrar nada novo — é uma reserva de verdade. Dá pra pensar em expansão sem pânico.`,
+      gravidade: 'positivo',
+      dimensao:  'financeira',
+    })
+  }
+
+  // Crescimento anual (YoY)
+  if (receita.yoy_pct >= 20 && receita.receita_mes > 0) {
+    out.push({
+      codigo:    'D_YOY_CRESCIMENTO',
+      texto:     `Comparado a um ano atrás, você faturou ${fmtPct(receita.yoy_pct, 0)} a mais neste mês. Negócio em ramp — é hora de proteger o que tá funcionando.`,
+      gravidade: 'positivo',
+      dimensao:  'financeira',
+    })
+  }
+
+  // Queda anual (YoY negativo relevante)
+  if (receita.yoy_pct <= -T.queda_relevante * 2) {
+    out.push({
+      codigo:    'D_YOY_QUEDA',
+      texto:     `Você faturou ${fmtPct(Math.abs(receita.yoy_pct), 0)} a menos que há um ano. Não é mês ruim — é tendência que precisa ser revertida agora.`,
+      gravidade: 'atencao',
+      dimensao:  'financeira',
+    })
+  }
 
   // ── FINANCEIRAS ─────────────────────────────────────────────────────────
 

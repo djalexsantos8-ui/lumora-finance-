@@ -4,6 +4,9 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ClientCombobox } from '@/components/clients/client-combobox'
+import { TagCombobox } from '@/components/freelances/tag-combobox'
+import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
+import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
 import {
   updateRecurringRevenue,
@@ -39,23 +42,28 @@ export default function RecurringEditor({ item }: Props) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [form, setForm] = useState({
-    title:            item.title,
-    client_id:        item.client_id,
-    client_name:      item.client_name ?? '',
-    segment:          item.segment ?? '',
-    delivery_type:    item.delivery_type ?? '',
-    has_video:        item.has_video,
-    has_photo:        item.has_photo,
-    has_social:       item.has_social,
-    currency:         item.currency,
-    amount:           item.amount,
-    frequency:        item.frequency,
-    billing_day:      item.billing_day,
-    next_delivery_at: item.next_delivery_at ?? '',
-    next_billing_at:  item.next_billing_at ?? '',
-    status:           item.status,
-    notes:            item.notes ?? '',
-    started_at:       item.started_at,
+    title:               item.title,
+    client_id:           item.client_id,
+    client_name:         item.client_name ?? '',
+    segment:             item.segment ?? '',
+    lead_source:         item.lead_source ?? '',
+    project_description: item.project_description ?? '',
+    scope_summary:       item.scope_summary ?? '',
+    notes_internal:      item.notes_internal ?? '',
+    renewal_date:        item.renewal_date ?? '',
+    delivery_type:       item.delivery_type ?? '',
+    has_video:           item.has_video,
+    has_photo:           item.has_photo,
+    has_social:          item.has_social,
+    currency:            item.currency,
+    amount:              item.amount,
+    frequency:           item.frequency,
+    billing_day:         item.billing_day,
+    next_delivery_at:    item.next_delivery_at ?? '',
+    next_billing_at:     item.next_billing_at ?? '',
+    status:              item.status,
+    notes:               item.notes ?? '',
+    started_at:          item.started_at,
   })
 
   const [savedAt, setSavedAt] = useState<string | null>(null)
@@ -65,22 +73,27 @@ export default function RecurringEditor({ item }: Props) {
     startTransition(async () => {
       setError(null)
       const res = await updateRecurringRevenue(item.id, {
-        title:            form.title,
-        client_name:      form.client_name,
-        segment:          form.segment || null,
-        delivery_type:    form.delivery_type || null,
-        has_video:        form.has_video,
-        has_photo:        form.has_photo,
-        has_social:       form.has_social,
-        currency:         form.currency,
-        amount:           Number(form.amount) || 0,
-        frequency:        form.frequency,
-        billing_day:      form.billing_day ? Number(form.billing_day) : null,
-        next_delivery_at: form.next_delivery_at || null,
-        next_billing_at:  form.next_billing_at || null,
-        status:           form.status,
-        notes:            form.notes || null,
-        started_at:       form.started_at,
+        title:               form.title,
+        client_name:         form.client_name,
+        segment:             form.segment || null,
+        lead_source:         form.lead_source || null,
+        project_description: form.project_description || null,
+        scope_summary:       form.scope_summary || null,
+        notes_internal:      form.notes_internal || null,
+        renewal_date:        form.renewal_date || null,
+        delivery_type:       form.delivery_type || null,
+        has_video:           form.has_video,
+        has_photo:           form.has_photo,
+        has_social:          form.has_social,
+        currency:            form.currency,
+        amount:              Number(form.amount) || 0,
+        frequency:           form.frequency,
+        billing_day:         form.billing_day ? Number(form.billing_day) : null,
+        next_delivery_at:    form.next_delivery_at || null,
+        next_billing_at:     form.next_billing_at || null,
+        status:              form.status,
+        notes:               form.notes || null,
+        started_at:          form.started_at,
       })
       if (!res.success) {
         setError(res.message)
@@ -142,15 +155,25 @@ export default function RecurringEditor({ item }: Props) {
           />
         </div>
 
-        {/* Segmento / Tipo de entrega */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Segmento / Lead Source / Tipo de entrega */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Vertical / Segmento</label>
-            <input
-              type="text"
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Segmento</label>
+            <TagCombobox
               value={form.segment}
-              onChange={e => setForm(f => ({ ...f, segment: e.target.value }))}
-              placeholder="ex: casamento, corporativo, imobiliário"
+              options={CLIENT_SEGMENTS}
+              onCommit={v => setForm(f => ({ ...f, segment: v }))}
+              placeholder="ex: Casamento, E-commerce…"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Origem do lead</label>
+            <TagCombobox
+              value={form.lead_source}
+              options={LEAD_SOURCES}
+              onCommit={v => setForm(f => ({ ...f, lead_source: v }))}
+              placeholder="ex: Instagram, Indicação…"
               className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
             />
           </div>
@@ -162,6 +185,30 @@ export default function RecurringEditor({ item }: Props) {
               onChange={e => setForm(f => ({ ...f, delivery_type: e.target.value }))}
               placeholder="ex: reels, photo monthly, social kit"
               className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* Descrição do projeto + Resumo de escopo */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Descrição do projeto</label>
+            <textarea
+              value={form.project_description}
+              onChange={e => setForm(f => ({ ...f, project_description: e.target.value }))}
+              rows={3}
+              placeholder="Contexto, objetivo, estilo…"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Resumo do escopo</label>
+            <textarea
+              value={form.scope_summary}
+              onChange={e => setForm(f => ({ ...f, scope_summary: e.target.value }))}
+              rows={3}
+              placeholder="Entregáveis fixos do contrato…"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
             />
           </div>
         </div>
@@ -295,27 +342,50 @@ export default function RecurringEditor({ item }: Props) {
           </div>
         </div>
 
-        {/* Data início */}
-        <div>
-          <label className="block text-xs text-[#a3a3a3] mb-1.5">Início do contrato</label>
-          <input
-            type="date"
-            value={form.started_at}
-            onChange={e => setForm(f => ({ ...f, started_at: e.target.value }))}
-            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
-          />
+        {/* Data início / Renovação */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Início do contrato</label>
+            <input
+              type="date"
+              value={form.started_at}
+              onChange={e => setForm(f => ({ ...f, started_at: e.target.value }))}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Data de renovação (opcional)</label>
+            <input
+              type="date"
+              value={form.renewal_date}
+              onChange={e => setForm(f => ({ ...f, renewal_date: e.target.value }))}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+            />
+          </div>
         </div>
 
-        {/* Notas */}
-        <div>
-          <label className="block text-xs text-[#a3a3a3] mb-1.5">Observações</label>
-          <textarea
-            value={form.notes}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            rows={3}
-            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
-            placeholder="Condições especiais, escopo, etc."
-          />
+        {/* Notas públicas + Notas internas */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Observações</label>
+            <textarea
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              rows={3}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+              placeholder="Condições especiais, escopo, etc."
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Notas internas</label>
+            <textarea
+              value={form.notes_internal}
+              onChange={e => setForm(f => ({ ...f, notes_internal: e.target.value }))}
+              rows={3}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+              placeholder="Só você vê."
+            />
+          </div>
         </div>
 
         {/* Resumo */}

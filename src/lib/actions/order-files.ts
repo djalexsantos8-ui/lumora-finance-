@@ -10,24 +10,18 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { OrderFile } from '@/types/order'
+import {
+  ORDER_FILE_MIME_WHITELIST,
+  ORDER_FILE_MAX_FINAL_BYTES,
+  type OrderFileMime,
+} from '@/lib/order-files-constants'
 
 const BUCKET = 'order-files'
 
-export const ORDER_FILE_MIME_WHITELIST = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/heic',
-  'image/heif',
-  'image/webp',
-] as const
+// Re-export dos tipos e constantes vem de '@/lib/order-files-constants'.
+// Arquivos 'use server' só podem exportar async functions.
 
-export type OrderFileMime = (typeof ORDER_FILE_MIME_WHITELIST)[number]
-
-export const ORDER_FILE_MAX_FINAL_BYTES = 10 * 1024 * 1024   // 10 MB
-export const ORDER_FILE_MAX_INPUT_BYTES = 50 * 1024 * 1024   // 50 MB
-
-export type OrderFileActionResult =
+type OrderFileActionResult =
   | { success: true; data?: OrderFile }
   | { success: false; message: string }
 

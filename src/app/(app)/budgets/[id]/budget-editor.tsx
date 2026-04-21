@@ -12,6 +12,8 @@ import {
 } from '@/lib/actions/budgets'
 import { updateClient } from '@/lib/actions/clients'
 import { deleteBudgetItem } from '@/lib/actions/budget-items'
+import { convertBudgetTo } from '@/lib/actions/budget-conversion'
+import { toast } from 'sonner'
 import {
   formatCurrency,
   BUDGET_STATUS_LABELS,
@@ -491,6 +493,11 @@ export default function BudgetEditor({
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 p-6 md:p-8 space-y-6">
 
+        {/* Painel de conversão — visível só quando aprovado */}
+        {budget.status === 'approved' && (
+          <ConversionPanel budgetId={budget.id} />
+        )}
+
         {/* Grid: dados do projeto + resumo financeiro */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -871,3 +878,70 @@ const inputCls =
   'w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white ' +
   'placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 ' +
   'focus:ring-1 focus:ring-[#D4A853]/20 transition-colors'
+
+// ─── ConversionPanel — Fase 6 ────────────────────────────────────────────────
+
+function ConversionPanel({ budgetId }: { budgetId: string }) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [converting, setConverting] = useState<'order' | 'freelance' | 'recurring' | null>(null)
+
+  function convert(target: 'order' | 'freelance' | 'recurring') {
+    const labels = { order: 'Pedido', freelance: 'Freelance', recurring: 'Receita Recorrente' }
+    if (!confirm(`Converter este orçamento em ${labels[target]}?`)) return
+    setConverting(target)
+    startTransition(async () => {
+      const res = await convertBudgetTo(budgetId, target)
+      setConverting(null)
+      if (!res.success) {
+        toast.error(res.message)
+        return
+      }
+      toast.success(`Convertido em ${labels[target]}.`)
+      const routes = {
+        order:     `/pedidos/${res.id}`,
+        freelance: `/freelances/${res.id}`,
+        recurring: `/receitas-recorrentes/${res.id}`,
+      }
+      router.push(routes[target])
+    })
+  }
+
+  return (
+    <div className="bg-emerald-500/5 border border-emerald-500/30 rounded-2xl p-5">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <div className="text-sm font-semibold text-emerald-400 mb-1">
+            ✓ Orçamento aprovado
+          </div>
+          <div className="text-xs text-[#a3a3a3]">
+            Converta em outro tipo de receita para continuar o fluxo.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => convert('order')}
+            disabled={isPending}
+            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {converting === 'order' ? 'Convertendo…' : '→ Pedido'}
+          </button>
+          <button
+            onClick={() => convert('freelance')}
+            disabled={isPending}
+            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {converting === 'freelance' ? 'Convertendo…' : '→ Freelance'}
+          </button>
+          <button
+            onClick={() => convert('recurring')}
+            disabled={isPending}
+            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {converting === 'recurring' ? 'Convertendo…' : '→ Receita Recorrente'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

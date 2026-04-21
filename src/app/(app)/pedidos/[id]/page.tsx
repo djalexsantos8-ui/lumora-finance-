@@ -1,7 +1,9 @@
 import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import OrderEditor from './order-editor'
-import type { Order } from '@/types/order'
+import { listOrderItems, listOrderCostItems } from '@/lib/actions/order-items'
+import { listOrderFiles } from '@/lib/actions/order-files'
+import type { Order, OrderItem, OrderCostItem, OrderFile } from '@/types/order'
 
 export const metadata = { title: 'Pedido — Lumora Finance' }
 
@@ -37,5 +39,22 @@ export default async function OrderDetailPage({
 
   if (!order) notFound()
 
-  return <OrderEditor order={order as Order} />
+  // Fetch related data in parallel — gracefully degrade if migration pending
+  const [itemsRes, costsRes, filesRes] = await Promise.all([
+    listOrderItems(id),
+    listOrderCostItems(id),
+    listOrderFiles(id),
+  ])
+
+  return (
+    <OrderEditor
+      order={order as Order}
+      items={itemsRes.items as OrderItem[]}
+      costItems={costsRes.items as OrderCostItem[]}
+      files={filesRes.files as OrderFile[]}
+      itemsTableMissing={itemsRes.tableMissing}
+      costsTableMissing={costsRes.tableMissing}
+      filesTableMissing={filesRes.tableMissing}
+    />
+  )
 }

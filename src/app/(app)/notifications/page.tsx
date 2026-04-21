@@ -5,6 +5,7 @@ import { formatCurrency, formatJobDateRange }  from '@/lib/utils/format'
 import type { Job }       from '@/types/job'
 import type { FixedCost } from '@/types/expense'
 import { FIXED_COST_CATEGORY_LABELS } from '@/types/expense'
+import { ActionableAlertRow } from './actionable-alert-row'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -205,43 +206,47 @@ export default async function NotificationsPage() {
           {(overdueFixed.length > 0 || todayFixed.length > 0 || overdueJobs.length > 0 || dueTodayJobs.length > 0) && (
             <Section label="URGENTE" dot="red">
               {overdueFixed.map(a => (
-                <AlertRow key={a.id}
+                <ActionableAlertRow key={a.id}
                   title={a.description}
                   sub={`Custos Fixos · ${FIXED_COST_CATEGORY_LABELS[a.category as keyof typeof FIXED_COST_CATEGORY_LABELS] ?? a.category} · ${formatDay(a.billing_day)}`}
                   amount={formatCurrency(a.amount, a.currency) + '/mês'}
                   badge={dayLabel(a.daysUntilDue)}
                   badgeColor="red"
                   href="/fixed-costs"
+                  action={{ target: 'fixed_cost', id: a.id }}
                 />
               ))}
               {todayFixed.map(a => (
-                <AlertRow key={a.id}
+                <ActionableAlertRow key={a.id}
                   title={a.description}
                   sub={`Custos Fixos · ${FIXED_COST_CATEGORY_LABELS[a.category as keyof typeof FIXED_COST_CATEGORY_LABELS] ?? a.category} · ${formatDay(a.billing_day)}`}
                   amount={formatCurrency(a.amount, a.currency) + '/mês'}
                   badge="vence hoje"
                   badgeColor="amber"
                   href="/fixed-costs"
+                  action={{ target: 'fixed_cost', id: a.id }}
                 />
               ))}
               {overdueJobs.map(r => (
-                <AlertRow key={r.job_id}
+                <ActionableAlertRow key={r.job_id}
                   title={r.job_title}
                   sub={`Jobs · ${r.client_name} · venceu ${r.due_date.split('-').reverse().join('/')}`}
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge={`${r.days_delta}d de atraso`}
                   badgeColor="red"
-                  href="/freelances"
+                  href={`/freelances/${r.job_id}`}
+                  action={{ target: 'job', id: r.job_id }}
                 />
               ))}
               {dueTodayJobs.map(r => (
-                <AlertRow key={r.job_id}
+                <ActionableAlertRow key={r.job_id}
                   title={r.job_title}
                   sub={`Jobs · ${r.client_name}`}
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge="vence hoje"
                   badgeColor="amber"
-                  href="/freelances"
+                  href={`/freelances/${r.job_id}`}
+                  action={{ target: 'job', id: r.job_id }}
                 />
               ))}
             </Section>
@@ -251,13 +256,14 @@ export default async function NotificationsPage() {
           {(upcomingFixed.length > 0) && (
             <Section label="ESTA SEMANA" dot="amber">
               {upcomingFixed.map(a => (
-                <AlertRow key={a.id}
+                <ActionableAlertRow key={a.id}
                   title={a.description}
                   sub={`Custos Fixos · ${FIXED_COST_CATEGORY_LABELS[a.category as keyof typeof FIXED_COST_CATEGORY_LABELS] ?? a.category} · ${formatDay(a.billing_day)}`}
                   amount={formatCurrency(a.amount, a.currency) + '/mês'}
                   badge={dayLabel(a.daysUntilDue)}
                   badgeColor="gray"
                   href="/fixed-costs"
+                  action={{ target: 'fixed_cost', id: a.id }}
                 />
               ))}
             </Section>
@@ -267,13 +273,14 @@ export default async function NotificationsPage() {
           {pendingPaymentJobs.length > 0 && (
             <Section label="PAGAMENTOS PENDENTES" dot="gray">
               {pendingPaymentJobs.map(r => (
-                <AlertRow key={r.job_id}
+                <ActionableAlertRow key={r.job_id}
                   title={r.job_title}
                   sub={`Jobs · ${r.client_name} · vence ${r.due_date.split('-').reverse().join('/')}`}
                   amount={formatCurrency(r.amount_due, r.currency)}
                   badge="pendente"
                   badgeColor="gray"
-                  href="/freelances"
+                  href={`/freelances/${r.job_id}`}
+                  action={{ target: 'job', id: r.job_id }}
                 />
               ))}
             </Section>
