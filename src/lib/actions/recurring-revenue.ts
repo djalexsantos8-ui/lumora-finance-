@@ -53,8 +53,7 @@ export async function createRecurringRevenueDraft(): Promise<
 
   if (error || !data) {
     console.error('[recurring-revenue/create-draft]', error)
-    const detail = error ? `${error.code || '?'}: ${error.message || 'sem mensagem'}` : 'sem dados'
-    return { success: false, message: `Erro ao criar receita — ${detail}` }
+    return { success: false, message: 'Erro ao criar receita recorrente.' }
   }
 
   revalidatePath('/receitas-recorrentes')
