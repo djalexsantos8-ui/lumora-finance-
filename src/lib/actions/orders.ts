@@ -84,16 +84,26 @@ export async function listOrders(): Promise<Order[]> {
 export async function updateOrder(
   id: string,
   fields: Partial<{
-    title:         string
-    client_id:     string | null
-    client_name:   string | null
-    order_date:    string
-    delivery_date: string | null
-    currency:      string
-    amount:        number
-    amount_paid:   number
-    status:        OrderStatus
-    notes:         string | null
+    title:               string
+    client_id:           string | null
+    client_name:         string | null
+    project_description: string | null
+    deliverables:        string | null
+    lead_source:         string | null
+    client_segment:      string | null
+    notes_internal:      string | null
+    payment_condition:   string | null
+    order_date:          string
+    delivery_date:       string | null
+    order_date_start:    string | null
+    order_date_end:      string | null
+    is_multi_day:        boolean
+    event_date:          string | null
+    currency:            string
+    amount:              number
+    amount_paid:         number
+    status:              OrderStatus
+    notes:               string | null
   }>
 ): Promise<OrderActionResult> {
   const auth = await requireAuth()
@@ -127,8 +137,18 @@ export async function updateOrder(
 
   for (const k of [
     'title',
+    'project_description',
+    'deliverables',
+    'lead_source',
+    'client_segment',
+    'notes_internal',
+    'payment_condition',
     'order_date',
     'delivery_date',
+    'order_date_start',
+    'order_date_end',
+    'is_multi_day',
+    'event_date',
     'currency',
     'amount',
     'amount_paid',

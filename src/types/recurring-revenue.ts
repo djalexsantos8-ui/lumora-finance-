@@ -17,7 +17,13 @@ export interface RecurringRevenue {
   client_id:         string | null
   client_name:       string | null
 
-  segment:           string | null
+  segment:             string | null
+  lead_source:         string | null
+  project_description: string | null
+  notes_internal:      string | null
+  scope_summary:       string | null
+  renewal_date:        string | null
+
   delivery_type:     string | null
   has_video:         boolean
   has_photo:         boolean

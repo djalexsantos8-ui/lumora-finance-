@@ -86,24 +86,29 @@ export async function listRecurringRevenue(): Promise<RecurringRevenue[]> {
 export async function updateRecurringRevenue(
   id: string,
   fields: Partial<{
-    title:            string
-    client_id:        string | null
-    client_name:      string | null
-    segment:          string | null
-    delivery_type:    string | null
-    has_video:        boolean
-    has_photo:        boolean
-    has_social:       boolean
-    currency:         string
-    amount:           number
-    frequency:        RecurringFrequency
-    billing_day:      number | null
-    next_delivery_at: string | null
-    next_billing_at:  string | null
-    status:           RecurringStatus
-    notes:            string | null
-    started_at:       string
-    cancelled_at:     string | null
+    title:               string
+    client_id:           string | null
+    client_name:         string | null
+    segment:             string | null
+    lead_source:         string | null
+    project_description: string | null
+    notes_internal:      string | null
+    scope_summary:       string | null
+    renewal_date:        string | null
+    delivery_type:       string | null
+    has_video:           boolean
+    has_photo:           boolean
+    has_social:          boolean
+    currency:            string
+    amount:              number
+    frequency:           RecurringFrequency
+    billing_day:         number | null
+    next_delivery_at:    string | null
+    next_billing_at:     string | null
+    status:              RecurringStatus
+    notes:               string | null
+    started_at:          string
+    cancelled_at:        string | null
   }>
 ): Promise<RecurringRevenueActionResult> {
   const auth = await requireAuth()
@@ -137,6 +142,11 @@ export async function updateRecurringRevenue(
   for (const k of [
     'title',
     'segment',
+    'lead_source',
+    'project_description',
+    'notes_internal',
+    'scope_summary',
+    'renewal_date',
     'delivery_type',
     'has_video',
     'has_photo',
