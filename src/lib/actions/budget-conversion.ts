@@ -108,39 +108,29 @@ async function convertToOrder(
 ): Promise<ConversionResult> {
   const today = new Date().toISOString().slice(0, 10)
 
-  // Schema de `orders` em produção (migration 20260421030000_reset_orders_recurring)
-  // tem apenas: title, client_id, client_name, order_date, delivery_date, currency,
-  // amount, amount_paid, status, notes, created_at, updated_at, deleted_at.
+  // Schema completo aplicado em 2026-04-21 (migration 20260421040000_orders_full_schema):
+  // orders agora tem project_description, deliverables, event_date, notes_internal,
+  // revenue_total, cost_total, etc. Mapeia direto dos campos ricos do budget.
   //
-  // Campos ricos (project_description, deliverables, event_date, notes_internal)
-  // só existem depois da migration pendente `20260421040000_orders_full_schema`.
-  //
-  // Solução compatível com AMBOS os schemas: consolidar o conteúdo rico em `notes`
-  // até a migration rodar. Essa é a correção mínima pra desbloquear a conversão
-  // sem depender do usuário aplicar SQL.
-  const noteLines = [
-    `Convertido do orçamento "${budget.title}" em ${today}.`,
-    budget.project_description ? `\nDescrição: ${budget.project_description}` : '',
-    budget.deliverables         ? `\nEntregas: ${budget.deliverables}`        : '',
-    budget.event_date           ? `\nData do evento: ${budget.event_date}`    : '',
-  ].filter(Boolean).join('')
-
+  // Mantém fallback defensivo para 42P01/42703 caso algum ambiente ainda esteja
+  // com schema antigo (ex: branch de preview, outro workspace sem migration).
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
-      workspace_id: workspaceId,
-      created_by:   userId,
-      title:        budget.title || 'Pedido sem título',
-      client_id:    null,
-      client_name:  budget.client_name ?? '',
-      notes:        noteLines,
-      order_date:   today,
-      // `delivery_date` existe em prod mas é opcional; usamos event_date do budget
-      // como melhor aproximação quando disponível
-      delivery_date: budget.event_date ?? null,
-      currency:     budget.currency,
-      amount:       budget.total,
-      status:       'in_progress',
+      workspace_id:        workspaceId,
+      created_by:          userId,
+      title:               budget.title || 'Pedido sem título',
+      client_id:           null,
+      client_name:         budget.client_name ?? '',
+      project_description: budget.project_description ?? null,
+      deliverables:        budget.deliverables ?? null,
+      event_date:          budget.event_date ?? null,
+      notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,
+      order_date:          today,
+      delivery_date:       budget.event_date ?? null,
+      currency:            budget.currency,
+      amount:              budget.total,
+      status:              'in_progress',
     })
     .select('id')
     .single()
@@ -250,31 +240,24 @@ async function convertToRecurring(
 ): Promise<ConversionResult> {
   const today = new Date().toISOString().slice(0, 10)
 
-  // Schema de `recurring_revenue` em prod tem só: title, client_id, client_name,
-  // segment, delivery_type, has_video/photo/social, currency, amount, frequency,
-  // billing_day, next_delivery_at, next_billing_at, status, notes, started_at.
-  //
-  // Campos ricos (project_description, scope_summary, notes_internal) vêm na
-  // migration pendente 20260421040000. Consolida em `notes` até lá.
-  const noteLines = [
-    `Convertido do orçamento "${budget.title}" em ${today}.`,
-    budget.project_description ? `\nDescrição: ${budget.project_description}` : '',
-    budget.deliverables         ? `\nEscopo: ${budget.deliverables}`          : '',
-  ].filter(Boolean).join('')
-
+  // Schema completo aplicado em 2026-04-21 (migration 20260421040000_orders_full_schema):
+  // recurring_revenue agora tem project_description, scope_summary, notes_internal,
+  // lead_source, renewal_date. Mapeia direto dos campos ricos do budget.
   const { data: rr, error } = await supabase
     .from('recurring_revenue')
     .insert({
-      workspace_id: workspaceId,
-      created_by:   userId,
-      title:        budget.title || 'Receita sem título',
-      client_name:  budget.client_name ?? '',
-      currency:     budget.currency,
-      amount:       budget.total,
-      frequency:    'monthly',
-      status:       'active',
-      started_at:   today,
-      notes:        noteLines,
+      workspace_id:        workspaceId,
+      created_by:          userId,
+      title:               budget.title || 'Receita sem título',
+      client_name:         budget.client_name ?? '',
+      project_description: budget.project_description ?? null,
+      scope_summary:       budget.deliverables ?? null,
+      notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,
+      currency:            budget.currency,
+      amount:              budget.total,
+      frequency:           'monthly',
+      status:              'active',
+      started_at:          today,
     })
     .select('id')
     .single()
