@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import BudgetEditor from './budget-editor'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
-import { listContractsByOrigin } from '@/lib/actions/contracts'
+import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
@@ -11,14 +11,19 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { id } = await params
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('budgets')
-    .select('title')
-    .eq('id', id)
-    .single()
-  return { title: `${data?.title ?? 'Orçamento'} — Lumora Finance` }
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('budgets')
+      .select('title')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    return { title: `${data?.title ?? 'Orçamento'} — Lumora Finance` }
+  } catch {
+    return { title: 'Orçamento — Lumora Finance' }
+  }
 }
 
 export default async function BudgetPage({ params }: Props) {
@@ -40,7 +45,7 @@ export default async function BudgetPage({ params }: Props) {
       .select('*')
       .eq('id', id)
       .is('deleted_at', null)
-      .single(),
+      .maybeSingle(),
     supabase
       .from('budget_items')
       .select('*')
@@ -66,9 +71,9 @@ export default async function BudgetPage({ params }: Props) {
     f => f.workspace_id === budget.workspace_id
   )
 
-  // Contratos já vinculados a este orçamento (vínculo reverso)
-  const contractsRes = await listContractsByOrigin('budget', budget.id)
-  const linkedContracts = contractsRes.success ? contractsRes.data : []
+  // Contratos já vinculados a este orçamento (vínculo reverso) — query
+  // segura que nunca derruba a página (retorna [] em qualquer erro).
+  const linkedContracts = await listContractsByOriginQuery('budget', budget.id)
 
   return (
     <>

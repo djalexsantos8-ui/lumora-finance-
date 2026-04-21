@@ -1,8 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getContract } from '@/lib/actions/contracts'
+import { getContractQuery } from '@/lib/queries/contracts'
 import { getContractMeta } from '@/lib/contracts/catalog'
 import ContractBuilder from './contract-builder'
+import type { ContractType } from '@/types/contract'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -10,9 +11,9 @@ interface Props {
 
 export async function generateMetadata({ params }: Props) {
   const { id } = await params
-  const res = await getContract(id)
-  if (!res.success) return { title: 'Contrato — Lumora Finance' }
-  return { title: `${res.data.title} — Lumora Finance` }
+  const contract = await getContractQuery(id)
+  if (!contract) return { title: 'Contrato — Lumora Finance' }
+  return { title: `${contract.title} — Lumora Finance` }
 }
 
 export default async function ContractPage({ params }: Props) {
@@ -22,11 +23,21 @@ export default async function ContractPage({ params }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const res = await getContract(id)
-  if (!res.success) notFound()
+  const contract = await getContractQuery(id)
+  if (!contract) notFound()
 
-  const contract = res.data
-  const meta = getContractMeta(contract.contract_type)
+  // Catálogo é estático — se o tipo mudar no futuro e não existir mais no
+  // catálogo, devolve meta mínimo para evitar crash do Builder.
+  const meta =
+    getContractMeta(contract.contract_type as ContractType) ?? {
+      id:       contract.contract_type as ContractType,
+      title:    contract.title || 'Contrato',
+      audience: 'both' as const,
+      summary:  '',
+      suggestedOrigins: [],
+      required:     [],
+      placeholders: [],
+    }
 
   return <ContractBuilder contract={contract} meta={meta} />
 }

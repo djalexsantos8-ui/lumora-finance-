@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import OrderEditor from './order-editor'
 import { listOrderItems, listOrderCostItems } from '@/lib/actions/order-items'
 import { listOrderFiles } from '@/lib/actions/order-files'
-import { listContractsByOrigin } from '@/lib/actions/contracts'
+import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import type { Order, OrderItem, OrderCostItem, OrderFile } from '@/types/order'
 
@@ -42,13 +42,12 @@ export default async function OrderDetailPage({
   if (!order) notFound()
 
   // Fetch related data in parallel — gracefully degrade if migration pending
-  const [itemsRes, costsRes, filesRes, contractsRes] = await Promise.all([
+  const [itemsRes, costsRes, filesRes, linkedContracts] = await Promise.all([
     listOrderItems(id),
     listOrderCostItems(id),
     listOrderFiles(id),
-    listContractsByOrigin('order', id),
+    listContractsByOriginQuery('order', id),
   ])
-  const linkedContracts = contractsRes.success ? contractsRes.data : []
 
   return (
     <>

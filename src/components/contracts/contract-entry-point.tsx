@@ -56,6 +56,10 @@ export function ContractEntryPoint({ originKind, originId, contracts, hints, com
   const [pickerOpen, setPickerOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
+  // Defesa: se `contracts` vier undefined/null (por qualquer razão),
+  // trata como lista vazia ao invés de quebrar o render.
+  const safeContracts = Array.isArray(contracts) ? contracts : []
+
   const suggestedIds = useMemo(
     () => new Set(suggestContractTypes(originKind, hints)),
     [originKind, hints]
@@ -99,9 +103,9 @@ export function ContractEntryPoint({ originKind, originId, contracts, hints, com
             Contratos
           </h3>
           <p className="text-[10px] text-[#525252] mt-0.5">
-            {contracts.length === 0
+            {safeContracts.length === 0
               ? 'Nenhum contrato vinculado ainda'
-              : `${contracts.length} contrato${contracts.length !== 1 ? 's' : ''} vinculado${contracts.length !== 1 ? 's' : ''}`}
+              : `${safeContracts.length} contrato${safeContracts.length !== 1 ? 's' : ''} vinculado${safeContracts.length !== 1 ? 's' : ''}`}
           </p>
         </div>
         <button
@@ -117,9 +121,9 @@ export function ContractEntryPoint({ originKind, originId, contracts, hints, com
       </div>
 
       {/* Lista de contratos vinculados */}
-      {contracts.length > 0 && (
+      {safeContracts.length > 0 && (
         <div className="space-y-1.5">
-          {contracts.map(c => (
+          {safeContracts.map(c => (
             <Link
               key={c.id}
               href={`/contracts/${c.id}`}
@@ -127,14 +131,14 @@ export function ContractEntryPoint({ originKind, originId, contracts, hints, com
             >
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-white truncate font-medium">
-                  {c.title}
+                  {c.title || 'Contrato sem título'}
                 </p>
                 <p className="text-[10px] text-[#525252]">
-                  {new Date(c.created_at).toLocaleDateString('pt-BR')}
+                  {c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '—'}
                 </p>
               </div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status]}`}>
-                {STATUS_LABELS[c.status]}
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.status] ?? STATUS_COLORS.draft}`}>
+                {STATUS_LABELS[c.status] ?? 'Rascunho'}
               </span>
               <svg
                 className="w-3.5 h-3.5 text-[#525252] group-hover:text-[#a3a3a3] transition-colors shrink-0"

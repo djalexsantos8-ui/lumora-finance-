@@ -1,5 +1,5 @@
 import ContractsClient from './contracts-client'
-import { listContracts } from '@/lib/actions/contracts'
+import { listContractsQuery } from '@/lib/queries/contracts'
 import { CONTRACT_TYPES_LIST } from '@/lib/contracts/catalog'
 
 export const metadata = { title: 'Contratos — Lumora Finance' }
@@ -18,8 +18,7 @@ export const metadata = { title: 'Contratos — Lumora Finance' }
 //  3. Disclaimer permanece (mas mais discreto — já tá claro no fluxo)
 
 export default async function ContractsPage() {
-  const result = await listContracts()
-  const contracts = result.success ? result.data : []
+  const contracts = await listContractsQuery()
 
   return (
     <ContractsClient

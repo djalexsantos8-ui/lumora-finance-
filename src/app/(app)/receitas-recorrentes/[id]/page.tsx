@@ -1,7 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import RecurringEditor from './recurring-editor'
-import { listContractsByOrigin } from '@/lib/actions/contracts'
+import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import type { RecurringRevenue } from '@/types/recurring-revenue'
 
@@ -39,8 +39,7 @@ export default async function RecurringDetailPage({
 
   if (!data) notFound()
 
-  const contractsRes = await listContractsByOrigin('recurring', id)
-  const linkedContracts = contractsRes.success ? contractsRes.data : []
+  const linkedContracts = await listContractsByOriginQuery('recurring', id)
 
   return (
     <>

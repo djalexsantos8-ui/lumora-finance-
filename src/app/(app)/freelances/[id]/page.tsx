@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import JobDetail from './job-detail'
-import { listContractsByOrigin } from '@/lib/actions/contracts'
+import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import type { Job, JobRevenueItem, JobCostItem, JobPayment } from '@/types/job'
 import type { Expense } from '@/types/expense'
@@ -86,8 +86,7 @@ export default async function JobDetailPage({ params }: Props) {
       .order('created_at', { ascending: false }),
   ])
 
-  const contractsRes = await listContractsByOrigin('freelance', id)
-  const linkedContracts = contractsRes.success ? contractsRes.data : []
+  const linkedContracts = await listContractsByOriginQuery('freelance', id)
 
   return (
     <>
