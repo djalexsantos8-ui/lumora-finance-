@@ -108,35 +108,63 @@ async function convertToOrder(
 ): Promise<ConversionResult> {
   const today = new Date().toISOString().slice(0, 10)
 
+  // Schema de `orders` em produção (migration 20260421030000_reset_orders_recurring)
+  // tem apenas: title, client_id, client_name, order_date, delivery_date, currency,
+  // amount, amount_paid, status, notes, created_at, updated_at, deleted_at.
+  //
+  // Campos ricos (project_description, deliverables, event_date, notes_internal)
+  // só existem depois da migration pendente `20260421040000_orders_full_schema`.
+  //
+  // Solução compatível com AMBOS os schemas: consolidar o conteúdo rico em `notes`
+  // até a migration rodar. Essa é a correção mínima pra desbloquear a conversão
+  // sem depender do usuário aplicar SQL.
+  const noteLines = [
+    `Convertido do orçamento "${budget.title}" em ${today}.`,
+    budget.project_description ? `\nDescrição: ${budget.project_description}` : '',
+    budget.deliverables         ? `\nEntregas: ${budget.deliverables}`        : '',
+    budget.event_date           ? `\nData do evento: ${budget.event_date}`    : '',
+  ].filter(Boolean).join('')
+
   const { data: order, error } = await supabase
     .from('orders')
     .insert({
-      workspace_id:        workspaceId,
-      created_by:          userId,
-      title:               budget.title || 'Pedido sem título',
-      client_id:           null, // resolve depois via client_name se necessário
-      client_name:         budget.client_name ?? '',
-      project_description: budget.project_description,
-      deliverables:        budget.deliverables,
-      notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,
-      order_date:          today,
-      event_date:          budget.event_date,
-      currency:            budget.currency,
-      amount:              budget.total,
-      status:              'in_progress',
+      workspace_id: workspaceId,
+      created_by:   userId,
+      title:        budget.title || 'Pedido sem título',
+      client_id:    null,
+      client_name:  budget.client_name ?? '',
+      notes:        noteLines,
+      order_date:   today,
+      // `delivery_date` existe em prod mas é opcional; usamos event_date do budget
+      // como melhor aproximação quando disponível
+      delivery_date: budget.event_date ?? null,
+      currency:     budget.currency,
+      amount:       budget.total,
+      status:       'in_progress',
     })
     .select('id')
     .single()
 
   if (error || !order) {
     console.error('[budget-conversion/to-order]', error)
-    if (error?.code === '42P01' || error?.message?.includes('does not exist')) {
-      return { success: false, message: 'Aplique a migration de pedidos antes de converter.' }
+    // Amplia captura: 42P01 (undefined_table), 42703 (undefined_column) e
+    // qualquer "does not exist" como sinal de schema drift.
+    if (
+      error?.code === '42P01' ||
+      error?.code === '42703' ||
+      error?.message?.includes('does not exist')
+    ) {
+      return {
+        success: false,
+        message: 'Estrutura de pedidos desatualizada. Aplique a migration pendente ou contate o suporte.',
+      }
     }
-    return { success: false, message: 'Erro ao converter em pedido.' }
+    return { success: false, message: `Erro ao converter em pedido: ${error?.message ?? 'desconhecido'}` }
   }
 
-  // Copia items (best-effort — se tabela nova não existe ainda, ignora)
+  // Copia items (best-effort — tabela `order_items` SÓ existe depois da migration
+  // 20260421040000. Em prod sem migration, isso falha com 42P01 e só loga warn,
+  // não bloqueia o retorno do success.
   if (items.length > 0) {
     const rows = items.map((it, idx) => ({
       order_id:    order.id,
@@ -147,7 +175,7 @@ async function convertToOrder(
       sort_order:  idx,
     }))
     const { error: itemsErr } = await supabase.from('order_items').insert(rows)
-    if (itemsErr) console.warn('[budget-conversion/to-order/items]', itemsErr)
+    if (itemsErr) console.warn('[budget-conversion/to-order/items] (esperado sem migration)', itemsErr.code)
   }
 
   await markBudgetConverted(supabase, budget, 'Pedido', order.id)
@@ -222,31 +250,48 @@ async function convertToRecurring(
 ): Promise<ConversionResult> {
   const today = new Date().toISOString().slice(0, 10)
 
+  // Schema de `recurring_revenue` em prod tem só: title, client_id, client_name,
+  // segment, delivery_type, has_video/photo/social, currency, amount, frequency,
+  // billing_day, next_delivery_at, next_billing_at, status, notes, started_at.
+  //
+  // Campos ricos (project_description, scope_summary, notes_internal) vêm na
+  // migration pendente 20260421040000. Consolida em `notes` até lá.
+  const noteLines = [
+    `Convertido do orçamento "${budget.title}" em ${today}.`,
+    budget.project_description ? `\nDescrição: ${budget.project_description}` : '',
+    budget.deliverables         ? `\nEscopo: ${budget.deliverables}`          : '',
+  ].filter(Boolean).join('')
+
   const { data: rr, error } = await supabase
     .from('recurring_revenue')
     .insert({
-      workspace_id:        workspaceId,
-      created_by:          userId,
-      title:               budget.title || 'Receita sem título',
-      client_name:         budget.client_name ?? '',
-      project_description: budget.project_description,
-      scope_summary:       budget.deliverables,
-      currency:            budget.currency,
-      amount:              budget.total,
-      frequency:           'monthly',
-      status:              'active',
-      started_at:          today,
-      notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,
+      workspace_id: workspaceId,
+      created_by:   userId,
+      title:        budget.title || 'Receita sem título',
+      client_name:  budget.client_name ?? '',
+      currency:     budget.currency,
+      amount:       budget.total,
+      frequency:    'monthly',
+      status:       'active',
+      started_at:   today,
+      notes:        noteLines,
     })
     .select('id')
     .single()
 
   if (error || !rr) {
     console.error('[budget-conversion/to-recurring]', error)
-    if (error?.code === '42703') {
-      return { success: false, message: 'Aplique a migration de polish de Receita Recorrente antes.' }
+    if (
+      error?.code === '42P01' ||
+      error?.code === '42703' ||
+      error?.message?.includes('does not exist')
+    ) {
+      return {
+        success: false,
+        message: 'Estrutura de receita recorrente desatualizada. Aplique a migration pendente ou contate o suporte.',
+      }
     }
-    return { success: false, message: 'Erro ao converter em receita recorrente.' }
+    return { success: false, message: `Erro ao converter em receita recorrente: ${error?.message ?? 'desconhecido'}` }
   }
 
   await markBudgetConverted(supabase, budget, 'Receita Recorrente', rr.id)

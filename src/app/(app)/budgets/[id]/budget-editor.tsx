@@ -68,7 +68,6 @@ export default function BudgetEditor({
   const creatingRef = useRef(false)
   const [items,  setItems]      = useState(initialItems)
   const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [menuOpen, setMenuOpen]   = useState(false)
   const [itemModal, setItemModal] = useState<{ open: boolean; item: BudgetItem | null }>({
     open: false,
     item: null,
@@ -76,6 +75,7 @@ export default function BudgetEditor({
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null)
   const [isPending, startTransition]        = useTransition()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // ─── campos do formulário (controlled) ──────────────────────────────────────
   const [title,    setTitle]    = useState(budget.title)
@@ -255,8 +255,7 @@ export default function BudgetEditor({
 
   // ─── status ──────────────────────────────────────────────────────────────────
   function handleStatusChange(next: string) {
-    setMenuOpen(false)
-    if (!budget.id) return // isNew sem save ainda — ignora (menu já não mostra opções relevantes)
+    if (!budget.id) return // isNew sem save ainda — ignora
     startTransition(async () => {
       const result = await updateBudgetStatus(budget.id, next as BudgetStatus)
       if (result.success && result.data) setBudget(result.data)
@@ -295,13 +294,12 @@ export default function BudgetEditor({
 
   // ─── delete orçamento ────────────────────────────────────────────────────────
   function handleDeleteBudget() {
-    setMenuOpen(false)
     // Em modo isNew sem id: não existe nada no DB pra deletar, só volta.
     if (!budget.id) {
       router.push('/budgets')
       return
     }
-    if (!confirm('Excluir este orçamento? Esta ação não pode ser desfeita.')) return
+    setConfirmDelete(false)
     startTransition(async () => {
       await deleteBudget(budget.id)
       router.push('/budgets')
@@ -361,11 +359,17 @@ export default function BudgetEditor({
   return (
     <div className="min-h-full flex flex-col">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 bg-[#0a0a0a]/90 backdrop-blur-sm border-b border-[#1a1a1a] px-6 md:px-8 py-3">
-        <div className="flex items-center justify-between gap-3">
+      {/* ── Header ───────────────────────────────────────────────────────────
+          Todas as ações críticas ficam VISÍVEIS como botões. Nada escondido
+          em menu "…" de três pontinhos. Hierarquia:
+            1) Linha 1: back + título editável + badge de status + save indicator
+            2) Linha 2: botões de ação — status actions (primário/secundário),
+               separador, ferramentas (Preview, PDF), separador, Excluir (discreto)
+      */}
+      <div className="sticky top-0 z-20 bg-[#0a0a0a]/90 backdrop-blur-sm border-b border-[#1a1a1a] px-6 md:px-8 py-3 space-y-2">
 
-          {/* Breadcrumb + título */}
+        {/* Linha 1: breadcrumb + título + status badge + save state */}
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <Link
               href="/budgets"
@@ -387,26 +391,41 @@ export default function BudgetEditor({
               {statusCfg.label}
             </span>
           </div>
+          <div className="text-xs shrink-0 min-w-[80px] text-right">
+            {saveState === 'saving' && <span className="text-[#525252]">Salvando…</span>}
+            {saveState === 'saved'  && <span className="text-emerald-500">✓ Salvo</span>}
+            {saveState === 'error'  && <span className="text-red-400">Erro ao salvar</span>}
+          </div>
+        </div>
 
-          {/* Save indicator + actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Save indicator */}
-            {saveState === 'saving' && (
-              <span className="text-xs text-[#525252] hidden sm:inline">Salvando…</span>
-            )}
-            {saveState === 'saved' && (
-              <span className="text-xs text-emerald-500 hidden sm:inline">✓ Salvo</span>
-            )}
-            {saveState === 'error' && (
-              <span className="text-xs text-red-400 hidden sm:inline">Erro ao salvar</span>
+        {/* Linha 2: botões de ação — TUDO visível, nada em menu "…" */}
+        {budget.id && (
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Status actions — ação principal primeiro */}
+            {nextActions.map(({ label, next, variant }) => (
+              <button
+                key={next}
+                onClick={() => handleStatusChange(next)}
+                disabled={isPending}
+                className={
+                  variant === 'primary'
+                    ? 'text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors'
+                    : 'text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors'
+                }
+              >
+                {label}
+              </button>
+            ))}
+
+            {nextActions.length > 0 && (
+              <div className="h-5 w-px bg-[#2a2a2a] mx-1" aria-hidden />
             )}
 
-            {/* Preview — oculto até o primeiro save criar o registro */}
-            {budget.id && (
+            {/* Ferramentas sempre visíveis */}
             <Link
               href={`/budgets/${budget.id}/preview`}
               target="_blank"
-              className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] px-3 py-1.5 rounded-lg transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -416,14 +435,11 @@ export default function BudgetEditor({
               </svg>
               Preview
             </Link>
-            )}
 
-            {/* Gerar PDF — só depois do primeiro save */}
-            {budget.id && (
             <button
               onClick={handleDownloadPdf}
               disabled={downloadingPdf || isPending}
-              className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-60 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors"
             >
               {downloadingPdf ? (
                 <>
@@ -439,56 +455,62 @@ export default function BudgetEditor({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  PDF
+                  Baixar PDF
                 </>
               )}
             </button>
-            )}
 
-            {/* Menu de ações */}
-            <div className="relative">
+            {/* Spacer que empurra Excluir pra direita */}
+            <div className="flex-1" />
+
+            {/* Excluir — visível mas discreto (vermelho sem fundo) */}
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={isPending}
+              className="flex items-center gap-1.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Excluir
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Modal de confirmação de exclusão ────────────────────────────── */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setConfirmDelete(false)}
+        >
+          <div
+            className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 max-w-sm w-full"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-white font-semibold mb-2">Excluir orçamento?</h3>
+            <p className="text-[#a3a3a3] text-sm mb-5">
+              Essa ação pode ser revertida no banco em caso de engano, mas não é prática. Confirma?
+            </p>
+            <div className="flex items-center gap-2 justify-end">
               <button
-                onClick={() => setMenuOpen(v => !v)}
-                className="p-2 text-[#525252] hover:text-white hover:bg-[#1c1c1c] rounded-lg transition-colors"
-                title="Ações"
+                onClick={() => setConfirmDelete(false)}
+                className="text-sm text-[#a3a3a3] hover:text-white px-4 py-2 rounded-lg transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                </svg>
+                Cancelar
               </button>
-
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl shadow-xl py-1 min-w-[180px]">
-                    {nextActions.map(({ label, next }) => (
-                      <button
-                        key={next}
-                        onClick={() => handleStatusChange(next)}
-                        disabled={isPending}
-                        className="w-full text-left px-4 py-2.5 text-sm text-[#a3a3a3] hover:text-white hover:bg-[#262626] transition-colors disabled:opacity-50"
-                      >
-                        {label}
-                      </button>
-                    ))}
-                    {nextActions.length > 0 && (
-                      <div className="border-t border-[#2a2a2a] my-1" />
-                    )}
-                    <button
-                      onClick={handleDeleteBudget}
-                      disabled={isPending}
-                      className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                    >
-                      Excluir orçamento
-                    </button>
-                  </div>
-                </>
-              )}
+              <button
+                onClick={handleDeleteBudget}
+                disabled={isPending}
+                className="text-sm font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isPending ? 'Excluindo…' : 'Excluir'}
+              </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 p-6 md:p-8 space-y-6">

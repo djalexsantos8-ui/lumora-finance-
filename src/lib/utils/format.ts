@@ -116,12 +116,38 @@ export const BUDGET_STATUS_LABELS: Record<string, string> = {
   expired:  'Expirado',
 }
 
-export const BUDGET_STATUS_NEXT_ACTIONS: Record<string, { label: string; next: string }[]> = {
-  draft:    [{ label: 'Marcar como Enviado', next: 'sent' }],
-  sent:     [{ label: 'Marcar como Aprovado', next: 'approved' }, { label: 'Marcar como Rejeitado', next: 'rejected' }],
-  approved: [],
-  rejected: [{ label: 'Reabrir como Rascunho', next: 'draft' }],
-  expired:  [{ label: 'Reabrir como Rascunho', next: 'draft' }],
+/**
+ * Ações de status do orçamento, classificadas por intenção visual.
+ *
+ * `primary` → botão destacado (ação positiva de avanço)
+ * `secondary` → botão discreto (ação negativa ou reversão)
+ *
+ * A tela de edição do orçamento usa essa lista para renderizar botões
+ * VISÍVEIS no header — nada mais escondido em menu "…".
+ */
+export type BudgetAction = {
+  label:   string
+  next:    string
+  variant: 'primary' | 'secondary'
+}
+
+export const BUDGET_STATUS_NEXT_ACTIONS: Record<string, BudgetAction[]> = {
+  draft:    [
+    { label: 'Marcar como Enviado', next: 'sent',     variant: 'primary'   },
+  ],
+  sent:     [
+    { label: 'Aprovar',             next: 'approved', variant: 'primary'   },
+    { label: 'Rejeitar',            next: 'rejected', variant: 'secondary' },
+  ],
+  approved: [
+    { label: 'Reabrir como Rascunho', next: 'draft',  variant: 'secondary' },
+  ],
+  rejected: [
+    { label: 'Reabrir como Rascunho', next: 'draft',  variant: 'primary'   },
+  ],
+  expired:  [
+    { label: 'Reabrir como Rascunho', next: 'draft',  variant: 'primary'   },
+  ],
 }
 
 export const BUDGET_ITEM_CATEGORY_LABELS: Record<string, string> = {
