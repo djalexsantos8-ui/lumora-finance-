@@ -46,3 +46,6 @@ next-env.d.ts
 # supabase cli (cache local — regenerado a cada `supabase link`/`db push`)
 supabase/.temp/
 backups/
+
+# Backup snapshots (not committed)
+backup-*/

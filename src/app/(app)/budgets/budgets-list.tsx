@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { bulkDeleteBudgets, deleteEmptyDraftBudgets } from '@/lib/actions/budgets'
+import { bulkDeleteBudgets } from '@/lib/actions/budgets'
 import { formatCurrency } from '@/lib/utils/format'
 import type { Budget, BudgetStatus } from '@/types/budget'
 
@@ -27,19 +27,10 @@ export default function BudgetsList({ budgets: initialBudgets }: Props) {
   const [budgets, setBudgets] = useState<Budget[]>(initialBudgets)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
-  const [confirming, setConfirming] = useState<'cleanup' | 'bulk' | null>(null)
+  const [confirming, setConfirming] = useState<'bulk' | null>(null)
 
   const allSelected = budgets.length > 0 && selected.size === budgets.length
   const someSelected = selected.size > 0
-
-  // Agrupa por status pra mostrar contadores r\u00e1pidos no header
-  const counts = useMemo(() => {
-    const c: Record<BudgetStatus, number> = {
-      draft: 0, sent: 0, approved: 0, rejected: 0, expired: 0,
-    }
-    for (const b of budgets) c[b.status] = (c[b.status] ?? 0) + 1
-    return c
-  }, [budgets])
 
   function toggleOne(id: string) {
     setSelected(prev => {
@@ -74,25 +65,6 @@ export default function BudgetsList({ budgets: initialBudgets }: Props) {
       } else {
         router.refresh()
       }
-    })
-  }
-
-  function handleCleanupEmpty() {
-    setConfirming(null)
-    startTransition(async () => {
-      const res = await deleteEmptyDraftBudgets()
-      if (!res.success) {
-        alert(res.message ?? 'Erro na limpeza.')
-        return
-      }
-      if (res.count === 0) {
-        alert('Nenhum rascunho vazio encontrado.')
-        return
-      }
-      // Recarrega do servidor pra refletir o estado real
-      router.refresh()
-      // Feedback local
-      alert(`${res.count} rascunho${res.count !== 1 ? 's' : ''} vazio${res.count !== 1 ? 's' : ''} limpo${res.count !== 1 ? 's' : ''}.`)
     })
   }
 
@@ -139,16 +111,6 @@ export default function BudgetsList({ budgets: initialBudgets }: Props) {
             {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
           </label>
 
-          {counts.draft > 0 && (
-            <button
-              onClick={() => setConfirming('cleanup')}
-              disabled={isPending}
-              className="text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-              title="Remove rascunhos sem título, sem cliente, sem descrição, sem itens e com total R$ 0,00"
-            >
-              Limpar rascunhos vazios
-            </button>
-          )}
         </div>
 
         {someSelected && (
@@ -182,14 +144,10 @@ export default function BudgetsList({ budgets: initialBudgets }: Props) {
             onClick={e => e.stopPropagation()}
           >
             <h3 className="text-white font-semibold mb-2">
-              {confirming === 'bulk'
-                ? `Excluir ${selected.size} orçamento${selected.size !== 1 ? 's' : ''}?`
-                : 'Limpar rascunhos vazios?'}
+              Excluir {selected.size} orçamento{selected.size !== 1 ? 's' : ''}?
             </h3>
             <p className="text-[#a3a3a3] text-sm mb-5">
-              {confirming === 'bulk'
-                ? 'Os orçamentos selecionados serão excluídos. Esta ação pode ser revertida no banco em caso de engano.'
-                : 'Serão removidos apenas rascunhos sem título, sem cliente, sem descrição, sem itens e com total R$ 0,00. Itens com qualquer conteúdo ficam intactos.'}
+              Os orçamentos selecionados serão excluídos. Esta ação pode ser revertida no banco em caso de engano.
             </p>
             <div className="flex items-center gap-2 justify-end">
               <button
@@ -199,11 +157,11 @@ export default function BudgetsList({ budgets: initialBudgets }: Props) {
                 Cancelar
               </button>
               <button
-                onClick={confirming === 'bulk' ? handleBulkDelete : handleCleanupEmpty}
+                onClick={handleBulkDelete}
                 disabled={isPending}
                 className="text-sm font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
-                {isPending ? 'Processando…' : confirming === 'bulk' ? 'Excluir' : 'Limpar'}
+                {isPending ? 'Processando…' : 'Excluir'}
               </button>
             </div>
           </div>

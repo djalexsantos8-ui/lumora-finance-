@@ -28,32 +28,9 @@ import { useSaveTracker } from '@/hooks/use-save-tracker'
 import { SaveStatus } from '@/components/freelances/save-status'
 
 // ─── Taxonomias de freelance ──────────────────────────────────────────────────
-// Listas curadas com o vocabulário do produto. São sugestões (não enum rígido)
-// — os campos aceitam texto livre pra casos fora da lista.
-const LEAD_SOURCES = [
-  'Instagram',
-  'WhatsApp',
-  'Indicação',
-  'Google',
-  'TikTok',
-  'YouTube',
-  'Cliente recorrente',
-  'Parceria',
-  'Evento',
-  'Outro',
-] as const
-
-const CLIENT_SEGMENTS = [
-  'Produtora',
-  'Fotógrafo',
-  'Filmmaker',
-  'Agência',
-  'Marca',
-  'Evento',
-  'Influencer',
-  'Corporativo',
-  'Outro',
-] as const
+// Listas canônicas compartilhadas entre todos os módulos.
+import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
+import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { createExpense, deleteExpense } from '@/lib/actions/expenses'
 import type { Expense } from '@/types/expense'
 
