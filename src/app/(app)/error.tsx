@@ -13,8 +13,8 @@
  * o digest (id do erro) que o Vercel loga nas Functions.
  */
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 
 interface Props {
   error: Error & { digest?: string }
@@ -23,6 +23,8 @@ interface Props {
 
 export default function AppError({ error, reset }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     // Loga no console do cliente; Vercel já captura server-side pelo digest.
@@ -30,6 +32,28 @@ export default function AppError({ error, reset }: Props) {
   }, [error])
 
   const isDev = process.env.NODE_ENV !== 'production'
+
+  // Mostra mensagem em prod também (app pessoal — usuário é o dono).
+  // Ajuda a diagnosticar crashes sem precisar vasculhar logs do Vercel.
+  const showMessage = true
+
+  async function handleCopyDetails() {
+    const details = [
+      `URL: ${pathname ?? 'unknown'}`,
+      `When: ${new Date().toISOString()}`,
+      `Digest: ${error.digest ?? '—'}`,
+      `Message: ${error.message}`,
+      error.stack ? `\nStack:\n${error.stack}` : '',
+    ].join('\n')
+    try {
+      await navigator.clipboard.writeText(details)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback: seleciona o texto via prompt pra copiar manual
+      window.prompt('Copie os detalhes do erro:', details)
+    }
+  }
 
   return (
     <div className="min-h-[calc(100vh-0px)] flex items-center justify-center bg-[#0a0a0a] text-white p-6">
@@ -46,18 +70,20 @@ export default function AppError({ error, reset }: Props) {
           </div>
         </div>
 
-        {isDev && (
+        {showMessage && (
           <pre className="text-[11px] bg-[#0a0a0a] border border-[#1f1f1f] rounded-md p-3 overflow-auto max-h-48 text-[#d4a853] whitespace-pre-wrap break-words">
-            {error.message}
+            {error.message || '(sem mensagem)'}
             {error.digest ? `\n\nDigest: ${error.digest}` : ''}
+            {isDev && error.stack ? `\n\n${error.stack}` : ''}
           </pre>
         )}
 
-        {!isDev && error.digest && (
-          <p className="text-[11px] text-[#525252]">
-            ID do erro: <span className="text-[#d4a853]">{error.digest}</span>
-          </p>
-        )}
+        <button
+          onClick={handleCopyDetails}
+          className="w-full text-xs text-[#a3a3a3] hover:text-white bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] px-3 py-1.5 rounded-md transition-colors"
+        >
+          {copied ? '✓ Copiado' : 'Copiar detalhes (para reportar)'}
+        </button>
 
         <div className="flex gap-2 pt-2">
           <button
