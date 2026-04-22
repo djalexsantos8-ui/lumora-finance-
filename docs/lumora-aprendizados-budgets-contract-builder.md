@@ -493,3 +493,34 @@ validar:  tsc exit 0 (sem types novos necessários — OrderFile já existia),
           5. Click no nome abre signed URL em nova aba.
           6. Trash remove com toast + rollback se falhar.
 ```
+
+## §14. Patch de segurança Next 16.2.4 (2026-04-22, madrugada-3)
+
+```yaml
+fato:     npm audit apontou vuln HIGH GHSA-q4gf-8mx6-v5v3 — DoS de
+          Server Components em Next 16.0.0-beta.0..16.2.2. package.json
+          tinha next pinado em "16.2.2" exato (sem ^ nem ~), então o
+          audit fix precisou ser manual (commit dd8e0d2).
+ação:     1. backup-2026-04-22_03-10-XX criado com package + lock
+             pré-upgrade e ponteiro para commit cd11000.
+          2. package.json: next 16.2.2 → 16.2.4,
+             eslint-config-next 16.2.2 → 16.2.4 (lockstep).
+          3. npm install (5 pacotes alterados, 0 vulns resultante).
+          4. tsc + next build + smoke test prod pós-deploy.
+impacto:  npm audit = 0 vulnerabilities. Nenhuma mudança de
+          comportamento observável — patch bump apenas. Performance
+          e funcionalidade idênticas (p95 < 200ms mantido).
+          Também neste batch: §14b chore(contracts) = force-dynamic
+          para suprimir o único warning de build remanescente
+          ([listContractsQuery] cookies SSR) — commit cd11000.
+gotcha:   Sempre que next pinado em versão exata (sem ^/~), audit fix
+          automático falha com "outside stated dependency range".
+          Solução manual: editar package.json + npm install. NÃO usar
+          --force, que pode subir minor/major indesejada.
+validar:  ✓ tsc exit 0
+          ✓ next build exit 0 + zero warnings
+          ✓ npm audit = 0 vulns
+          ✓ Vercel deploy dd8e0d2 = success
+          ✓ curl 13 rotas principais 100% (307|200) em <500ms
+          ✓ Supabase API logs últimas 10min = 100% 200s
+```
