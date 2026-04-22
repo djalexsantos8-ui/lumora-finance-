@@ -651,41 +651,6 @@ export default function OrderEditor({
         onChange={setOrderExpenses}
       />
 
-      {/* ═══ Detalhes ═══════════════════════════════════════════════════════
-          Paridade com Freelances: Período / Vencimento / Origem do lead /
-          Segmento do cliente. Commits via updateOrder (já usado no save
-          principal). */}
-      <OrderDetailsSection
-        orderId={order.id}
-        startDate={form.order_date_start}
-        endDate={form.order_date_end}
-        deliveryDate={form.delivery_date}
-        leadSource={form.lead_source}
-        clientSegment={form.client_segment}
-        onDateCommit={handleDateCommit}
-        onDeliveryCommit={async (val) => {
-          setForm(f => ({ ...f, delivery_date: val }))
-          startTransition(async () => {
-            await updateOrder(order.id, { delivery_date: val || null })
-            router.refresh()
-          })
-        }}
-        onLeadSourceCommit={async (val) => {
-          setForm(f => ({ ...f, lead_source: val }))
-          startTransition(async () => {
-            await updateOrder(order.id, { lead_source: val || null })
-            router.refresh()
-          })
-        }}
-        onSegmentCommit={async (val) => {
-          setForm(f => ({ ...f, client_segment: val }))
-          startTransition(async () => {
-            await updateOrder(order.id, { client_segment: val || null })
-            router.refresh()
-          })
-        }}
-      />
-
       {/* ═══ Pagamentos recebidos ══════════════════════════════════════════
           Paridade com Freelances: lista de order_payments + form inline
           para registrar novo recebimento. Trigger no banco atualiza
@@ -1751,83 +1716,6 @@ function OrderExpensesSection({
           </p>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ─── OrderDetailsSection ───────────────────────────────────────────────────
-// Período / Vencimento / Origem do lead / Segmento do cliente.
-
-function OrderDetailsSection({
-  orderId: _orderId,
-  startDate,
-  endDate,
-  deliveryDate,
-  leadSource,
-  clientSegment,
-  onDateCommit,
-  onDeliveryCommit,
-  onLeadSourceCommit,
-  onSegmentCommit,
-}: {
-  orderId:            string
-  startDate:          string
-  endDate:            string | null
-  deliveryDate:       string
-  leadSource:         string
-  clientSegment:      string
-  onDateCommit:       (start: string, end: string | null) => void
-  onDeliveryCommit:   (val: string) => void
-  onLeadSourceCommit: (val: string) => void
-  onSegmentCommit:    (val: string) => void
-}) {
-  return (
-    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
-      <h2 className="text-sm font-semibold text-white mb-3">Detalhes</h2>
-      <div className="space-y-2.5">
-        <InfoRow label="Período">
-          <FreelanceDateRange
-            startDate={startDate}
-            endDate={endDate}
-            onCommit={onDateCommit}
-          />
-        </InfoRow>
-        <InfoRow label="Vencimento">
-          <input
-            type="date"
-            value={deliveryDate}
-            onChange={e => onDeliveryCommit(e.target.value)}
-            className={inputCls + ' max-w-[200px]'}
-          />
-        </InfoRow>
-        <InfoRow label="Origem do lead">
-          <TagCombobox
-            value={leadSource}
-            options={LEAD_SOURCES}
-            placeholder="Como te encontraram?"
-            ariaLabel="Origem do lead"
-            onCommit={onLeadSourceCommit}
-          />
-        </InfoRow>
-        <InfoRow label="Segmento">
-          <TagCombobox
-            value={clientSegment}
-            options={CLIENT_SEGMENTS}
-            placeholder="Tipo de cliente"
-            ariaLabel="Segmento do cliente"
-            onCommit={onSegmentCommit}
-          />
-        </InfoRow>
-      </div>
-    </div>
-  )
-}
-
-function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-4 py-1.5">
-      <span className="text-xs text-[#a3a3a3] w-24 shrink-0 pt-2">{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
 }
