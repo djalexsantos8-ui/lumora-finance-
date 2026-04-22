@@ -20,6 +20,7 @@ import {
   BUDGET_STATUS_NEXT_ACTIONS,
   BUDGET_ITEM_CATEGORY_LABELS,
   SUPPORTED_CURRENCIES,
+  toNumberSafe,
 } from '@/lib/utils/format'
 import AddItemModal from './add-item-modal'
 import { ClientPicker } from '@/components/clients/client-picker'
@@ -100,9 +101,12 @@ export default function BudgetEditor({
 
   // ─── margem ─────────────────────────────────────────────────────────────────
   const [marginType,  setMarginType]  = useState<BudgetMarginType>(budget.margin_type)
-  const [marginInput, setMarginInput] = useState(
-    budget.margin_input > 0 ? String(budget.margin_input) : ''
-  )
+  const [marginInput, setMarginInput] = useState(() => {
+    // budget.margin_input chega como string do PostgREST ("0.00", "40000.00").
+    // Coerce antes de comparar/formatar pra evitar surpresas.
+    const n = toNumberSafe(budget.margin_input)
+    return n > 0 ? String(n) : ''
+  })
 
   // ─── cliente (modo expandido — ClientPicker) ─────────────────────────────────
   // Budgets NÃO têm client_id no schema, então os extras SEMPRE começam vazios.
@@ -844,14 +848,15 @@ export default function BudgetEditor({
                 </span>
               </div>
               {/* Dual display: % ↔ R$ derivados do subtotal */}
-              {budget.subtotal > 0 && (() => {
+              {toNumberSafe(budget.subtotal) > 0 && (() => {
+                const subtotalNum = toNumberSafe(budget.subtotal)
                 const inputNum = parseFloat(marginInput.replace(',', '.')) || 0
                 const marginPct = marginType === 'percentage'
                   ? inputNum
-                  : (inputNum / budget.subtotal) * 100
+                  : (inputNum / subtotalNum) * 100
                 const marginBrl = marginType === 'fixed'
                   ? inputNum
-                  : (budget.subtotal * inputNum) / 100
+                  : (subtotalNum * inputNum) / 100
                 return (
                   <div className="flex items-center justify-between mt-2 text-xs">
                     <span className="text-[#525252]">

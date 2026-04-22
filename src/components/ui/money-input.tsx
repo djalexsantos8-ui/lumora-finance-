@@ -24,11 +24,11 @@
 //    só na blur/Enter, use `onCommit` em vez de (ou em adição a) `onChange`.
 
 import { useEffect, useState } from 'react'
-import { getCurrencyDecimals, getCurrencySymbol } from '@/lib/utils/format'
+import { getCurrencyDecimals, getCurrencySymbol, toNumberSafe } from '@/lib/utils/format'
 
 interface Props {
-  /** Valor atual em número puro (ex: 1234.56). */
-  value: number
+  /** Valor atual em número puro (ex: 1234.56). Aceita string de numeric do Supabase. */
+  value: number | string | null
   /** Código ISO da moeda (BRL, USD, EUR, GBP). */
   currency: string
   /** Disparado a cada mudança com o número parseado. */
@@ -103,16 +103,18 @@ export function MoneyInput({
   ariaLabel,
 }: Props) {
   const decimals = getCurrencyDecimals(currency)
+  // PostgREST retorna numeric como string — normaliza na entrada.
+  const numericValue = toNumberSafe(value)
 
   // display = string mostrada no input. Diverge de value durante digitação.
-  const [display, setDisplay] = useState<string>(() => formatLocal(value, decimals))
+  const [display, setDisplay] = useState<string>(() => formatLocal(numericValue, decimals))
   const [focused, setFocused] = useState(false)
 
   // Sincroniza display quando value muda por fora (reset / reload / etc).
   // Só aplica quando NÃO está focado — senão derrapa o cursor do usuário.
   useEffect(() => {
-    if (!focused) setDisplay(formatLocal(value, decimals))
-  }, [value, focused, decimals])
+    if (!focused) setDisplay(formatLocal(numericValue, decimals))
+  }, [numericValue, focused, decimals])
 
   const symbol = getCurrencySymbol(currency)
 
@@ -134,7 +136,7 @@ export function MoneyInput({
         onFocus={() => {
           setFocused(true)
           // Ao focar, mostra número "cru" (sem separador de milhar) para facilitar edição.
-          if (value > 0) setDisplay(String(value).replace('.', ','))
+          if (numericValue > 0) setDisplay(String(numericValue).replace('.', ','))
           else setDisplay('')
         }}
         onChange={e => {

@@ -80,19 +80,42 @@ export function getCurrencyDecimals(currency: string): number {
   return ZERO_DECIMAL_CURRENCIES.has(currency) ? 0 : 2
 }
 
+/**
+ * Coerce para number defensivo. PostgREST retorna `numeric` como STRING
+ * ("1900.00"), então qualquer cálculo que use `budget.total` direto pode
+ * falhar silenciosamente. Use isso onde precisar operar com valores numéricos
+ * de linhas do banco.
+ *
+ * Retorna 0 (não NaN) pra não quebrar cadeias com `.toFixed()`, ">", etc.
+ */
+export function toNumberSafe(value: unknown): number {
+  if (value === null || value === undefined || value === '') return 0
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
 // Formata valor monetário com moeda. Respeita moedas sem centavos (JPY).
-export function formatCurrency(value: number | null, currency = 'BRL'): string {
-  if (value === null || value === undefined) return '—'
-  const digits = getCurrencyDecimals(currency)
+// Aceita number | string | null — PostgREST retorna numeric como string.
+export function formatCurrency(
+  value: number | string | null | undefined,
+  currency = 'BRL',
+): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const num = toNumberSafe(value)
+  const cur = (currency && typeof currency === 'string' ? currency : 'BRL').toUpperCase()
+  const digits = getCurrencyDecimals(cur)
   try {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
-      currency,
+      currency: cur,
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
-    }).format(value)
+    }).format(num)
   } catch {
-    return `${currency} ${value.toFixed(digits)}`
+    // Fallback: símbolo + valor formatado sem Intl. Nunca chama .toFixed
+    // em string (evita TypeError com numeric strings do Supabase).
+    return `${cur} ${num.toFixed(digits)}`
   }
 }
 
