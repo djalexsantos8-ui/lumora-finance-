@@ -12,11 +12,23 @@ import {
 } from '@/lib/actions/feedback'
 import type { Feedback, FeedbackStatus } from '@/types/feedback'
 
+/**
+ * Client components for feedback detail page.
+ *
+ * IMPORTANT (Next 16 RSC):
+ *   Cada subcomponente precisa ser um NAMED export individual.
+ *   Exportar um objeto `{ Panel, AudioPlayer, ... }` como default vira um
+ *   "client reference proxy" opaco quando importado por um server component,
+ *   e acessar `.Panel` retorna undefined → React renderiza `<undefined>` e a
+ *   página inteira cai no global-error boundary ("Erro inesperado").
+ *   Por isso NÃO agrupamos mais em um default export.
+ */
+
 const STATUSES: FeedbackStatus[] = [
   'novo', 'triagem', 'planejado', 'em_andamento', 'resolvido', 'descartado',
 ]
 
-function Panel({ feedback }: { feedback: Feedback }) {
+export function Panel({ feedback }: { feedback: Feedback }) {
   const router = useRouter()
   const [status, setStatus] = useState<FeedbackStatus>(feedback.status)
   const [notes, setNotes]   = useState(feedback.admin_notes ?? '')
@@ -24,29 +36,44 @@ function Panel({ feedback }: { feedback: Feedback }) {
 
   function handleSave() {
     startTransition(async () => {
-      const res = await updateFeedbackStatus(feedback.id, status, notes)
-      if (!res.ok) { toast.error(res.error); return }
-      toast.success('Salvo')
-      router.refresh()
+      try {
+        const res = await updateFeedbackStatus(feedback.id, status, notes)
+        if (!res.ok) { toast.error(res.error); return }
+        toast.success('Salvo')
+        router.refresh()
+      } catch (e) {
+        toast.error('Falha ao salvar — verifique a conexão')
+        console.error('[feedback.panel.save]', e)
+      }
     })
   }
 
   function handleReprocess() {
     startTransition(async () => {
-      const res = await reprocessFeedback(feedback.id)
-      if (!res.ok) { toast.error(res.error); return }
-      toast.success('Reprocessado')
-      router.refresh()
+      try {
+        const res = await reprocessFeedback(feedback.id)
+        if (!res.ok) { toast.error(res.error); return }
+        toast.success('Reprocessado')
+        router.refresh()
+      } catch (e) {
+        toast.error('Falha ao reprocessar — tente novamente')
+        console.error('[feedback.panel.reprocess]', e)
+      }
     })
   }
 
   function handleDelete() {
     if (!confirm('Arquivar este feedback? (soft delete, pode ser recuperado via DB)')) return
     startTransition(async () => {
-      const res = await deleteFeedback(feedback.id)
-      if (!res.ok) { toast.error(res.error); return }
-      toast.success('Arquivado')
-      router.push('/admin/feedback')
+      try {
+        const res = await deleteFeedback(feedback.id)
+        if (!res.ok) { toast.error(res.error); return }
+        toast.success('Arquivado')
+        router.push('/admin/feedback')
+      } catch (e) {
+        toast.error('Falha ao arquivar')
+        console.error('[feedback.panel.delete]', e)
+      }
     })
   }
 
@@ -106,16 +133,22 @@ function Panel({ feedback }: { feedback: Feedback }) {
   )
 }
 
-function AudioPlayer({ id }: { id: string }) {
+export function AudioPlayer({ id }: { id: string }) {
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function load() {
     setLoading(true)
-    const res = await getFeedbackAudioSignedUrl(id)
-    setLoading(false)
-    if (!res.ok) { toast.error(res.error); return }
-    setUrl(res.data?.url ?? null)
+    try {
+      const res = await getFeedbackAudioSignedUrl(id)
+      if (!res.ok) { toast.error(res.error); return }
+      setUrl(res.data?.url ?? null)
+    } catch (e) {
+      toast.error('Falha ao carregar áudio')
+      console.error('[feedback.audio-player]', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (url) return <audio controls src={url} className="w-full mt-1" />
@@ -131,7 +164,7 @@ function AudioPlayer({ id }: { id: string }) {
   )
 }
 
-function AttachmentViewer({
+export function AttachmentViewer({
   id,
   filename,
   mime,
@@ -149,10 +182,16 @@ function AttachmentViewer({
 
   async function load() {
     setLoading(true)
-    const res = await getFeedbackAttachmentSignedUrl(id)
-    setLoading(false)
-    if (!res.ok) { toast.error(res.error); return }
-    setUrl(res.data?.url ?? null)
+    try {
+      const res = await getFeedbackAttachmentSignedUrl(id)
+      if (!res.ok) { toast.error(res.error); return }
+      setUrl(res.data?.url ?? null)
+    } catch (e) {
+      toast.error('Falha ao carregar anexo')
+      console.error('[feedback.attachment-viewer]', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const sizeKb = sizeBytes ? (sizeBytes / 1024).toFixed(0) : null
@@ -224,7 +263,7 @@ function AttachmentViewer({
   )
 }
 
-function PromptCopyBlock({ prompt }: { prompt: string }) {
+export function PromptCopyBlock({ prompt }: { prompt: string }) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
@@ -257,6 +296,3 @@ function PromptCopyBlock({ prompt }: { prompt: string }) {
     </div>
   )
 }
-
-const FeedbackDetailActions = { Panel, AudioPlayer, AttachmentViewer, PromptCopyBlock }
-export default FeedbackDetailActions

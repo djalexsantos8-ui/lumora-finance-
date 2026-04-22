@@ -89,10 +89,10 @@ function buildMarkdown(fb: Feedback): string {
   L.push(`- **Priority score:** ${fb.priority_score ?? '—'}`)
   L.push(`- **Status:** ${fb.status}`)
   if (a) {
-    L.push(`- **Urgência:** ${a.urgencia}`)
-    L.push(`- **Bucket:** ${a.bucket}`)
-    L.push(`- **Bloqueia uso:** ${a.bloqueia_uso ? 'sim' : 'não'}`)
-    L.push(`- **Tags:** ${a.tags.join(', ') || '—'}`)
+    L.push(`- **Urgência:** ${a.urgencia ?? '—'}`)
+    L.push(`- **Bucket:** ${a.bucket ?? '—'}`)
+    L.push(`- **Bloqueia uso:** ${a.bloqueia_uso === true ? 'sim' : 'não'}`)
+    L.push(`- **Tags:** ${(Array.isArray(a.tags) ? a.tags : []).join(', ') || '—'}`)
   }
   L.push('')
 
@@ -127,19 +127,19 @@ function buildMarkdown(fb: Feedback): string {
     L.push('## Análise IA — três camadas')
     L.push('')
     L.push('### 1. O que o usuário quis dizer')
-    L.push(a.explicacao_humana)
+    L.push(a.explicacao_humana ?? '—')
     L.push('')
     L.push('### 2. O que isso provavelmente significa no código')
-    L.push(a.interpretacao_tecnica)
+    L.push(a.interpretacao_tecnica ?? '—')
     L.push('')
     L.push('### 3. O que fazer a respeito')
-    L.push(a.sugestao_acao)
+    L.push(a.sugestao_acao ?? '—')
     L.push('')
-    L.push(`**Área afetada:** ${a.area_afetada}`)
+    L.push(`**Área afetada:** ${a.area_afetada ?? '—'}`)
     L.push('')
-    L.push(`**Próximo passo (amanhã cedo):** ${a.proximo_passo}`)
+    L.push(`**Próximo passo (amanhã cedo):** ${a.proximo_passo ?? '—'}`)
     L.push('')
-    L.push(`**Priority justificativa:** ${a.priority_justificativa}`)
+    L.push(`**Priority justificativa:** ${a.priority_justificativa ?? '—'}`)
     L.push('')
   }
 
@@ -180,8 +180,8 @@ function buildHtml(fb: Feedback): string {
     <li><strong>Tipo (user/IA):</strong> ${escapeHtml(fb.user_type ?? '—')} / ${escapeHtml(fb.ai_type ?? '—')}</li>
     <li><strong>Severidade:</strong> ${escapeHtml(fb.severity ?? '—')} · <strong>Priority:</strong> ${escapeHtml(String(fb.priority_score ?? '—'))}</li>
     <li><strong>Status:</strong> ${escapeHtml(fb.status)}</li>
-    ${a ? `<li><strong>Urgência:</strong> ${escapeHtml(a.urgencia)} · <strong>Bucket:</strong> ${escapeHtml(a.bucket)} · <strong>Bloqueia uso:</strong> ${a.bloqueia_uso ? 'sim' : 'não'}</li>` : ''}
-    ${a ? `<li><strong>Tags:</strong> ${escapeHtml(a.tags.join(', ') || '—')}</li>` : ''}
+    ${a ? `<li><strong>Urgência:</strong> ${escapeHtml(a.urgencia ?? '—')} · <strong>Bucket:</strong> ${escapeHtml(a.bucket ?? '—')} · <strong>Bloqueia uso:</strong> ${a.bloqueia_uso === true ? 'sim' : 'não'}</li>` : ''}
+    ${a ? `<li><strong>Tags:</strong> ${escapeHtml((Array.isArray(a.tags) ? a.tags : []).join(', ') || '—')}</li>` : ''}
   </ul></section>`)
 
   if (fb.raw_text) {
@@ -200,14 +200,14 @@ function buildHtml(fb: Feedback): string {
   if (a) {
     sections.push(`<section><h2>Análise IA — três camadas</h2>
       <h3>1 · O que o usuário quis dizer</h3>
-      <p>${escapeHtml(a.explicacao_humana).replace(/\n/g, '<br>')}</p>
+      <p>${escapeHtml(a.explicacao_humana ?? '—').replace(/\n/g, '<br>')}</p>
       <h3>2 · O que isso provavelmente significa no código</h3>
-      <p>${escapeHtml(a.interpretacao_tecnica).replace(/\n/g, '<br>')}</p>
+      <p>${escapeHtml(a.interpretacao_tecnica ?? '—').replace(/\n/g, '<br>')}</p>
       <h3>3 · O que fazer a respeito</h3>
-      <p>${escapeHtml(a.sugestao_acao).replace(/\n/g, '<br>')}</p>
-      <p><strong>Área afetada:</strong> ${escapeHtml(a.area_afetada)}</p>
-      <p><strong>Próximo passo:</strong> ${escapeHtml(a.proximo_passo)}</p>
-      <p class="muted"><strong>Justificativa do priority score:</strong> ${escapeHtml(a.priority_justificativa)}</p>
+      <p>${escapeHtml(a.sugestao_acao ?? '—').replace(/\n/g, '<br>')}</p>
+      <p><strong>Área afetada:</strong> ${escapeHtml(a.area_afetada ?? '—')}</p>
+      <p><strong>Próximo passo:</strong> ${escapeHtml(a.proximo_passo ?? '—')}</p>
+      <p class="muted"><strong>Justificativa do priority score:</strong> ${escapeHtml(a.priority_justificativa ?? '—')}</p>
     </section>`)
   }
   if (fb.prompt_cloud_code) {

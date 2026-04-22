@@ -253,8 +253,8 @@ function renderItem(i: Feedback): string {
   parts.push(`- **Tipo (user/IA):** ${i.user_type ?? '—'} / ${i.ai_type ?? '—'}`)
   parts.push(`- **Severidade:** ${i.severity ?? '—'} · **Priority:** ${i.priority_score ?? '—'}`)
   if (a) {
-    parts.push(`- **Urgência:** ${a.urgencia} · **Bucket:** ${a.bucket} · **Bloqueia uso:** ${a.bloqueia_uso ? 'sim' : 'não'}`)
-    parts.push(`- **Tags:** ${a.tags.join(', ') || '—'}`)
+    parts.push(`- **Urgência:** ${a.urgencia ?? '—'} · **Bucket:** ${a.bucket ?? '—'} · **Bloqueia uso:** ${a.bloqueia_uso === true ? 'sim' : 'não'}`)
+    parts.push(`- **Tags:** ${(Array.isArray(a.tags) ? a.tags : []).join(', ') || '—'}`)
   }
   parts.push(`- **Status:** ${i.status}`)
   if (i.raw_text) {
@@ -274,12 +274,12 @@ function renderItem(i: Feedback): string {
   if (a) {
     parts.push('')
     parts.push('**Análise IA:**')
-    parts.push(`- _Explicação humana:_ ${a.explicacao_humana}`)
-    parts.push(`- _Interpretação técnica:_ ${a.interpretacao_tecnica}`)
-    parts.push(`- _Área afetada:_ ${a.area_afetada}`)
-    parts.push(`- _Sugestão de ação:_ ${a.sugestao_acao}`)
-    parts.push(`- _Próximo passo:_ **${a.proximo_passo}**`)
-    parts.push(`- _Priority justificativa:_ ${a.priority_justificativa}`)
+    parts.push(`- _Explicação humana:_ ${a.explicacao_humana ?? '—'}`)
+    parts.push(`- _Interpretação técnica:_ ${a.interpretacao_tecnica ?? '—'}`)
+    parts.push(`- _Área afetada:_ ${a.area_afetada ?? '—'}`)
+    parts.push(`- _Sugestão de ação:_ ${a.sugestao_acao ?? '—'}`)
+    parts.push(`- _Próximo passo:_ **${a.proximo_passo ?? '—'}**`)
+    parts.push(`- _Priority justificativa:_ ${a.priority_justificativa ?? '—'}`)
   }
   if (i.prompt_cloud_code) {
     parts.push('')
