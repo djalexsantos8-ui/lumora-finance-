@@ -13,15 +13,24 @@ import {
   updateRecurringRevenue,
   deleteRecurringRevenue,
 } from '@/lib/actions/recurring-revenue'
+import {
+  generateInvoice,
+  updateInvoiceStatus,
+  deleteInvoice,
+} from '@/lib/actions/recurring-invoices'
 import type {
   RecurringRevenue,
   RecurringStatus,
   RecurringFrequency,
+  RecurringRevenueInvoice,
+  RecurringInvoiceStatus,
 } from '@/types/recurring-revenue'
 import { RecurringStatusBadge } from '../recurring-list'
+import { toast } from 'sonner'
 
 interface Props {
   item: RecurringRevenue
+  initialInvoices?: RecurringRevenueInvoice[]
 }
 
 const FREQUENCY_OPTIONS: { value: RecurringFrequency; label: string }[] = [
@@ -37,7 +46,7 @@ const STATUS_OPTIONS: { value: RecurringStatus; label: string }[] = [
   { value: 'cancelled', label: 'Cancelado' },
 ]
 
-export default function RecurringEditor({ item }: Props) {
+export default function RecurringEditor({ item, initialInvoices = [] }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -69,6 +78,9 @@ export default function RecurringEditor({ item }: Props) {
 
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Histórico de cobranças (Fase 4 / 2026-04-22)
+  const [invoices, setInvoices] = useState<RecurringRevenueInvoice[]>(initialInvoices)
 
   function handleSave() {
     startTransition(async () => {
@@ -439,6 +451,18 @@ export default function RecurringEditor({ item }: Props) {
         </div>
       </div>
 
+      {/* ═══ Histórico de cobranças (Fase 4 / 2026-04-22) ══════════════════
+          Cada cobrança é gerada a partir da recorrência, com snapshot do
+          título+valor+cliente no momento da emissão. Idempotência pelo
+          unique (recurring_id, year, month). Permite baixar PDF mensal. */}
+      <InvoicesSection
+        recurringId={item.id}
+        currency={form.currency}
+        invoices={invoices}
+        onChange={setInvoices}
+        disabled={form.status === 'cancelled'}
+      />
+
       {confirmingDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -469,6 +493,230 @@ export default function RecurringEditor({ item }: Props) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Invoices Section (Fase 4 / 2026-04-22) ────────────────────────────────
+
+const MONTH_PT = [
+  'Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez',
+] as const
+
+const INV_STATUS_STYLE: Record<RecurringInvoiceStatus, { label: string; cls: string }> = {
+  open:      { label: 'Aberta',    cls: 'bg-[#D4A853]/10 text-[#E8C47A] border-[#D4A853]/30' },
+  paid:      { label: 'Paga',      cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+  overdue:   { label: 'Atrasada',  cls: 'bg-red-500/10 text-red-400 border-red-500/30' },
+  cancelled: { label: 'Cancelada', cls: 'bg-[#2a2a2a] text-[#a3a3a3] border-[#2a2a2a]' },
+}
+
+function InvoicesSection({
+  recurringId,
+  currency,
+  invoices,
+  onChange,
+  disabled,
+}: {
+  recurringId: string
+  currency:    string
+  invoices:    RecurringRevenueInvoice[]
+  onChange:    (next: RecurringRevenueInvoice[]) => void
+  disabled:    boolean
+}) {
+  const [isPending, startTransition] = useTransition()
+
+  // Padrão: mês atual do sistema. User pode pedir mês anterior via dropdown.
+  const now = new Date()
+  const [genYear, setGenYear] = useState(now.getFullYear())
+  const [genMonth, setGenMonth] = useState(now.getMonth() + 1)
+
+  function handleGenerate() {
+    if (disabled) return
+    startTransition(async () => {
+      const res = await generateInvoice(recurringId, genYear, genMonth)
+      if (!res.success) {
+        toast.error(res.message)
+        return
+      }
+      if (!res.data) return
+      // Dedupe: se a invoice já existia, não duplicar
+      const exists = invoices.some(i => i.id === res.data!.id)
+      if (exists) {
+        toast('Cobrança já existia — exibindo a atual.')
+      } else {
+        toast.success(`Cobrança de ${MONTH_PT[genMonth - 1]}/${genYear} gerada.`)
+        onChange([res.data, ...invoices])
+      }
+    })
+  }
+
+  function handleStatus(inv: RecurringRevenueInvoice, next: RecurringInvoiceStatus) {
+    startTransition(async () => {
+      const res = await updateInvoiceStatus(
+        inv.id,
+        next,
+        next === 'paid' ? Number(inv.amount) : undefined
+      )
+      if (!res.success) {
+        toast.error(res.message)
+        return
+      }
+      if (res.data) {
+        onChange(invoices.map(i => (i.id === inv.id ? res.data! : i)))
+      }
+    })
+  }
+
+  function handleDelete(inv: RecurringRevenueInvoice) {
+    if (!confirm(`Remover a cobrança de ${MONTH_PT[inv.period_month - 1]}/${inv.period_year}?`)) {
+      return
+    }
+    const optimistic = invoices.filter(i => i.id !== inv.id)
+    onChange(optimistic)
+    startTransition(async () => {
+      const res = await deleteInvoice(inv.id)
+      if (!res.success) {
+        onChange(invoices) // rollback
+        toast.error(res.message ?? 'Erro ao excluir.')
+      }
+    })
+  }
+
+  const totalBilled = invoices.reduce((s, i) => s + Number(i.amount), 0)
+  const totalPaid   = invoices
+    .filter(i => i.status === 'paid')
+    .reduce((s, i) => s + Number(i.paid_amount ?? i.amount), 0)
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 mt-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Histórico de cobranças</h3>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {invoices.length === 0
+              ? 'Nenhuma cobrança gerada'
+              : `${invoices.length} cobrança${invoices.length !== 1 ? 's' : ''} · Faturado ${formatCurrency(totalBilled, currency)} · Recebido ${formatCurrency(totalPaid, currency)}`}
+          </p>
+        </div>
+      </div>
+
+      {/* Gerar nova — mês/ano + botão */}
+      <div className="flex items-center gap-2 flex-wrap bg-[#0a0a0a] border border-[#1f1f1f] rounded-lg p-3 mb-3">
+        <span className="text-xs text-[#a3a3a3]">Gerar cobrança de</span>
+        <select
+          value={genMonth}
+          onChange={e => setGenMonth(Number(e.target.value))}
+          disabled={isPending || disabled}
+          className="bg-[#141414] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-xs rounded-md px-2 py-1.5"
+        >
+          {MONTH_PT.map((m, i) => (
+            <option key={m} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select
+          value={genYear}
+          onChange={e => setGenYear(Number(e.target.value))}
+          disabled={isPending || disabled}
+          className="bg-[#141414] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-xs rounded-md px-2 py-1.5"
+        >
+          {[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <button
+          onClick={handleGenerate}
+          disabled={isPending || disabled}
+          className="ml-auto text-xs font-semibold bg-[#D4A853]/10 hover:bg-[#D4A853]/20 text-[#E8C47A] border border-[#D4A853]/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {isPending ? 'Gerando…' : 'Gerar cobrança'}
+        </button>
+      </div>
+
+      {disabled && (
+        <p className="text-[11px] text-amber-400/90 mb-2">
+          Contrato cancelado — não é possível emitir novas cobranças.
+        </p>
+      )}
+
+      {invoices.length > 0 && (
+        <ul className="divide-y divide-[#1f1f1f] border border-[#1f1f1f] rounded-lg overflow-hidden">
+          {invoices.map(inv => {
+            const style = INV_STATUS_STYLE[inv.status]
+            const periodLabel = `${MONTH_PT[inv.period_month - 1]}/${inv.period_year}`
+            return (
+              <li key={inv.id} className="bg-[#0a0a0a] p-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-white font-medium tabular-nums">
+                        {periodLabel}
+                      </span>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${style.cls}`}>
+                        {style.label}
+                      </span>
+                      {inv.due_date && (
+                        <span className="text-[10px] text-[#525252]">
+                          Vence {new Date(inv.due_date).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[#737373] truncate mt-0.5">
+                      {inv.title}
+                      {inv.client_name ? ` · ${inv.client_name}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-white tabular-nums">
+                      {formatCurrency(Number(inv.amount), inv.currency)}
+                    </p>
+                    {inv.paid_at && (
+                      <p className="text-[10px] text-emerald-400">
+                        Pago em {new Date(inv.paid_at).toLocaleDateString('pt-BR')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap mt-2">
+                  {inv.status !== 'paid' && (
+                    <button
+                      onClick={() => handleStatus(inv, 'paid')}
+                      disabled={isPending}
+                      className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                    >
+                      Marcar paga
+                    </button>
+                  )}
+                  {inv.status === 'paid' && (
+                    <button
+                      onClick={() => handleStatus(inv, 'open')}
+                      disabled={isPending}
+                      className="text-[11px] text-[#a3a3a3] hover:text-white bg-[#141414] border border-[#2a2a2a] px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                    >
+                      Reabrir
+                    </button>
+                  )}
+                  <Link
+                    href={`/api/recurring-revenues/${inv.recurring_revenue_id}/invoices/${inv.id}/pdf`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-[#a3a3a3] hover:text-white bg-[#141414] border border-[#2a2a2a] px-2.5 py-1 rounded-md transition-colors"
+                  >
+                    Baixar PDF
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(inv)}
+                    disabled={isPending}
+                    className="ml-auto text-[11px] text-red-400 hover:text-red-300 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )

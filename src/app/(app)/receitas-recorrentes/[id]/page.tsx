@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import RecurringEditor from './recurring-editor'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { listInvoicesByRecurring } from '@/lib/actions/recurring-invoices'
 import type { RecurringRevenue } from '@/types/recurring-revenue'
 
 export const metadata = { title: 'Receita Recorrente — Lumora Finance' }
@@ -39,11 +40,17 @@ export default async function RecurringDetailPage({
 
   if (!data) notFound()
 
-  const linkedContracts = await listContractsByOriginQuery('recurring', id)
+  const [linkedContracts, invoices] = await Promise.all([
+    listContractsByOriginQuery('recurring', id),
+    listInvoicesByRecurring(id),
+  ])
 
   return (
     <>
-      <RecurringEditor item={data as RecurringRevenue} />
+      <RecurringEditor
+        item={data as RecurringRevenue}
+        initialInvoices={invoices}
+      />
       {/* Alinhado com max-w do recurring-editor (max-w-3xl) */}
       <div className="max-w-3xl mx-auto px-6 md:px-8 pb-10">
         <ContractEntryPoint

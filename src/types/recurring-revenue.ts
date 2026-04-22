@@ -52,3 +52,44 @@ export interface RecurringRevenue {
 export type RecurringRevenueActionResult =
   | { success: true; data?: RecurringRevenue; client?: Client }
   | { success: false; message: string }
+
+// ─── Invoices (Fase 4 / 2026-04-22) ────────────────────────────────────────
+// Cada linha representa a cobrança de um mês/ciclo específico emitida a
+// partir de uma recurring_revenue. Snapshot do título/valor/cliente é
+// capturado no momento da geração (imutável quando a recorrência muda).
+
+export type RecurringInvoiceStatus =
+  | 'open'
+  | 'paid'
+  | 'overdue'
+  | 'cancelled'
+
+export interface RecurringRevenueInvoice {
+  id:                   string
+  workspace_id:         string
+  recurring_revenue_id: string
+  created_by:           string
+
+  period_year:          number
+  period_month:         number
+  due_date:             string | null
+
+  title:                string
+  client_name:          string | null
+  amount:               number
+  currency:             string
+
+  status:               RecurringInvoiceStatus
+  paid_at:              string | null
+  paid_amount:          number | null
+
+  notes:                string | null
+
+  created_at:           string
+  updated_at:           string
+  deleted_at:           string | null
+}
+
+export type RecurringInvoiceActionResult =
+  | { success: true; data?: RecurringRevenueInvoice }
+  | { success: false; message: string }
