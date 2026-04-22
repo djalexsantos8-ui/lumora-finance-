@@ -25,12 +25,19 @@ export default async function BudgetsPage() {
 
   if (!member) redirect('/dashboard')
 
-  const { data: budgets } = await supabase
+  // Defensive: captura erros do PostgREST e degrada pra lista vazia em vez
+  // de quebrar a renderização. Qualquer 4xx/5xx aqui vira console.warn + []
+  // — usuário vê empty state ao invés de error boundary.
+  const { data: budgets, error: budgetsError } = await supabase
     .from('budgets')
     .select('*')
     .eq('workspace_id', member.workspace_id)
     .is('deleted_at', null)
     .order('updated_at', { ascending: false })
+
+  if (budgetsError) {
+    console.warn('[budgets/page] falha ao carregar lista:', budgetsError.message)
+  }
 
   const list = (budgets ?? []) as Budget[]
 
