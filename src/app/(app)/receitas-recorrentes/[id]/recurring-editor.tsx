@@ -8,6 +8,7 @@ import { TagCombobox } from '@/components/freelances/tag-combobox'
 import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
+import { MoneyInput } from '@/components/ui/money-input'
 import {
   updateRecurringRevenue,
   deleteRecurringRevenue,
@@ -263,13 +264,14 @@ export default function RecurringEditor({ item }: Props) {
                form.frequency === 'yearly'  ? 'Valor anual' :
                'Valor por cobrança'}
             </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
+            {/* Pente fino Fase 2 (2026-04-22): stepper de centavos era UX
+                amadora. Substituído por MoneyInput — prefixo R$, formato
+                pt-BR (1.234,56), aceita "," e ".", commit via blur/Enter. */}
+            <MoneyInput
               value={form.amount}
-              onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+              currency={form.currency}
+              onChange={v => setForm(f => ({ ...f, amount: v }))}
+              ariaLabel="Valor da cobrança"
             />
           </div>
         </div>

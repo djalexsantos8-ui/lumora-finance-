@@ -33,6 +33,7 @@ import { FreelanceDateRange } from '@/components/freelances/date-range'
 import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
+import { MoneyInput } from '@/components/ui/money-input'
 import { updateOrder, deleteOrder } from '@/lib/actions/orders'
 import {
   addOrderItem,
@@ -432,24 +433,20 @@ export default function OrderEditor({
           </div>
           <div>
             <label className="block text-xs text-[#a3a3a3] mb-1.5">Valor total</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
+            <MoneyInput
               value={form.amount}
-              onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
-              className={inputCls}
+              currency={form.currency}
+              onChange={v => setForm(f => ({ ...f, amount: v }))}
+              ariaLabel="Valor total"
             />
           </div>
           <div>
             <label className="block text-xs text-[#a3a3a3] mb-1.5">Valor pago</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
+            <MoneyInput
               value={form.amount_paid}
-              onChange={e => setForm(f => ({ ...f, amount_paid: Number(e.target.value) }))}
-              className={inputCls}
+              currency={form.currency}
+              onChange={v => setForm(f => ({ ...f, amount_paid: v }))}
+              ariaLabel="Valor pago"
             />
           </div>
         </div>

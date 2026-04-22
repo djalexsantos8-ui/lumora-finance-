@@ -91,15 +91,24 @@ export function ContractEntryPoint({ originKind, originId, contracts, hints, com
     })
   }
 
+  // Fase 3 (2026-04-22): padrão visual alinhado com as outras boxes das
+  // páginas de Freelance/Pedido/Receita Recorrente:
+  //   · `border-[#2a2a2a]` (não `#1c1c1c`) para bater com siblings
+  //   · `rounded-2xl` + `p-5` (não `rounded-xl` + `p-4`) para ritmo vertical igual
+  //   · título com mesma classe das outras seções (`text-sm font-semibold text-white`)
+  // `compact` continua disponível para casos onde queremos o card menor
+  // (sidebar, listas densas), mantendo retrocompatibilidade.
   return (
     <section
-      className={`bg-[#141414] border border-[#1c1c1c] rounded-xl ${
-        compact ? 'p-3' : 'p-4'
+      className={`bg-[#141414] border border-[#2a2a2a] ${
+        compact ? 'rounded-xl p-3' : 'rounded-2xl p-5'
       }`}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider">
+          <h3 className={compact
+            ? 'text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider'
+            : 'text-sm font-semibold text-white'}>
             Contratos
           </h3>
           <p className="text-[10px] text-[#525252] mt-0.5">
