@@ -40,6 +40,7 @@ import {
   updateOrderItem,
   deleteOrderItem,
   addOrderCostItem,
+  updateOrderCostItem,
   deleteOrderCostItem,
 } from '@/lib/actions/order-items'
 import {
@@ -120,6 +121,33 @@ const inputCls =
 
 const sectionTitle =
   'text-[11px] font-semibold uppercase tracking-wider text-[#737373] mb-3'
+
+// ─── helpers inline (paridade ServiceTable / RepassTable do job-detail) ──
+const inputSm =
+  'w-full bg-transparent border border-[#2a2a2a] focus:border-[#D4A853] ' +
+  'focus:outline-none text-white text-sm rounded-md px-2 py-1 transition-colors'
+
+const labelCls =
+  'text-[9px] font-semibold uppercase tracking-wider text-[#525252]'
+
+function TrashIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+    </svg>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg className="w-3.5 h-3.5 animate-spin text-[#D4A853]" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  )
+}
 
 // ─── Componente principal ───────────────────────────────────────────────────
 
@@ -563,68 +591,41 @@ export default function OrderEditor({
         </div>
       </div>
 
-      {/* ═══ Itens de receita ═════════════════════════════════════════════ */}
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={sectionTitle + ' mb-0'}>Itens do pedido</h2>
-          <span className="text-xs text-[#525252]">
-            {items.length} {items.length === 1 ? 'item' : 'itens'}
-          </span>
-        </div>
-
-        {itemsTableMissing ? (
+      {/* ═══ Serviços (paridade Freelances) ═══════════════════════════════ */}
+      {itemsTableMissing ? (
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
           <MigrationPendingNotice section="itens" />
-        ) : (
-          <ItemsSection
-            orderId={order.id}
-            currency={form.currency}
-            items={items}
-            onChange={(next, order) => {
-              setItems(next)
-              if (order) setRevenueTotal(Number(order.revenue_total ?? 0))
-            }}
-          />
-        )}
-      </div>
-
-      {/* ═══ Repasses ao cliente ═══════════════════════════════════════════
-          Renomeado de "Custos internos" (Fase 1 Pedidos mirror 2026-04-22):
-          espelha a lógica de Freelances — o usuário paga um fornecedor (ex:
-          equipamento alugado, equipe externa, viagem) e o cliente reembolsa.
-          Neutro para o ganho do usuário. Estilo visual paridade total com
-          Freelances (Fase 1b 2026-04-22). */}
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-sm font-semibold text-white">Repasses ao cliente</h2>
-              <span
-                title="Itens que você paga mas repassa ao cliente. Não reduzem seu lucro real."
-                className="w-4 h-4 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[9px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
-              >?</span>
-            </div>
-            <p className="text-[10px] text-[#525252] mt-0.5">
-              {costItems.length > 0
-                ? `${costItems.length} ${costItems.length === 1 ? 'repasse' : 'repasses'} · ${formatCurrency(costTotal, form.currency)}`
-                : 'aluguel de gear, viagem cobrada, diária de assistente...'}
-            </p>
-          </div>
         </div>
+      ) : (
+        <ItemsSection
+          orderId={order.id}
+          currency={form.currency}
+          items={items}
+          total={revenueTotal}
+          onChange={(next, order) => {
+            setItems(next)
+            if (order) setRevenueTotal(Number(order.revenue_total ?? 0))
+          }}
+        />
+      )}
 
-        {costsTableMissing ? (
+      {/* ═══ Repasses ao cliente (paridade Freelances) ═══════════════════ */}
+      {costsTableMissing ? (
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
           <MigrationPendingNotice section="custos" />
-        ) : (
-          <CostItemsSection
-            orderId={order.id}
-            currency={form.currency}
-            items={costItems}
-            onChange={(next, order) => {
-              setCostItems(next)
-              if (order) setCostTotal(Number(order.cost_total ?? 0))
-            }}
-          />
-        )}
-      </div>
+        </div>
+      ) : (
+        <CostItemsSection
+          orderId={order.id}
+          currency={form.currency}
+          items={costItems}
+          total={costTotal}
+          onChange={(next, order) => {
+            setCostItems(next)
+            if (order) setCostTotal(Number(order.cost_total ?? 0))
+          }}
+        />
+      )}
 
       {/* ═══ Despesas deste pedido ═════════════════════════════════════════
           Saída de bolso. Reutiliza tabela expenses (expenses.order_id = este
@@ -758,330 +759,603 @@ function MigrationPendingNotice({ section }: { section: string }) {
   )
 }
 
-// ─── Items Section (receita) ────────────────────────────────────────────────
+// ─── ItemsSection (Serviços — paridade ServiceTable do Freelances) ──────────
+//
+// Header: "Serviços" · subtitle "o que você cobra do cliente" · botão
+// "+ Adicionar serviço" no topo direito. Tabela inline com grid
+// categoria/descrição/qtd/unit./total e edição inline (click na linha).
+// Empty state: texto "Nenhum serviço adicionado ainda." (sem botão — o do
+// header basta).
 
 function ItemsSection({
   orderId,
   currency,
   items,
+  total,
   onChange,
 }: {
-  orderId: string
+  orderId:  string
   currency: string
-  items: OrderItem[]
+  items:    OrderItem[]
+  total:    number
   onChange: (next: OrderItem[], order?: Order) => void
 }) {
-  const [adding, setAdding] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [adding,       setAdding]       = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newDesc,      setNewDesc]      = useState('')
+  const [newCat,       setNewCat]       = useState<OrderItemCategory | ''>('')
+  const [newQty,       setNewQty]       = useState('1')
+  const [newUnit,      setNewUnit]      = useState('')
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
+  const [editingId,    setEditingId]    = useState<string | null>(null)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editCat,      setEditCat]      = useState<OrderItemCategory | ''>('')
+  const [editQty,      setEditQty]      = useState('')
+  const [editUnit,     setEditUnit]     = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
 
-  const [newDescription, setNewDescription] = useState('')
-  const [newCategory, setNewCategory]       = useState<OrderItemCategory | ''>('')
-  const [newQty, setNewQty]                 = useState('1')
-  const [newUnit, setNewUnit]               = useState('')
-
-  function resetForm() {
-    setNewDescription('')
-    setNewCategory('')
-    setNewQty('1')
-    setNewUnit('')
+  function cancelAdd() {
+    setAdding(false); setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
   }
 
-  function handleAdd() {
-    if (!newDescription.trim()) {
-      toast.error('Descrição obrigatória.')
-      return
-    }
-    startTransition(async () => {
-      const res = await addOrderItem(orderId, {
-        description: newDescription,
-        quantity:    newQty,
-        unit_value:  newUnit,
-        category:    newCategory || null,
-      })
-      if (!res.success) {
-        toast.error(res.message)
-        return
-      }
-      if (res.data) onChange([...items, res.data as OrderItem], res.order as Order | undefined)
-      resetForm()
-      setAdding(false)
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
+    setIsSubmitting(true)
+    const res = await addOrderItem(orderId, {
+      description: newDesc.trim(),
+      quantity:    newQty,
+      unit_value:  newUnit,
+      category:    newCat || null,
     })
+    setIsSubmitting(false)
+    if (!res.success) { toast.error(res.message); return false }
+    if (res.data) {
+      onChange([...items, res.data as OrderItem], res.order as Order | undefined)
+      setNewlyAddedId((res.data as OrderItem).id)
+      setTimeout(() => setNewlyAddedId(null), 1200)
+    }
+    setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
+    setAdding(false)
+    return true
+  }
+
+  function handleHeaderButtonClick() {
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
+  }
+
+  function startEdit(item: OrderItem) {
+    setEditingId(item.id)
+    setEditDesc(item.description)
+    setEditCat((item.category ?? '') as OrderItemCategory | '')
+    setEditQty(String(item.quantity))
+    setEditUnit(String(item.unit_value))
+  }
+
+  async function submitEdit(id: string) {
+    const current = items.find(i => i.id === id)
+    if (!current) { setEditingId(null); return }
+    const res = await updateOrderItem(id, orderId, {
+      description: editDesc,
+      quantity:    editQty,
+      unit_value:  editUnit,
+      category:    editCat ? (editCat as OrderItemCategory) : null,
+    })
+    if (!res.success) { toast.error(res.message); setEditingId(null); return }
+    if (res.data) {
+      const updated = items.map(i => i.id === id ? (res.data as OrderItem) : i)
+      onChange(updated, res.order as Order | undefined)
+    }
+    setEditingId(null)
   }
 
   function handleDelete(item: OrderItem) {
-    if (!confirm(`Remover "${item.description}"?`)) return
     const optimistic = items.filter(i => i.id !== item.id)
     onChange(optimistic)
-    startTransition(async () => {
+    startTransitionDelete(async () => {
       const res = await deleteOrderItem(item.id, orderId)
-      if (!res.success) {
-        onChange(items) // rollback
-        toast.error(res.message)
-      } else if (res.order) {
-        onChange(optimistic, res.order as Order)
-      }
+      if (!res.success) { onChange(items); toast.error(res.message) }
+      else if (res.order) onChange(optimistic, res.order as Order)
     })
   }
+  const [, startTransitionDelete] = useTransition()
 
   return (
-    <div className="space-y-3">
-      {items.length > 0 && (
-        <ul className="divide-y divide-[#1f1f1f] border border-[#1f1f1f] rounded-lg overflow-hidden">
-          {items.map(it => (
-            <li key={it.id} className="flex items-center gap-3 px-4 py-3 bg-[#0a0a0a]">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-white truncate">{it.description}</span>
-                  {it.category && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1f1f1f] text-[#a3a3a3] uppercase tracking-wider">
-                      {ITEM_CATEGORIES.find(c => c.value === it.category)?.label ?? it.category}
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-[#525252] mt-0.5">
-                  {Number(it.quantity)} × {formatCurrency(Number(it.unit_value), currency)}
-                </div>
-              </div>
-              <div className="text-sm font-semibold text-white">
-                {formatCurrency(Number(it.total_value), currency)}
-              </div>
-              <button
-                onClick={() => handleDelete(it)}
-                disabled={isPending}
-                className="text-[11px] text-red-400 hover:text-red-300 px-2 py-1 rounded transition-colors"
-                aria-label="Remover item"
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Serviços</h2>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} ${items.length === 1 ? 'item' : 'itens'} · ${formatCurrency(total, currency)}`
+              : 'o que você cobra do cliente'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar serviço
+        </button>
+      </div>
+
+      {/* Cabeçalho de colunas */}
+      {(items.length > 0 || adding) && (
+        <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
+          <span className={labelCls}>CATEGORIA</span>
+          <span className={labelCls}>DESCRIÇÃO</span>
+          <span className={`${labelCls} text-right`}>QTD</span>
+          <span className={`${labelCls} text-right`}>UNIT.</span>
+          <span className={`${labelCls} text-right`}>TOTAL</span>
+          <span />
+        </div>
       )}
 
-      {adding ? (
-        <div className="border border-[#D4A853]/30 bg-[#D4A853]/5 rounded-lg p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-            <input
-              type="text"
-              placeholder="Descrição"
-              value={newDescription}
-              onChange={e => setNewDescription(e.target.value)}
-              className={inputCls + ' md:col-span-2'}
-              autoFocus
-            />
-            <select
-              value={newCategory}
-              onChange={e => setNewCategory(e.target.value as OrderItemCategory | '')}
-              className={inputCls}
-            >
-              <option value="">Categoria</option>
-              {ITEM_CATEGORIES.map(c => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Qtd"
-              value={newQty}
-              onChange={e => setNewQty(e.target.value)}
-              className={inputCls + ' text-right'}
-            />
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Valor"
-              value={newUnit}
-              onChange={e => setNewUnit(e.target.value)}
-              className={inputCls + ' text-right'}
-            />
+      {/* Linhas */}
+      <div className="space-y-1">
+        {items.map(it => {
+          const isNew = it.id === newlyAddedId
+          const catLabel = it.category ? ITEM_CATEGORIES.find(c => c.value === it.category)?.label : null
+          return (
+            <div key={it.id}>
+              {editingId === it.id ? (
+                <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select
+                    value={editCat}
+                    onChange={e => setEditCat(e.target.value as OrderItemCategory | '')}
+                    className={inputSm}
+                  >
+                    <option value="" className="bg-[#141414]">—</option>
+                    {ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(it)}
+                >
+                  {catLabel ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
+                  ) : (
+                    <span className="text-[10px] text-[#3a3a3a]">—</span>
+                  )}
+                  <span className="text-sm text-white truncate">{it.description}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {adding && (
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as OrderItemCategory | '')}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              >
+                <option value="" className="bg-[#141414]">—</option>
+                {ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Descrição do serviço"
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newUnit}
+                onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => { resetForm(); setAdding(false) }}
-              className="text-xs text-[#a3a3a3] hover:text-white px-3 py-1.5 rounded transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleAdd}
-              disabled={isPending}
-              className="text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] px-3 py-1.5 rounded transition-colors disabled:opacity-60"
-            >
-              Adicionar
-            </button>
-          </div>
+        )}
+      </div>
+
+      {items.length === 0 && !adding && (
+        <p className="text-xs text-[#525252] text-center py-6">Nenhum serviço adicionado ainda.</p>
+      )}
+
+      {items.length > 0 && (
+        <div className="flex justify-end mt-3 pt-3 border-t border-[#1c1c1c]">
+          <span className="text-sm font-bold text-white">{formatCurrency(total, currency)}</span>
         </div>
-      ) : (
-        <button
-          onClick={() => setAdding(true)}
-          className="w-full text-xs text-[#a3a3a3] hover:text-white border border-dashed border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg py-2.5 transition-colors"
-        >
-          + Adicionar item
-        </button>
       )}
     </div>
   )
 }
 
-// ─── Cost Items Section ─────────────────────────────────────────────────────
+// ─── CostItemsSection (Repasses ao cliente — paridade RepassTable) ──────────
+//
+// Header: título "Repasses ao cliente" + tooltip "?" + subtitle helper,
+// botão "+ Adicionar repasse" no topo direito. Tabela inline com grid
+// categoria/descrição/qtd/unit./total e edição inline. Empty state rich.
+// Footer explicativo com total quando há itens.
 
 function CostItemsSection({
   orderId,
   currency,
   items,
+  total,
   onChange,
 }: {
-  orderId: string
+  orderId:  string
   currency: string
-  items: OrderCostItem[]
+  items:    OrderCostItem[]
+  total:    number
   onChange: (next: OrderCostItem[], order?: Order) => void
 }) {
-  const [adding, setAdding] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [adding,       setAdding]       = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newDesc,      setNewDesc]      = useState('')
+  const [newCat,       setNewCat]       = useState<OrderCostCategory>('other')
+  const [newQty,       setNewQty]       = useState('1')
+  const [newUnit,      setNewUnit]      = useState('')
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
+  const [editingId,    setEditingId]    = useState<string | null>(null)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editCat,      setEditCat]      = useState<OrderCostCategory>('other')
+  const [editQty,      setEditQty]      = useState('')
+  const [editUnit,     setEditUnit]     = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
+  const [, startTransitionDelete] = useTransition()
 
-  const [desc, setDesc] = useState('')
-  const [cat, setCat]   = useState<OrderCostCategory>('other')
-  const [qty, setQty]   = useState('1')
-  const [unit, setUnit] = useState('')
-
-  function reset() {
-    setDesc('')
-    setCat('other')
-    setQty('1')
-    setUnit('')
+  function cancelAdd() {
+    setAdding(false); setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
   }
 
-  function handleAdd() {
-    if (!desc.trim()) {
-      toast.error('Descrição obrigatória.')
-      return
-    }
-    startTransition(async () => {
-      const res = await addOrderCostItem(orderId, {
-        description: desc,
-        category:    cat,
-        quantity:    qty,
-        unit_value:  unit,
-      })
-      if (!res.success) {
-        toast.error(res.message)
-        return
-      }
-      if (res.data) onChange([...items, res.data as OrderCostItem], res.order as Order | undefined)
-      reset()
-      setAdding(false)
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
+    setIsSubmitting(true)
+    const res = await addOrderCostItem(orderId, {
+      description: newDesc.trim(),
+      category:    newCat,
+      quantity:    newQty,
+      unit_value:  newUnit,
     })
+    setIsSubmitting(false)
+    if (!res.success) { toast.error(res.message); return false }
+    if (res.data) {
+      onChange([...items, res.data as OrderCostItem], res.order as Order | undefined)
+      setNewlyAddedId((res.data as OrderCostItem).id)
+      setTimeout(() => setNewlyAddedId(null), 1200)
+    }
+    setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
+    setAdding(false)
+    return true
+  }
+
+  function handleHeaderButtonClick() {
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
+  }
+
+  function startEdit(item: OrderCostItem) {
+    setEditingId(item.id)
+    setEditDesc(item.description)
+    setEditCat(item.category as OrderCostCategory)
+    setEditQty(String(item.quantity))
+    setEditUnit(String(item.unit_value))
+  }
+
+  async function submitEdit(id: string) {
+    const current = items.find(i => i.id === id)
+    if (!current) { setEditingId(null); return }
+    const res = await updateOrderCostItem(id, orderId, {
+      description: editDesc,
+      category:    editCat,
+      quantity:    editQty,
+      unit_value:  editUnit,
+    })
+    if (!res.success) { toast.error(res.message); setEditingId(null); return }
+    if (res.data) {
+      const updated = items.map(i => i.id === id ? (res.data as OrderCostItem) : i)
+      onChange(updated, res.order as Order | undefined)
+    }
+    setEditingId(null)
   }
 
   function handleDelete(item: OrderCostItem) {
-    if (!confirm(`Remover "${item.description}"?`)) return
     const optimistic = items.filter(i => i.id !== item.id)
     onChange(optimistic)
-    startTransition(async () => {
+    startTransitionDelete(async () => {
       const res = await deleteOrderCostItem(item.id, orderId)
-      if (!res.success) {
-        onChange(items)
-        toast.error(res.message)
-      } else if (res.order) {
-        onChange(optimistic, res.order as Order)
-      }
+      if (!res.success) { onChange(items); toast.error(res.message) }
+      else if (res.order) onChange(optimistic, res.order as Order)
     })
   }
 
   return (
-    <div className="space-y-3">
-      {items.length > 0 && (
-        <ul className="divide-y divide-[#1f1f1f] border border-[#1f1f1f] rounded-lg overflow-hidden">
-          {items.map(it => (
-            <li key={it.id} className="flex items-center gap-3 px-4 py-3 bg-[#0a0a0a]">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-white truncate">{it.description}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1f1f1f] text-[#a3a3a3] uppercase tracking-wider">
-                    {COST_CATEGORIES.find(c => c.value === it.category)?.label ?? it.category}
-                  </span>
-                </div>
-                <div className="text-xs text-[#525252] mt-0.5">
-                  {Number(it.quantity)} × {formatCurrency(Number(it.unit_value), currency)}
-                </div>
-              </div>
-              <div className="text-sm font-semibold text-red-400">
-                {formatCurrency(Number(it.total_value), currency)}
-              </div>
-              <button
-                onClick={() => handleDelete(it)}
-                disabled={isPending}
-                className="text-[11px] text-red-400 hover:text-red-300 px-2 py-1 rounded transition-colors"
-                aria-label="Remover custo"
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 mb-4">
+      {/* Header com tooltip */}
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-sm font-semibold text-white">Repasses ao cliente</h2>
+            <span
+              title="Itens que você paga mas repassa ao cliente. Não reduzem seu lucro real."
+              className="w-4 h-4 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[9px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
+            >?</span>
+          </div>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} ${items.length === 1 ? 'repasse' : 'repasses'} · ${formatCurrency(total, currency)}`
+              : 'aluguel de gear, viagem cobrada, diária de assistente...'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar repasse
+        </button>
+      </div>
+
+      {(items.length > 0 || adding) && (
+        <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
+          <span className={labelCls}>CATEGORIA</span>
+          <span className={labelCls}>DESCRIÇÃO</span>
+          <span className={`${labelCls} text-right`}>QTD</span>
+          <span className={`${labelCls} text-right`}>UNIT.</span>
+          <span className={`${labelCls} text-right`}>TOTAL</span>
+          <span />
+        </div>
       )}
 
-      {adding ? (
-        <div className="border border-red-500/20 bg-red-500/5 rounded-lg p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-            <input
-              type="text"
-              placeholder="Descrição do custo"
-              value={desc}
-              onChange={e => setDesc(e.target.value)}
-              className={inputCls + ' md:col-span-2'}
-              autoFocus
-            />
-            <select
-              value={cat}
-              onChange={e => setCat(e.target.value as OrderCostCategory)}
-              className={inputCls}
-            >
-              {COST_CATEGORIES.map(c => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Qtd"
-              value={qty}
-              onChange={e => setQty(e.target.value)}
-              className={inputCls + ' text-right'}
-            />
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Valor"
-              value={unit}
-              onChange={e => setUnit(e.target.value)}
-              className={inputCls + ' text-right'}
-            />
+      <div className="space-y-1">
+        {items.map(it => {
+          const isNew = it.id === newlyAddedId
+          const catLabel = COST_CATEGORIES.find(c => c.value === it.category)?.label ?? it.category
+          return (
+            <div key={it.id}>
+              {editingId === it.id ? (
+                <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select value={editCat} onChange={e => setEditCat(e.target.value as OrderCostCategory)} className={inputSm}>
+                    {COST_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)}
+                    onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
+                    className={`${inputSm} text-right`} />
+                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
+                    onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
+                    className={`${inputSm} text-right`} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(it)}
+                >
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
+                  <span className="text-sm text-white truncate">{it.description}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {adding && (
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as OrderCostCategory)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              >
+                {COST_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Ex: Aluguel drone, viagem..."
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newUnit}
+                onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => { reset(); setAdding(false) }}
-              className="text-xs text-[#a3a3a3] hover:text-white px-3 py-1.5 rounded transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleAdd}
-              disabled={isPending}
-              className="text-xs font-semibold text-white bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded transition-colors disabled:opacity-60"
-            >
-              Adicionar custo
-            </button>
-          </div>
+        )}
+      </div>
+
+      {items.length === 0 && !adding && (
+        <p className="text-xs text-[#525252] text-center py-6">
+          Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
+        </p>
+      )}
+
+      {items.length > 0 && (
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1c1c1c]">
+          <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
+          <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
         </div>
-      ) : (
-        <button
-          onClick={() => setAdding(true)}
-          className="w-full text-xs text-[#a3a3a3] hover:text-white border border-dashed border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg py-2.5 transition-colors"
-        >
-          + Adicionar custo
-        </button>
       )}
     </div>
   )

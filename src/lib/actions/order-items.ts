@@ -253,6 +253,52 @@ export async function addOrderCostItem(
   return { success: true, data, order }
 }
 
+export async function updateOrderCostItem(
+  itemId:  string,
+  orderId: string,
+  fields: {
+    description?: string
+    category?:    string
+    quantity?:    number | string
+    unit_value?:  number | string
+  }
+): Promise<OrderItemActionResult> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
+
+  const payload: Record<string, unknown> = {}
+  if (fields.description !== undefined) {
+    const d = String(fields.description).trim()
+    if (!d) return { success: false, message: 'Descrição obrigatória.' }
+    payload.description = d
+  }
+  if (fields.category !== undefined)   payload.category   = fields.category || 'other'
+  if (fields.quantity !== undefined)   payload.quantity   = Math.max(0.01, parseDecimal(fields.quantity))
+  if (fields.unit_value !== undefined) payload.unit_value = parseDecimal(fields.unit_value)
+
+  if (Object.keys(payload).length === 0) {
+    return { success: false, message: 'Nada para atualizar.' }
+  }
+
+  const { data, error } = await supabase
+    .from('order_cost_items')
+    .update(payload)
+    .eq('id', itemId)
+    .is('deleted_at', null)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[order-items/update-cost]', error)
+    return { success: false, message: 'Erro ao atualizar custo.' }
+  }
+
+  const order = await fetchUpdatedOrder(supabase, orderId)
+  revalidatePath(`/pedidos/${orderId}`)
+  return { success: true, data, order }
+}
+
 export async function deleteOrderCostItem(
   itemId: string,
   orderId: string
