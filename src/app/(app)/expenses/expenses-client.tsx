@@ -544,6 +544,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 <option value="BRL" className="bg-[#141414]">BRL — Real</option>
                 <option value="USD" className="bg-[#141414]">USD — Dólar</option>
                 <option value="EUR" className="bg-[#141414]">EUR — Euro</option>
+                <option value="JPY" className="bg-[#141414]">JPY — Iene</option>
+                <option value="CNY" className="bg-[#141414]">CNY — Yuan</option>
                 <option value="OTHER" className="bg-[#141414]">Outra moeda</option>
               </select>
             </div>
@@ -560,8 +562,8 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                 disabled={isPending} className={`${inputCls} text-right`} />
             </div>
 
-            {/* Cotação automática (USD/EUR) */}
-            {(fCurrency === 'USD' || fCurrency === 'EUR') && (
+            {/* Cotação automática (moedas com API de cotação ao vivo) */}
+            {fCurrency !== 'BRL' && fCurrency !== 'OTHER' && (
               <div className="sm:col-span-2 flex items-center gap-2 min-h-[24px]">
                 {loadingRate ? (
                   <><Spinner /><span className="text-xs text-[#525252]">Buscando cotação...</span></>

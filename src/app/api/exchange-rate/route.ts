@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-const SUPPORTED = ['USD', 'EUR']
+// Moedas com cotação automática (open.er-api.com retorna contra BRL).
+// Mantém a lista pequena e só inclui moedas que realmente usamos hoje no
+// produto. PYG fica de fora por ora (cotação BRL→PYG instável na fonte).
+const SUPPORTED = ['USD', 'EUR', 'JPY', 'CNY', 'GBP']
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)

@@ -9,6 +9,8 @@ const CURRENCIES = [
   { code: 'USD', label: 'Dólar Americano ($)' },
   { code: 'EUR', label: 'Euro (€)' },
   { code: 'PYG', label: 'Guarani Paraguaio (₲)' },
+  { code: 'JPY', label: 'Iene Japonês (¥)' },
+  { code: 'CNY', label: 'Yuan Chinês (CN¥)' },
 ]
 
 export default function SignupPage() {

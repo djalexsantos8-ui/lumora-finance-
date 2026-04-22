@@ -62,17 +62,37 @@ export function formatJobDateRange(job: {
 
 // ─── Moeda ────────────────────────────────────────────────────────────────────
 
-// Formata valor monetário com moeda
+/**
+ * Moedas sem casas decimais (ISO 4217 "minor unit = 0").
+ * JPY (iene) é o caso mais comum no nosso produto. Outros exemplos:
+ * KRW, VND, CLP, ISK, HUF (parcialmente). Lista conservadora por ora.
+ */
+const ZERO_DECIMAL_CURRENCIES = new Set<string>([
+  'JPY', // Iene japonês
+])
+
+/**
+ * Retorna quantas casas decimais uma moeda usa.
+ * Default: 2. JPY: 0. Centraliza a regra para evitar hardcode de `toFixed(2)`
+ * ou `minimumFractionDigits: 2` espalhado pelo código.
+ */
+export function getCurrencyDecimals(currency: string): number {
+  return ZERO_DECIMAL_CURRENCIES.has(currency) ? 0 : 2
+}
+
+// Formata valor monetário com moeda. Respeita moedas sem centavos (JPY).
 export function formatCurrency(value: number | null, currency = 'BRL'): string {
   if (value === null || value === undefined) return '—'
+  const digits = getCurrencyDecimals(currency)
   try {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(value)
   } catch {
-    return `${currency} ${value.toFixed(2)}`
+    return `${currency} ${value.toFixed(digits)}`
   }
 }
 
@@ -104,7 +124,29 @@ export const SUPPORTED_CURRENCIES = [
   { code: 'USD', label: '$ — Dólar Americano' },
   { code: 'EUR', label: '€ — Euro' },
   { code: 'PYG', label: '₲ — Guarani' },
+  { code: 'JPY', label: '¥ — Iene Japonês' },
+  { code: 'CNY', label: 'CN¥ — Yuan Chinês' },
 ]
+
+/**
+ * Símbolo curto de cada moeda — usado como prefixo em inputs e ícones.
+ * NOTA: JPY e CNY compartilham o símbolo "¥". Em contextos ambíguos (ex:
+ * dashboard com múltiplas moedas), preferimos mostrar o código ISO ao lado.
+ */
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  BRL: 'R$',
+  USD: 'US$',
+  EUR: '€',
+  GBP: '£',
+  PYG: '₲',
+  JPY: '¥',
+  CNY: 'CN¥',
+}
+
+/** Retorna o símbolo curto; fallback para o próprio código ISO. */
+export function getCurrencySymbol(currency: string): string {
+  return CURRENCY_SYMBOLS[currency] ?? currency
+}
 
 // ─── Budget ──────────────────────────────────────────────────────────────────
 

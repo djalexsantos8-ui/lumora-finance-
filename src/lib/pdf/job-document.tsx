@@ -8,20 +8,22 @@ import {
 } from '@react-pdf/renderer'
 import type { Job, JobRevenueItem, JobCostItem } from '@/types/job'
 import { calcJobFinancials } from '@/types/job'
-import { formatDate } from '@/lib/utils/format'
+import { formatDate, getCurrencyDecimals } from '@/lib/utils/format'
 import type { PdfJobFile } from '@/app/api/jobs/[id]/pdf/route'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(value: number, currency = 'BRL'): string {
+  const digits = getCurrencyDecimals(currency)
   try {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(value)
   } catch {
-    return `${currency} ${value.toFixed(2)}`
+    return `${currency} ${value.toFixed(digits)}`
   }
 }
 

@@ -24,6 +24,7 @@
 //    só na blur/Enter, use `onCommit` em vez de (ou em adição a) `onChange`.
 
 import { useEffect, useState } from 'react'
+import { getCurrencyDecimals, getCurrencySymbol } from '@/lib/utils/format'
 
 interface Props {
   /** Valor atual em número puro (ex: 1234.56). */
@@ -46,23 +47,16 @@ interface Props {
   ariaLabel?: string
 }
 
-// Símbolo visual por código de moeda — match SUPPORTED_CURRENCIES.
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  BRL: 'R$',
-  USD: 'US$',
-  EUR: '€',
-  GBP: '£',
-}
-
 /**
- * Formata número para pt-BR (1234.56 → "1.234,56"). Quando valor é 0,
- * retorna string vazia para deixar placeholder visível.
+ * Formata número para pt-BR (1234.56 → "1.234,56") usando o número de
+ * casas decimais correto para a moeda (JPY = 0, BRL/USD/EUR = 2). Quando
+ * valor é 0, retorna string vazia para deixar placeholder visível.
  */
-function formatLocal(value: number): string {
+function formatLocal(value: number, digits: number): string {
   if (!isFinite(value) || value === 0) return ''
   return value.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   })
 }
 
@@ -108,17 +102,19 @@ export function MoneyInput({
   className,
   ariaLabel,
 }: Props) {
+  const decimals = getCurrencyDecimals(currency)
+
   // display = string mostrada no input. Diverge de value durante digitação.
-  const [display, setDisplay] = useState<string>(() => formatLocal(value))
+  const [display, setDisplay] = useState<string>(() => formatLocal(value, decimals))
   const [focused, setFocused] = useState(false)
 
   // Sincroniza display quando value muda por fora (reset / reload / etc).
   // Só aplica quando NÃO está focado — senão derrapa o cursor do usuário.
   useEffect(() => {
-    if (!focused) setDisplay(formatLocal(value))
-  }, [value, focused])
+    if (!focused) setDisplay(formatLocal(value, decimals))
+  }, [value, focused, decimals])
 
-  const symbol = CURRENCY_SYMBOLS[currency] ?? currency
+  const symbol = getCurrencySymbol(currency)
 
   return (
     <div className={`relative ${className ?? ''}`}>
@@ -149,20 +145,20 @@ export function MoneyInput({
         onBlur={() => {
           setFocused(false)
           const parsed = parseLocal(display)
-          setDisplay(formatLocal(parsed))
+          setDisplay(formatLocal(parsed, decimals))
           if (onCommit) onCommit(parsed)
         }}
         onKeyDown={e => {
           if (e.key === 'Enter') {
             e.preventDefault()
             const parsed = parseLocal(display)
-            setDisplay(formatLocal(parsed))
+            setDisplay(formatLocal(parsed, decimals))
             if (onCommit) onCommit(parsed)
             // Força blur para indicar commit visualmente
             ;(e.target as HTMLInputElement).blur()
           }
         }}
-        placeholder={placeholder ?? '0,00'}
+        placeholder={placeholder ?? (decimals === 0 ? '0' : '0,00')}
         className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg pl-10 pr-3 py-2.5 transition-colors tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
       />
     </div>

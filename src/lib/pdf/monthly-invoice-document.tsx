@@ -8,6 +8,7 @@ import {
 } from '@react-pdf/renderer'
 import type { RecurringRevenueInvoice } from '@/types/recurring-revenue'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
+import { getCurrencyDecimals, getCurrencySymbol } from '@/lib/utils/format'
 
 // ─── MonthlyInvoiceDocument ─────────────────────────────────────────────────
 //
@@ -164,9 +165,12 @@ interface Props {
 }
 
 function fmtMoney(amount: number, currency: string) {
-  const symbols: Record<string, string> = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' }
-  const prefix = symbols[currency] ?? currency + ' '
-  return `${prefix} ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const prefix = getCurrencySymbol(currency)
+  const digits = getCurrencyDecimals(currency)
+  return `${prefix} ${amount.toLocaleString('pt-BR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`
 }
 
 function fmtDate(iso: string | null): string {

@@ -15,6 +15,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { getContractMeta } from './catalog'
+import { getCurrencyDecimals } from '@/lib/utils/format'
 import type {
   ContractContext,
   ContractOriginKind,
@@ -83,7 +84,7 @@ export async function resolveContractContext(
         setVal('descricao_projeto',  b.project_description, 'orçamento')
         setVal('escopo_entregaveis', b.deliverables, 'orçamento')
         setVal('data_evento',        formatDatePtBr(b.event_date), 'orçamento')
-        setVal('valor_total',        formatBrl(b.total), 'orçamento')
+        setVal('valor_total',        formatMoneyAmount(b.total, b.currency), 'orçamento')
         setVal('valor_por_extenso',  '', 'orçamento') // usuário preenche
         setVal('moeda',              b.currency, 'orçamento')
         setVal('condicao_pagamento', b.payment_term, 'orçamento')
@@ -105,7 +106,7 @@ export async function resolveContractContext(
         setVal('data_evento',       formatDatePtBr(j.job_date), 'freelance')
         setVal('data_inicio',       formatDatePtBr(j.job_date_start || j.job_date), 'freelance')
         setVal('data_fim',          formatDatePtBr(j.job_date_end || j.job_date), 'freelance')
-        setVal('valor_total',       formatBrl(Number(j.revenue_total) + Number(j.cost_total)), 'freelance')
+        setVal('valor_total',       formatMoneyAmount(Number(j.revenue_total) + Number(j.cost_total), j.currency), 'freelance')
         setVal('moeda',             j.currency, 'freelance')
         // Não tem payment_condition como texto — usa payment_condition enum
         if (j.payment_condition) setVal('condicao_pagamento', translatePaymentCondition(j.payment_condition), 'freelance')
@@ -130,7 +131,7 @@ export async function resolveContractContext(
         setVal('data_inicio',        formatDatePtBr(o.order_date_start || o.order_date), 'pedido')
         setVal('data_fim',           formatDatePtBr(o.order_date_end || o.order_date), 'pedido')
         setVal('prazo_entrega',      formatDatePtBr(o.delivery_date), 'pedido')
-        setVal('valor_total',        formatBrl(o.amount), 'pedido')
+        setVal('valor_total',        formatMoneyAmount(o.amount, o.currency), 'pedido')
         setVal('moeda',              o.currency, 'pedido')
         setVal('condicao_pagamento', o.payment_condition, 'pedido')
       }
@@ -151,8 +152,9 @@ export async function resolveContractContext(
         setVal('escopo_entregaveis', r.scope_summary || r.project_description, 'receita recorrente')
         setVal('frequencia',         translateFrequency(r.frequency), 'receita recorrente')
         setVal('data_inicio',        formatDatePtBr(r.started_at), 'receita recorrente')
-        setVal('valor_mensal',       formatBrl(r.amount), 'receita recorrente')
-        setVal('valor_total',        formatBrl(r.amount), 'receita recorrente')
+        setVal('valor_mensal',       formatMoneyAmount(r.amount, r.currency), 'receita recorrente')
+        setVal('valor_total',        formatMoneyAmount(r.amount, r.currency), 'receita recorrente')
+        setVal('moeda',              r.currency, 'receita recorrente')
         setVal('dia_pagamento',      r.billing_day ? String(r.billing_day) : '', 'receita recorrente')
       }
     }
@@ -269,11 +271,23 @@ function formatDatePtBr(iso: string | null | undefined): string {
   }
 }
 
-function formatBrl(n: number | string | null | undefined): string {
+/**
+ * Formata número para o template de contrato sem símbolo de moeda — o
+ * template já usa `{{moeda}}` em volta. Respeita casas decimais da moeda:
+ * JPY → "1.234"  ·  BRL/USD/EUR → "1.234,56".
+ */
+function formatMoneyAmount(
+  n: number | string | null | undefined,
+  currency = 'BRL',
+): string {
   if (n === null || n === undefined) return ''
   const num = Number(n)
   if (isNaN(num)) return ''
-  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const digits = getCurrencyDecimals(currency)
+  return num.toLocaleString('pt-BR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
 }
 
 function translatePaymentCondition(cond: string): string {

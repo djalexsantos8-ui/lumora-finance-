@@ -8,19 +8,21 @@ import {
 } from '@react-pdf/renderer'
 import type { Order, OrderItem } from '@/types/order'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
-import { formatDate } from '@/lib/utils/format'
+import { formatDate, getCurrencyDecimals } from '@/lib/utils/format'
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 function formatMoney(value: number, currency = 'BRL'): string {
+  const digits = getCurrencyDecimals(currency)
   try {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency,
-      minimumFractionDigits: 2,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
     }).format(value)
   } catch {
-    return `${currency} ${value.toFixed(2)}`
+    return `${currency} ${value.toFixed(digits)}`
   }
 }
 
