@@ -3,7 +3,7 @@ título: Lumora — aprendizados operacionais — budgets e contract builder
 tipo: nota-cérebro
 projeto: lumora-finance
 criado: 2026-04-22
-atualizado: 2026-04-22
+atualizado: 2026-04-22 (v2 — validação em produção + armadilha rAF)
 tags: [lumora, budgets, contract-builder, supabase, nextjs, postgrest, bug-latente, memória-persistente]
 aliases:
   - "Lumora — budgets × contracts"
@@ -127,4 +127,69 @@ ação:     separar reads puros em src/lib/queries/*.ts (sem diretiva
           'use server'). actions ficam só para mutações de Client Components.
 validar:  build verde + navegação logada nas rotas afetadas. Ainda não
           validado logado pelo usuário na sessão atual.
+```
+
+### 2026-04-22 — validação em produção do fluxo budget → contract (pós a3ac9cc)
+
+```
+fato:     Validado em produção via Chrome (tab focado) na URL
+          /budgets/2cdda127-648d-499e-9293-93794b61a4e4.
+          - Página hidrata normalmente (32 buttons, __reactFiber + onClick
+            presentes no "Gerar contrato").
+          - Clicar em "Gerar contrato" abre modal com 10 templates.
+          - "Filmagem de Casamento" cria contrato em rascunho e navega para
+            /contracts/<id>.
+          - Contract page pré-preenche: título, client_name como texto
+            ("SVN Investimentos"), data do evento, valor total.
+          - Nenhum client_id FK vinculado. CPF/Endereço ficam "pendente".
+impacto:  Design pós-fix funciona como esperado. Checklist seção 6 passa.
+ação:     Nenhum novo desenvolvimento necessário no fluxo budget→contract.
+          Pendência de migração `alter table budgets add column client_id`
+          (seção 5) continua válida mas NÃO é bloqueadora.
+validar:  Repetir teste em outros orçamentos com client_names distintos.
+```
+
+### 2026-04-22 — armadilha de diagnóstico: rAF throttled em tab hidden (adicionado à seção 7)
+
+```
+fato:     Chrome throttla requestAnimationFrame em tabs com
+          document.visibilityState === "hidden". React 19 Streaming SSR
+          usa $RC(...) para enfileirar boundaries em $RB e agenda
+          rAF($RV) para fazer o swap. Em tab hidden, esse rAF não dispara,
+          e o <main> fica eternamente com o fallback do loading.tsx,
+          mesmo com o conteúdo real presente em <div hidden id="S:0">.
+impacto:  Induz diagnóstico FALSO-POSITIVO de "SSR stream truncado" ou
+          "hidratação quebrada". Levou a commit 5b2a61f (build --webpack)
+          baseado em premissa errada. O commit foi mantido como
+          defense-in-depth (Turbopack prod ainda beta em Next 16.2.2) mas
+          NÃO era a correção necessária — bug não existe para usuário
+          com tab focado.
+ação:     Regra nova: sempre validar Suspense/hydration com tab focado
+          (document.visibilityState === "visible") OU chamar $RV($RB)
+          manualmente via page-world probe como prova de que SSR e
+          runtime estão OK. Chrome extension isolated world NÃO enxerga
+          $RB/$RC/$RV nem __reactFiber$* — obrigatório injetar
+          <script>.textContent</script> e ler resultados via
+          <pre id="__probe__" style="display:none">.
+validar:  Reproduzir o artefato: deixar tab em background, recarregar
+          qualquer rota com Suspense boundary, observar $RB.length=2 parada.
+          Trazer tab para foreground → rAF dispara → swap acontece.
+```
+
+### 2026-04-22 — Chrome extension isolated world vs page world (adicionado à seção 7)
+
+```
+fato:     Control_Chrome::execute_javascript roda em "isolated world" da
+          extension. Não vê expando properties (__reactFiber$*,
+          __reactProps$*) setadas pelo código da página nem variáveis
+          globais emitidas inline por Next/React ($RB, $RC, $RS, $RV, $RT,
+          webpackChunk_N_E, __next_f).
+impacto:  Qualquer check tipo Object.keys(btn).filter(k=>k.startsWith('__react'))
+          direto retorna [] falsamente, induzindo diagnóstico "nada hidratou"
+          quando na verdade os botões estão OK.
+ação:     Injetar <script>.textContent = `...`</script> no <head>,
+          escrever resultados em <pre id="__probe__" style="display:none">
+          na body, ler via element.textContent no isolated world.
+validar:  Se typeof $RB === "undefined" via execute_javascript direto mas
+          "object" via probe injetado, o bypass está correto.
 ```
