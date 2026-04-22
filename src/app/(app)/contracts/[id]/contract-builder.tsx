@@ -222,24 +222,20 @@ export default function ContractBuilder({ contract: initial, meta }: Props) {
     toast.success('Contrato copiado para a área de transferência.')
   }
 
-  function handleDownload() {
-    if (!contract.rendered_content) return
-    const blob = new Blob([contract.rendered_content], { type: 'text/markdown' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    const slug = contract.title
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 60) || 'contrato'
-    a.download = `${slug}.md`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+  function handleDownloadPdf() {
+    if (!contract.rendered_content) {
+      toast.error('Salve e regere o contrato antes de baixar.')
+      return
+    }
+    window.location.assign(`/api/contracts/${contract.id}/pdf`)
+  }
+
+  function handleDownloadDocx() {
+    if (!contract.rendered_content) {
+      toast.error('Salve e regere o contrato antes de baixar.')
+      return
+    }
+    window.location.assign(`/api/contracts/${contract.id}/docx`)
   }
 
   const statusBadge = STATUS_OPTIONS.find(s => s.value === contract.status)
@@ -396,11 +392,18 @@ export default function ContractBuilder({ contract: initial, meta }: Props) {
                 Copiar texto
               </button>
               <button
-                onClick={handleDownload}
+                onClick={handleDownloadPdf}
+                disabled={!contract.rendered_content || isPending}
+                className="text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] border border-[#D4A853] px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Baixar PDF
+              </button>
+              <button
+                onClick={handleDownloadDocx}
                 disabled={!contract.rendered_content || isPending}
                 className="text-xs font-semibold text-white bg-[#1a1a1a] hover:bg-[#252525] border border-[#2a2a2a] px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
-                Baixar .md
+                Baixar Word (.docx)
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
