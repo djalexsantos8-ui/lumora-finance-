@@ -358,13 +358,19 @@ export default function OrderEditor({
 
       {/* ═══ Card Principal ═══════════════════════════════════════════════ */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 space-y-5 mb-6">
-        {/* Título */}
+        {/* Título — auto-clear do placeholder de rascunho ao focar (menos 1 clique) */}
         <div>
           <label className="block text-xs text-[#a3a3a3] mb-1.5">Título</label>
           <input
             type="text"
             value={form.title}
             onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+            onFocus={e => {
+              if (form.title === 'Pedido sem título') {
+                setForm(f => ({ ...f, title: '' }))
+                e.currentTarget.select()
+              }
+            }}
             className={inputCls}
             placeholder="Pedido sem título"
           />
