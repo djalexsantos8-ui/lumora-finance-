@@ -83,6 +83,10 @@ export default function BudgetEditor({
   const [isPending, startTransition]        = useTransition()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Feedback enquanto clicamos "Adicionar item" em modo isNew — precisamos
+  // criar o budget antes de abrir o modal. Mantém o botão clicável (sem o
+  // cursor-proibido) e dá visual de loading curto.
+  const [creatingForItem, setCreatingForItem] = useState(false)
 
   // ─── campos do formulário (controlled) ──────────────────────────────────────
   const [title,    setTitle]    = useState(budget.title)
@@ -344,7 +348,74 @@ export default function BudgetEditor({
   }
 
   // ─── item modal callbacks ────────────────────────────────────────────────────
-  function openAddItem() {
+  //
+  // Abrir "Adicionar item" em modo isNew (URL = /budgets/new, id ainda vazio):
+  // antes, o botão ficava `disabled` até o primeiro auto-save completar —
+  // usuário via cursor-proibido sem feedback claro ("entrei no orçamento e
+  // o + não clica", bug reportado 2026-04-22). Agora o botão está sempre
+  // clicável; se o budget ainda não existe, fazemos o INSERT aqui (flush do
+  // debounce) e só depois abrimos o modal. Zero fricção.
+  async function openAddItem() {
+    if (budgetIdRef.current) {
+      setItemModal({ open: true, item: null })
+      return
+    }
+    // Flush do auto-save pendente — evita corrida com o setTimeout do debounce.
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current)
+      autoSaveTimer.current = null
+    }
+    if (creatingRef.current) {
+      // Já tem um INSERT em andamento (debounce disparou antes). Espera ele
+      // terminar checando o ref a cada 100ms. Max 5s pra não travar.
+      setCreatingForItem(true)
+      const start = Date.now()
+      while (creatingRef.current && Date.now() - start < 5000) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+      setCreatingForItem(false)
+      if (budgetIdRef.current) {
+        setItemModal({ open: true, item: null })
+      } else {
+        toast.error('Não conseguimos criar o orçamento. Tente novamente.')
+      }
+      return
+    }
+    // Caminho normal: cria o budget sob demanda com os valores atuais.
+    setCreatingForItem(true)
+    creatingRef.current = true
+    setSaveState('saving')
+    const f = latestFields.current
+    const createRes = await createBudget({
+      title:                f.title,
+      client_name:          f.client,
+      project_description:  f.desc,
+      deliverables:         f.delivers,
+      event_date:           f.evtDate,
+      valid_until:          f.validUntil,
+      currency:             f.currency,
+      notes_internal:       f.notesInt,
+      payment_term:         f.paymentTerm,
+      intended_destination: f.intendedDest === '' ? null : f.intendedDest,
+    })
+    creatingRef.current = false
+    setCreatingForItem(false)
+
+    if (!createRes.success || !createRes.data) {
+      setSaveState('error')
+      toast.error(
+        !createRes.success ? createRes.message : 'Erro ao criar orçamento.'
+      )
+      return
+    }
+
+    budgetIdRef.current = createRes.data.id
+    setBudget(createRes.data)
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `/budgets/${createRes.data.id}`)
+    }
+    setSaveState('saved')
+    setTimeout(() => setSaveState('idle'), 2500)
     setItemModal({ open: true, item: null })
   }
   function openEditItem(item: BudgetItem) {
@@ -902,14 +973,25 @@ export default function BudgetEditor({
             </div>
             <button
               onClick={openAddItem}
-              disabled={!budget.id}
-              title={!budget.id ? 'Digite um título pra começar — o orçamento é criado automaticamente' : undefined}
-              className="flex items-center gap-1.5 bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] text-[#a3a3a3] hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#1c1c1c] disabled:hover:text-[#a3a3a3]"
+              disabled={creatingForItem}
+              className="flex items-center gap-1.5 bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] text-[#a3a3a3] hover:text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-wait"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Adicionar item
+              {creatingForItem ? (
+                <>
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Criando…
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Adicionar item
+                </>
+              )}
             </button>
           </div>
 
