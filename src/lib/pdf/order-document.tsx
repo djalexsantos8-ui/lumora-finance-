@@ -24,6 +24,20 @@ function formatMoney(value: number, currency = 'BRL'): string {
   }
 }
 
+/** Converte shortcut de payment_condition em label amigável. Aceita texto livre
+ *  de pedidos antigos (retorna a string original se não for um shortcut). */
+function formatPaymentCondition(cond: string): string {
+  const MAP: Record<string, string> = {
+    upfront: 'À vista',
+    '7d':    '7 dias',
+    '15d':   '15 dias',
+    '30d':   '30 dias',
+    '60d':   '60 dias',
+    '90d':   '90 dias',
+  }
+  return MAP[cond] ?? cond
+}
+
 // ─── estilos ──────────────────────────────────────────────────────────────
 
 const GOLD   = '#C49A2C'
@@ -274,7 +288,7 @@ export default function OrderDocument({ order, items, settings }: Props) {
         {order.payment_condition && (
           <View style={S.section}>
             <Text style={S.sectionTitle}>Condição de pagamento</Text>
-            <Text style={S.paragraph}>{order.payment_condition}</Text>
+            <Text style={S.paragraph}>{formatPaymentCondition(order.payment_condition)}</Text>
           </View>
         )}
 

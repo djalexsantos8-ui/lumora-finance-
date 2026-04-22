@@ -66,6 +66,7 @@ import type {
 import { OrderStatusBadge } from '../pedidos-list'
 import { OrderFileUploadModal } from '@/components/orders/order-file-upload-modal'
 import { OrderComprovantesList } from '@/components/orders/order-comprovantes-list'
+import { OrderPaymentDueField } from '@/components/orders/order-payment-due-field'
 
 interface Props {
   order:       Order
@@ -395,14 +396,20 @@ export default function OrderEditor({
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Condição de pagamento</label>
-            <input
-              type="text"
-              value={form.payment_condition}
-              onChange={e => setForm(f => ({ ...f, payment_condition: e.target.value }))}
-              className={inputCls}
-              placeholder="ex: 50% entrada + 50% na entrega"
-            />
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">Vencimento</label>
+            <div className="min-h-[38px] flex items-center">
+              <OrderPaymentDueField
+                orderDate={form.order_date_start || form.order_date}
+                paymentCondition={form.payment_condition}
+                onApplyShortcut={(condition) => {
+                  setForm(f => ({ ...f, payment_condition: condition }))
+                  startTransition(async () => {
+                    await updateOrder(order.id, { payment_condition: condition })
+                    router.refresh()
+                  })
+                }}
+              />
+            </div>
           </div>
         </div>
 
