@@ -60,6 +60,8 @@ export interface FeedbackAnalysis {
   priority_justificativa: string
   bloqueia_uso: boolean
   bucket: FeedbackBucket
+  /** Prompt acionável pronto para colar em nova sessão de Claude/Cloud Code. */
+  prompt_cloud_code: string
 }
 
 export interface Feedback {
@@ -79,6 +81,15 @@ export interface Feedback {
   audio_path: string | null
   audio_mime: string | null
   audio_duration_sec: number | null
+
+  /** Anexo opcional (print/imagem/PDF leve). Upload ao bucket feedback-attachments. */
+  attachment_path: string | null
+  attachment_filename: string | null
+  attachment_mime: string | null
+  attachment_size_bytes: number | null
+
+  /** Prompt Cloud Code gerado pela IA — preenchido quando analysis_status='completed'. */
+  prompt_cloud_code: string | null
 
   transcript: string | null
   transcription_status: JobStatus

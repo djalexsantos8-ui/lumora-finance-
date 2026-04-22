@@ -44,6 +44,10 @@ export async function submitFeedback(input: {
   audioPath?:        string | null
   audioMime?:        string | null
   audioDurationSec?: number | null
+  attachmentPath?:   string | null
+  attachmentFilename?: string | null
+  attachmentMime?:   string | null
+  attachmentSize?:   number | null
   userType?:         FeedbackUserType | null
   sourcePage?:       string | null
   userAgent?:        string | null
@@ -86,6 +90,18 @@ export async function submitFeedback(input: {
       }
     }
 
+    // Mesma validação para attachment: o browser já uploadou via RLS; aqui é
+    // defense in depth (cliente poderia forjar outro user_id no body).
+    if (input.attachmentPath) {
+      if (!input.attachmentPath.startsWith(`${user.id}/`)) {
+        return { ok: false, error: 'Caminho de anexo inválido.' }
+      }
+      // Size sanity (5 MB). Cliente já valida, mas re-checamos pra não confiar.
+      if (input.attachmentSize && input.attachmentSize > 5 * 1024 * 1024) {
+        return { ok: false, error: 'Anexo muito grande (máx. 5 MB).' }
+      }
+    }
+
     const workspaceId = await getWorkspaceId(user.id)
 
     const { data: inserted, error } = await supabase
@@ -103,6 +119,10 @@ export async function submitFeedback(input: {
         audio_path:           input.audioPath ?? null,
         audio_mime:           input.audioMime ?? null,
         audio_duration_sec:   input.audioDurationSec ?? null,
+        attachment_path:      input.attachmentPath ?? null,
+        attachment_filename:  input.attachmentFilename?.slice(0, 200) ?? null,
+        attachment_mime:      input.attachmentMime?.slice(0, 80) ?? null,
+        attachment_size_bytes: input.attachmentSize ?? null,
         // Se não houver OpenAI key, já marca como 'skipped' — transparente.
         transcription_status: input.audioPath
           ? (isOpenAIEnabled() ? 'pending' : 'skipped')
@@ -192,23 +212,26 @@ async function processFeedbackInternal(feedbackId: string): Promise<void> {
   if (fb.analysis_status === 'pending' && (fb.raw_text || transcript)) {
     try {
       const analysis = await analyzeFeedback({
-        rawText:          fb.raw_text,
-        transcript:       transcript,
-        userDeclaredType: fb.user_type,
-        sourcePage:       fb.source_page,
-        email:            fb.email,
-        userAgent:        fb.user_agent,
+        rawText:            fb.raw_text,
+        transcript:         transcript,
+        userDeclaredType:   fb.user_type,
+        sourcePage:         fb.source_page,
+        email:              fb.email,
+        userAgent:          fb.user_agent,
+        attachmentFilename: fb.attachment_filename,
+        attachmentMime:     fb.attachment_mime,
       })
 
       await admin.from('feedback').update({
-        analysis:          analysis,
-        analysis_status:   'completed',
-        analysis_error:    null,
-        ai_type:           analysis.tipo,
-        severity:          analysis.severidade,
-        priority_score:    analysis.priority_score,
-        summary:           analysis.resumo,
-        tags:              analysis.tags,
+        analysis:           analysis,
+        analysis_status:    'completed',
+        analysis_error:     null,
+        ai_type:            analysis.tipo,
+        severity:           analysis.severidade,
+        priority_score:     analysis.priority_score,
+        summary:            analysis.resumo,
+        tags:               analysis.tags,
+        prompt_cloud_code:  analysis.prompt_cloud_code,
       }).eq('id', feedbackId)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'erro desconhecido'
@@ -327,6 +350,37 @@ export async function createManualFeedback(input: {
 
   revalidatePath('/admin/feedback')
   return { ok: true, id: inserted.id, data: { feedbackId: inserted.id } }
+}
+
+/** Admin: gera URL assinada temporária pra abrir o attachment. */
+export async function getFeedbackAttachmentSignedUrl(id: string): Promise<Result<{ url: string; mime: string | null; filename: string | null }>> {
+  const a = await checkAdmin()
+  if (!a.isAdmin) return { ok: false, error: 'Acesso negado' }
+  if (!id) return { ok: false, error: 'ID inválido' }
+
+  const admin = createAdminClient()
+  const { data: fb, error } = await admin
+    .from('feedback')
+    .select('attachment_path, attachment_mime, attachment_filename')
+    .eq('id', id)
+    .single()
+
+  if (error || !fb?.attachment_path) return { ok: false, error: 'Sem anexo' }
+
+  const { data: signed, error: signErr } = await admin.storage
+    .from('feedback-attachments')
+    .createSignedUrl(fb.attachment_path, 60 * 15) // 15 min
+
+  if (signErr || !signed?.signedUrl) return { ok: false, error: 'Falha ao assinar URL' }
+
+  return {
+    ok: true,
+    data: {
+      url:      signed.signedUrl,
+      mime:     fb.attachment_mime,
+      filename: fb.attachment_filename,
+    },
+  }
 }
 
 /** Admin: gera URL assinada temporária pra tocar o áudio. */

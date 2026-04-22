@@ -96,6 +96,11 @@ function buildCsv(items: Feedback[]): string {
     'analysis_status',
     'audio_path',
     'audio_duration_sec',
+    'attachment_path',
+    'attachment_filename',
+    'attachment_mime',
+    'attachment_size_bytes',
+    'prompt_cloud_code',
   ]
 
   const rows = items.map(i => {
@@ -130,6 +135,11 @@ function buildCsv(items: Feedback[]): string {
       i.analysis_status,
       i.audio_path ?? '',
       i.audio_duration_sec ?? '',
+      i.attachment_path ?? '',
+      i.attachment_filename ?? '',
+      i.attachment_mime ?? '',
+      i.attachment_size_bytes ?? '',
+      i.prompt_cloud_code ?? '',
     ]
   })
 
@@ -257,6 +267,10 @@ function renderItem(i: Feedback): string {
     parts.push('**Transcrição do áudio:**')
     parts.push('> ' + i.transcript.replace(/\n/g, '\n> '))
   }
+  if (i.attachment_path) {
+    parts.push('')
+    parts.push(`**Anexo:** ${i.attachment_filename ?? '(sem nome)'} · ${i.attachment_mime ?? '?'} · ${i.attachment_size_bytes ?? '?'} bytes`)
+  }
   if (a) {
     parts.push('')
     parts.push('**Análise IA:**')
@@ -266,6 +280,13 @@ function renderItem(i: Feedback): string {
     parts.push(`- _Sugestão de ação:_ ${a.sugestao_acao}`)
     parts.push(`- _Próximo passo:_ **${a.proximo_passo}**`)
     parts.push(`- _Priority justificativa:_ ${a.priority_justificativa}`)
+  }
+  if (i.prompt_cloud_code) {
+    parts.push('')
+    parts.push('**Prompt Cloud Code (cole em nova sessão):**')
+    parts.push('```')
+    parts.push(i.prompt_cloud_code)
+    parts.push('```')
   }
   if (i.admin_notes) {
     parts.push('')

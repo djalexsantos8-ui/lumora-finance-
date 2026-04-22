@@ -8,6 +8,7 @@ import {
   deleteFeedback,
   reprocessFeedback,
   getFeedbackAudioSignedUrl,
+  getFeedbackAttachmentSignedUrl,
 } from '@/lib/actions/feedback'
 import type { Feedback, FeedbackStatus } from '@/types/feedback'
 
@@ -130,5 +131,132 @@ function AudioPlayer({ id }: { id: string }) {
   )
 }
 
-const FeedbackDetailActions = { Panel, AudioPlayer }
+function AttachmentViewer({
+  id,
+  filename,
+  mime,
+  sizeBytes,
+}: {
+  id:        string
+  filename:  string | null
+  mime:      string | null
+  sizeBytes: number | null
+}) {
+  const [url, setUrl]         = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const isImage = (mime ?? '').startsWith('image/')
+  const isPdf   = mime === 'application/pdf'
+
+  async function load() {
+    setLoading(true)
+    const res = await getFeedbackAttachmentSignedUrl(id)
+    setLoading(false)
+    if (!res.ok) { toast.error(res.error); return }
+    setUrl(res.data?.url ?? null)
+  }
+
+  const sizeKb = sizeBytes ? (sizeBytes / 1024).toFixed(0) : null
+
+  if (!url) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[11px] text-[#a3a3a3]">
+          📎 {filename ?? 'anexo'}
+          {mime && <span className="text-[#525252] ml-2">({mime})</span>}
+          {sizeKb && <span className="text-[#525252] ml-2">· {sizeKb} KB</span>}
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 rounded-md border border-[#2a2a2a] text-[#a3a3a3] hover:text-white hover:border-[#3a3a3a] disabled:opacity-50"
+        >
+          {loading ? 'Carregando…' : '📥 Carregar anexo'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] text-[#a3a3a3]">
+        📎 {filename ?? 'anexo'}
+        {mime && <span className="text-[#525252] ml-2">({mime})</span>}
+        {sizeKb && <span className="text-[#525252] ml-2">· {sizeKb} KB</span>}
+      </div>
+      {isImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt={filename ?? 'Anexo'}
+          className="max-w-full rounded-md border border-[#1a1a1a]"
+          style={{ maxHeight: 600 }}
+        />
+      )}
+      {isPdf && (
+        <iframe
+          src={url}
+          className="w-full rounded-md border border-[#1a1a1a] bg-white"
+          style={{ height: 600 }}
+          title={filename ?? 'Anexo PDF'}
+        />
+      )}
+      {!isImage && !isPdf && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-[#D4A853] underline"
+        >
+          Abrir anexo em nova aba
+        </a>
+      )}
+      <div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[11px] text-[#737373] hover:text-white underline"
+        >
+          Abrir em nova aba ↗
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function PromptCopyBlock({ prompt }: { prompt: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      toast.success('Prompt copiado — cola em uma nova sessão Cloud Code')
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      toast.error('Não consegui copiar — copie manualmente')
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-[#D4A853] font-semibold">
+          🤖 Prompt Cloud Code · pronto pra colar
+        </div>
+        <button
+          onClick={handleCopy}
+          className="text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-[#D4A853]/40 text-[#D4A853] hover:bg-[#D4A853]/10 transition-colors"
+        >
+          {copied ? '✓ Copiado' : 'Copiar'}
+        </button>
+      </div>
+      <pre className="text-[11px] text-[#e5e5e5] whitespace-pre-wrap bg-[#0a0a0a] border border-[#1a1a1a] rounded-md p-3 max-h-[400px] overflow-auto leading-relaxed">
+        {prompt}
+      </pre>
+    </div>
+  )
+}
+
+const FeedbackDetailActions = { Panel, AudioPlayer, AttachmentViewer, PromptCopyBlock }
 export default FeedbackDetailActions

@@ -5,6 +5,12 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { uploadFeedbackAudio } from '@/lib/storage/feedback-audio-upload'
+import {
+  uploadFeedbackAttachment,
+  isAttachmentMimeAllowed,
+  MAX_ATTACHMENT_BYTES,
+  type UploadedAttachment,
+} from '@/lib/storage/feedback-attachment-upload'
 import { submitFeedback } from '@/lib/actions/feedback'
 import type { FeedbackUserType } from '@/types/feedback'
 
@@ -33,10 +39,16 @@ export default function FeedbackWidget() {
   const [audioMime, setAudioMime] = useState<string>('audio/webm')
   const [audioUrl, setAudioUrl]   = useState<string | null>(null)
 
+  // Attachment (print/imagem/PDF) — opcional, separado do texto e do áudio.
+  // Cliente só guarda o File até o submit. O upload acontece no handleSubmit.
+  const [attachFile, setAttachFile]       = useState<File | null>(null)
+  const [attachPreview, setAttachPreview] = useState<string | null>(null)
+
   const mediaRef      = useRef<MediaRecorder | null>(null)
   const chunksRef     = useRef<BlobPart[]>([])
   const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
   const streamRef     = useRef<MediaStream | null>(null)
+  const fileInputRef  = useRef<HTMLInputElement | null>(null)
 
   // Cleanup
   useEffect(() => {
@@ -44,6 +56,7 @@ export default function FeedbackWidget() {
       stopTimer()
       stopStream()
       if (audioUrl) URL.revokeObjectURL(audioUrl)
+      if (attachPreview) URL.revokeObjectURL(attachPreview)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -74,7 +87,36 @@ export default function FeedbackWidget() {
     setRecTime(0)
     stopTimer()
     stopStream()
-  }, [audioUrl])
+    if (attachPreview) URL.revokeObjectURL(attachPreview)
+    setAttachFile(null)
+    setAttachPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [audioUrl, attachPreview])
+
+  function handleAttachChoose(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null
+    if (!f) return
+    if (f.size > MAX_ATTACHMENT_BYTES) {
+      toast.error(`Arquivo grande demais. Máx. 5 MB.`)
+      e.target.value = ''
+      return
+    }
+    if (!isAttachmentMimeAllowed(f.type)) {
+      toast.error('Formato não suportado. Use imagem (PNG/JPG/WEBP/GIF/HEIC) ou PDF.')
+      e.target.value = ''
+      return
+    }
+    if (attachPreview) URL.revokeObjectURL(attachPreview)
+    setAttachFile(f)
+    setAttachPreview(f.type.startsWith('image/') ? URL.createObjectURL(f) : null)
+  }
+
+  function removeAttachment() {
+    if (attachPreview) URL.revokeObjectURL(attachPreview)
+    setAttachFile(null)
+    setAttachPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   async function startRecording() {
     try {
@@ -166,9 +208,12 @@ export default function FeedbackWidget() {
       let audioPath: string | null = null
       let audioMimeFinal: string | null = null
       let audioDur: number | null = null
+      let attachmentUploaded: UploadedAttachment | null = null
 
-      if (hasAudio && audioBlob) {
-        // Precisa do user_id pra montar o path
+      // Precisamos do user_id se houver áudio OU attachment
+      const needsUser = (hasAudio && audioBlob) || !!attachFile
+      let userId: string | null = null
+      if (needsUser) {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
@@ -176,8 +221,11 @@ export default function FeedbackWidget() {
           setSending(false)
           return
         }
+        userId = user.id
+      }
 
-        const up = await uploadFeedbackAudio(audioBlob, user.id, audioMime)
+      if (hasAudio && audioBlob && userId) {
+        const up = await uploadFeedbackAudio(audioBlob, userId, audioMime)
         if ('error' in up) {
           console.error('[feedback] upload error:', up.error)
           toast.error('Falha ao enviar áudio. Tenta de novo?')
@@ -189,16 +237,31 @@ export default function FeedbackWidget() {
         audioDur = recTime > 0 ? recTime : null
       }
 
+      if (attachFile && userId) {
+        const up = await uploadFeedbackAttachment(attachFile, userId)
+        if ('error' in up) {
+          console.error('[feedback] attach error:', up.error)
+          toast.error(up.error)
+          setSending(false)
+          return
+        }
+        attachmentUploaded = up
+      }
+
       const ua = typeof navigator !== 'undefined' ? navigator.userAgent : null
 
       const res = await submitFeedback({
-        rawText:          hasText ? text.trim() : null,
+        rawText:             hasText ? text.trim() : null,
         audioPath,
-        audioMime:        audioMimeFinal,
-        audioDurationSec: audioDur,
-        userType:         type,
-        sourcePage:       pathname,
-        userAgent:        ua,
+        audioMime:           audioMimeFinal,
+        audioDurationSec:    audioDur,
+        attachmentPath:      attachmentUploaded?.path ?? null,
+        attachmentFilename:  attachmentUploaded?.filename ?? null,
+        attachmentMime:      attachmentUploaded?.mime ?? null,
+        attachmentSize:      attachmentUploaded?.size ?? null,
+        userType:            type,
+        sourcePage:          pathname,
+        userAgent:           ua,
       })
 
       if (!res.ok) {
@@ -414,6 +477,83 @@ export default function FeedbackWidget() {
                   />
                 </div>
               )}
+
+              {/* Anexo opcional — print/imagem/PDF. Mesmo lugar nas duas tabs. */}
+              <div className="pt-2 border-t border-[#1a1a1a]">
+                <label className="text-[10px] uppercase tracking-wider text-[#a3a3a3] block mb-1.5">
+                  Anexo (opcional)
+                </label>
+                <p className="text-[11px] leading-relaxed text-[#737373] mb-2">
+                  Pra ajudar a gente a entender, se o erro ainda estiver aí, volta
+                  na tela, tira um print e anexa aqui. <span className="text-[#D4A853]/80">
+                  Dica: se você fechar essa janela, talvez precise recomeçar o
+                  feedback.</span>
+                </p>
+
+                {!attachFile ? (
+                  <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/heic,image/heif,application/pdf"
+                      onChange={handleAttachChoose}
+                      disabled={sending}
+                      className="hidden"
+                      id="feedback-attach-input"
+                    />
+                    <label
+                      htmlFor="feedback-attach-input"
+                      className={`
+                        flex items-center justify-center gap-2
+                        text-xs py-2 px-3 rounded-md border border-dashed
+                        border-[#2a2a2a] text-[#a3a3a3]
+                        hover:border-[#D4A853]/60 hover:text-white
+                        cursor-pointer transition-colors
+                        ${sending ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                      </svg>
+                      Escolher print ou imagem · máx. 5 MB
+                    </label>
+                  </div>
+                ) : (
+                  <div className="border border-[#2a2a2a] rounded-md p-2 bg-[#0a0a0a] flex items-center gap-3">
+                    {attachPreview ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={attachPreview}
+                        alt="Preview"
+                        className="w-14 h-14 object-cover rounded-sm border border-[#1f1f1f] shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-sm border border-[#1f1f1f] bg-[#141414] flex items-center justify-center text-[#737373] shrink-0">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-white truncate">{attachFile.name}</p>
+                      <p className="text-[10px] text-[#737373]">
+                        {(attachFile.size / 1024).toFixed(0)} KB · {attachFile.type || 'tipo desconhecido'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={removeAttachment}
+                      disabled={sending}
+                      className="text-[11px] text-[#737373] hover:text-red-400 transition-colors disabled:opacity-50 shrink-0"
+                      aria-label="Remover anexo"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="px-5 py-4 border-t border-[#1a1a1a] flex items-center justify-between gap-3">

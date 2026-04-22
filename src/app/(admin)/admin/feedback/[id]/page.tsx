@@ -28,19 +28,39 @@ export default async function FeedbackDetailPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/admin/feedback" className="text-xs text-[#a3a3a3] hover:text-white">
-          ← Voltar para a inbox
-        </Link>
-        <h1 className="text-2xl font-bold mt-2">
-          {fb.summary || (fb.raw_text ?? '').slice(0, 80) || 'Feedback'}
-        </h1>
-        <p className="text-xs text-[#737373] mt-1">
-          {new Date(fb.created_at).toLocaleString('pt-BR')} ·
-          {' '}de {fb.email ?? (fb.source === 'admin_manual' ? 'admin' : 'usuário')}
-          {fb.source_page && <> · em <code className="bg-black/40 px-1 rounded">{fb.source_page}</code></>}
-          {fb.app_version && <> · v{fb.app_version}</>}
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <Link href="/admin/feedback" className="text-xs text-[#a3a3a3] hover:text-white">
+            ← Voltar para a inbox
+          </Link>
+          <h1 className="text-2xl font-bold mt-2">
+            {fb.summary || (fb.raw_text ?? '').slice(0, 80) || 'Feedback'}
+          </h1>
+          <p className="text-xs text-[#737373] mt-1">
+            {new Date(fb.created_at).toLocaleString('pt-BR')} ·
+            {' '}de {fb.email ?? (fb.source === 'admin_manual' ? 'admin' : 'usuário')}
+            {fb.source_page && <> · em <code className="bg-black/40 px-1 rounded">{fb.source_page}</code></>}
+            {fb.app_version && <> · v{fb.app_version}</>}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <a
+            href={`/api/admin/feedback/${fb.id}/export?format=md`}
+            className="text-[11px] px-3 py-1.5 rounded-md border border-[#2a2a2a] text-[#a3a3a3] hover:text-white hover:border-[#3a3a3a] transition-colors"
+            title="Exportar este feedback como Markdown"
+          >
+            ⬇ Markdown
+          </a>
+          <a
+            href={`/api/admin/feedback/${fb.id}/export?format=pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] px-3 py-1.5 rounded-md border border-[#2a2a2a] text-[#a3a3a3] hover:text-white hover:border-[#3a3a3a] transition-colors"
+            title="Exportar este feedback como PDF (imprimir)"
+          >
+            ⬇ PDF
+          </a>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
@@ -71,7 +91,18 @@ export default async function FeedbackDetailPage({
                 <p className="text-sm text-[#e5e5e5] whitespace-pre-wrap">{fb.transcript}</p>
               </div>
             )}
-            {!fb.raw_text && !fb.transcript && !fb.audio_path && (
+            {fb.attachment_path && (
+              <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+                <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">Anexo</div>
+                <FeedbackDetailActions.AttachmentViewer
+                  id={fb.id}
+                  filename={fb.attachment_filename}
+                  mime={fb.attachment_mime}
+                  sizeBytes={fb.attachment_size_bytes}
+                />
+              </div>
+            )}
+            {!fb.raw_text && !fb.transcript && !fb.audio_path && !fb.attachment_path && (
               <p className="text-sm text-[#737373]">(sem conteúdo)</p>
             )}
             {fb.transcription_status === 'pending' && (
@@ -133,13 +164,57 @@ export default async function FeedbackDetailPage({
 
 function AnalysisView({ analysis }: { analysis: NonNullable<Feedback['analysis']> }) {
   return (
-    <div className="space-y-3 text-sm">
-      <Field label="Resumo">{analysis.resumo}</Field>
-      <Field label="Explicação humana">{analysis.explicacao_humana}</Field>
-      <Field label="Interpretação técnica">{analysis.interpretacao_tecnica}</Field>
+    <div className="space-y-4 text-sm">
+      <Field label="Resumo (1 linha)">{analysis.resumo}</Field>
+
+      {/* Três camadas de interpretação */}
+      <div className="space-y-3 pt-2 border-t border-[#1a1a1a]">
+        <div className="text-[10px] uppercase tracking-wider text-[#D4A853] font-semibold">
+          Três camadas de interpretação
+        </div>
+
+        <div className="rounded-md border border-[#1a1a1a] bg-[#0a0a0a] p-3">
+          <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">
+            1 · O que o usuário quis dizer
+          </div>
+          <div className="text-[13px] text-white whitespace-pre-wrap">
+            {analysis.explicacao_humana}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-[#1a1a1a] bg-[#0a0a0a] p-3">
+          <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">
+            2 · O que isso provavelmente significa no código
+          </div>
+          <div className="text-[13px] text-white whitespace-pre-wrap">
+            {analysis.interpretacao_tecnica}
+          </div>
+        </div>
+
+        <div className="rounded-md border border-[#1a1a1a] bg-[#0a0a0a] p-3">
+          <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">
+            3 · O que fazer a respeito
+          </div>
+          <div className="text-[13px] text-white whitespace-pre-wrap">
+            {analysis.sugestao_acao}
+          </div>
+        </div>
+      </div>
+
+      {/* Prompt Cloud Code */}
+      {analysis.prompt_cloud_code && (
+        <div className="pt-2 border-t border-[#1a1a1a]">
+          <FeedbackDetailActions.PromptCopyBlock prompt={analysis.prompt_cloud_code} />
+        </div>
+      )}
+
+      {/* Próximo passo */}
+      <Field label="Próximo passo (amanhã cedo)">
+        <span className="text-[#D4A853]">{analysis.proximo_passo}</span>
+      </Field>
+
       <Field label="Área afetada">{analysis.area_afetada}</Field>
-      <Field label="Sugestão de ação">{analysis.sugestao_acao}</Field>
-      <Field label="Próximo passo"><span className="text-[#D4A853]">{analysis.proximo_passo}</span></Field>
+
       <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#1a1a1a]">
         <Field label="Urgência">{analysis.urgencia}</Field>
         <Field label="Bloqueia uso?">{analysis.bloqueia_uso ? '⛔ Sim' : 'Não'}</Field>

@@ -15,11 +15,15 @@ export default function FeedbackInbox({ items }: { items: Feedback[] }) {
   const [severity, setSeverity] = useState<string>('todas')
   const [search, setSearch]     = useState('')
   const [sortBy, setSortBy]     = useState<'recent' | 'priority'>('recent')
+  const [hasFilter, setHasFilter] = useState<'all' | 'attachment' | 'audio' | 'text'>('all')
 
   const filtered = useMemo(() => {
     let out = items
     if (status !== 'todos')       out = out.filter(i => i.status === status)
     if (severity !== 'todas')     out = out.filter(i => i.severity === severity)
+    if (hasFilter === 'attachment') out = out.filter(i => !!i.attachment_path)
+    if (hasFilter === 'audio')     out = out.filter(i => !!i.audio_path)
+    if (hasFilter === 'text')      out = out.filter(i => !!i.raw_text && i.raw_text.trim().length > 0)
     if (search.trim()) {
       const s = search.trim().toLowerCase()
       out = out.filter(i =>
@@ -38,7 +42,7 @@ export default function FeedbackInbox({ items }: { items: Feedback[] }) {
       sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     }
     return sorted
-  }, [items, status, severity, search, sortBy])
+  }, [items, status, severity, search, sortBy, hasFilter])
 
   return (
     <div className="space-y-3">
@@ -64,6 +68,17 @@ export default function FeedbackInbox({ items }: { items: Feedback[] }) {
           className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-md px-2 py-1.5 text-xs text-white"
         >
           {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select
+          value={hasFilter}
+          onChange={(e) => setHasFilter(e.target.value as 'all' | 'attachment' | 'audio' | 'text')}
+          className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-md px-2 py-1.5 text-xs text-white"
+          title="Filtrar por conteúdo"
+        >
+          <option value="all">Todos conteúdos</option>
+          <option value="attachment">📎 Com anexo</option>
+          <option value="audio">🎤 Com áudio</option>
+          <option value="text">✍️ Só texto</option>
         </select>
         <select
           value={sortBy}
@@ -109,11 +124,26 @@ export default function FeedbackInbox({ items }: { items: Feedback[] }) {
                     >
                       {i.summary || (i.raw_text ?? '').slice(0, 90) || (i.transcript ?? '').slice(0, 90) || '(sem texto)'}
                     </Link>
-                    {i.audio_path && (
-                      <span className="text-[9px] uppercase tracking-wider text-[#D4A853]/70 mt-0.5 inline-block">
-                        🎤 áudio
-                      </span>
-                    )}
+                    <div className="mt-0.5 flex gap-1 flex-wrap">
+                      {i.audio_path && (
+                        <span className="text-[9px] uppercase tracking-wider text-[#D4A853]/70 inline-block">
+                          🎤 áudio
+                        </span>
+                      )}
+                      {i.attachment_path && (
+                        <span
+                          className="text-[9px] uppercase tracking-wider text-[#D4A853]/70 inline-block"
+                          title={i.attachment_filename ?? 'anexo'}
+                        >
+                          📎 anexo
+                        </span>
+                      )}
+                      {i.raw_text && i.raw_text.trim().length > 0 && !i.audio_path && (
+                        <span className="text-[9px] uppercase tracking-wider text-[#525252] inline-block">
+                          ✍️ texto
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     <TypeBadge type={i.ai_type ?? i.user_type ?? null} />

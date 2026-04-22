@@ -19,6 +19,8 @@ export type AnalyzeInput = {
   sourcePage: string | null
   email: string | null
   userAgent: string | null
+  attachmentFilename?: string | null
+  attachmentMime?: string | null
 }
 
 export async function analyzeFeedback(input: AnalyzeInput): Promise<FeedbackAnalysis> {
