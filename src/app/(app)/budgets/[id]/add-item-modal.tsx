@@ -52,7 +52,7 @@ export default function AddItemModal({
       if (item) {
         setQty(String(item.quantity))
         setDays(String(item.days))
-        setUnitValue(item.unit_value > 0 ? String(item.unit_value) : '')
+        setUnitValue(Number(item.unit_value) > 0 ? String(Number(item.unit_value)) : '')
         setLabel(item.label)
         setCategory(item.category ?? '')
         setSelectedFreelancer(
