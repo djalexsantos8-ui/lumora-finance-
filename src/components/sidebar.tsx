@@ -170,9 +170,10 @@ function groupContainsActive(group: NavGroup, pathname: string): boolean {
 
 interface SidebarProps {
   userEmail: string
+  isAdmin?:  boolean
 }
 
-export default function Sidebar({ userEmail }: SidebarProps) {
+export default function Sidebar({ userEmail, isAdmin = false }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
 
@@ -258,6 +259,33 @@ export default function Sidebar({ userEmail }: SidebarProps) {
 
       {/* Bottom: settings + colapso */}
       <div className="py-4 px-2 border-t border-[#1a1a1a] space-y-0.5">
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className={`
+              flex items-center gap-3 rounded-lg text-sm
+              transition-colors group relative
+              ${collapsed ? 'px-3 py-2.5 justify-center' : 'px-3 py-2.5'}
+              text-[#D4A853] hover:bg-[#D4A853]/10
+            `}
+            title="Área administrativa"
+          >
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            {!collapsed && (
+              <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wider">
+                Admin
+              </span>
+            )}
+            {collapsed && (
+              <div className="absolute left-full ml-2 px-2 py-1 bg-[#1c1c1c] border border-[#2a2a2a] text-white text-xs rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity">
+                Admin
+              </div>
+            )}
+          </Link>
+        )}
         {bottomItems.map(item => (
           <SidebarLink
             key={item.href}

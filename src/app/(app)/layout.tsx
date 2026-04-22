@@ -12,6 +12,18 @@ export default async function AppLayout({
 
   if (!user) redirect('/login')
 
+  // Verifica se tem admin_grant ativo — usado para mostrar link da área admin.
+  // A checagem real de acesso é feita no layout de /admin (defense in depth).
+  const nowIso = new Date().toISOString()
+  const { data: grant } = await supabase
+    .from('admin_grants')
+    .select('id')
+    .eq('user_id', user.id)
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .limit(1)
+    .maybeSingle()
+  const isAdmin = Boolean(grant)
+
   // ── Garante que o usuário tem um workspace ativo ────────────────────────────
   // Se não existir, cria automaticamente (idempotente — seguro rodar sempre)
   const { data: existingMember } = await supabase
@@ -82,7 +94,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
-      <Sidebar userEmail={user.email ?? ''} />
+      <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
       <main className="flex-1 overflow-y-auto">{children}</main>
     </div>
   )
