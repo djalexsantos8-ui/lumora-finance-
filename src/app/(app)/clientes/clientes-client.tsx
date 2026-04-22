@@ -28,6 +28,7 @@ import { normalizeName } from '@/lib/utils/normalize-name'
 import type { Client } from '@/types/client'
 import {
   ClientFullForm,
+  EMPTY_CLIENT_FULL_FORM,
   type ClientFullFormValue,
 } from '@/components/clients/client-full-form'
 
@@ -45,6 +46,7 @@ export function ClientesClient({ initialClients }: Props) {
   const [confirming, setConfirming] = useState(false)
   const [creating, setCreating]   = useState(false)
   const [newName, setNewName]     = useState('')
+  const [newForm, setNewForm]     = useState<ClientFullFormValue>(EMPTY_CLIENT_FULL_FORM)
   const [createError, setCreateError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
@@ -94,22 +96,82 @@ export function ClientesClient({ initialClients }: Props) {
   function handleCreate() {
     const trimmed = newName.trim()
     if (!trimmed) {
-      setCreateError('Digite o nome do cliente.')
+      setCreateError('Nome é obrigatório.')
       return
     }
     setCreateError(null)
     startTransition(async () => {
+      // 1) cria (ou reaproveita, idempotente por name_normalized)
       const res = await quickCreateClient(trimmed)
       if (!res.success) {
         setCreateError(res.message ?? 'Erro ao criar cliente.')
         return
       }
-      // Idempotente: se já existia, recebemos o existente. Evita duplicar na lista.
-      setClients(prev =>
-        prev.some(c => c.id === res.data.id) ? prev : [res.data, ...prev]
-      )
-      setOpenId(res.data.id)
+      let finalClient = res.data
+
+      // 2) se o usuário preencheu qualquer campo adicional, enriquece
+      const hasExtra =
+        !!newForm.phone ||
+        !!newForm.instagram ||
+        !!newForm.email ||
+        !!newForm.document ||
+        !!newForm.notes ||
+        !!newForm.person_type ||
+        !!newForm.legal_name ||
+        !!newForm.trade_name ||
+        !!newForm.document_cpf ||
+        !!newForm.document_cnpj ||
+        !!newForm.address_line ||
+        !!newForm.address_city ||
+        !!newForm.address_state ||
+        !!newForm.address_zip ||
+        !!newForm.segment ||
+        !!newForm.lead_source ||
+        !!newForm.payment_condition ||
+        !!newForm.responsible_name ||
+        !!newForm.responsible_role
+
+      if (hasExtra) {
+        const upd = await updateClient(finalClient.id, {
+          phone:     newForm.phone,
+          instagram: newForm.instagram,
+          email:     newForm.email,
+          document:  newForm.document,
+          notes:     newForm.notes,
+          person_type:       newForm.person_type === '' ? null : newForm.person_type,
+          legal_name:        newForm.legal_name,
+          trade_name:        newForm.trade_name,
+          document_cpf:      newForm.document_cpf,
+          document_cnpj:     newForm.document_cnpj,
+          address_line:      newForm.address_line,
+          address_city:      newForm.address_city,
+          address_state:     newForm.address_state,
+          address_zip:       newForm.address_zip,
+          segment:           newForm.segment,
+          lead_source:       newForm.lead_source,
+          payment_condition: newForm.payment_condition,
+          responsible_name:  newForm.responsible_name,
+          responsible_role:  newForm.responsible_role,
+        })
+        if (upd.success) {
+          finalClient = upd.data
+        } else {
+          // cliente já foi criado, mas o enrich falhou — avisa mas segue
+          setCreateError(upd.message ?? 'Cliente criado, mas alguns dados não foram salvos.')
+        }
+      }
+
+      // 3) adiciona no topo (idempotência: se já tinha, substitui pelo final)
+      setClients(prev => {
+        const idx = prev.findIndex(c => c.id === finalClient.id)
+        if (idx === -1) return [finalClient, ...prev]
+        const next = [...prev]
+        next[idx] = finalClient
+        return next
+      })
+      setOpenId(finalClient.id)
       setNewName('')
+      setNewForm(EMPTY_CLIENT_FULL_FORM)
       setCreating(false)
       router.refresh()
     })
@@ -118,6 +180,7 @@ export function ClientesClient({ initialClients }: Props) {
   function cancelCreate() {
     setCreating(false)
     setNewName('')
+    setNewForm(EMPTY_CLIENT_FULL_FORM)
     setCreateError(null)
   }
 
@@ -162,52 +225,51 @@ export function ClientesClient({ initialClients }: Props) {
         )}
       </div>
 
-      {/* Inline create row */}
+      {/* Card de criação — ficha completa, só nome é obrigatório */}
       {creating && (
-        <div className="rounded-2xl border border-[#D4A853]/30 bg-[#141414] p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  handleCreate()
-                } else if (e.key === 'Escape') {
-                  e.preventDefault()
-                  cancelCreate()
-                }
-              }}
-              autoFocus
-              placeholder="Nome do cliente"
-              className="flex-1 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={isPending || !newName.trim()}
-              className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] disabled:opacity-60 transition-colors"
-            >
-              {isPending ? 'Criando…' : 'Criar'}
-            </button>
-            <button
-              type="button"
-              onClick={cancelCreate}
-              disabled={isPending}
-              className="px-3 py-2 rounded-lg text-xs font-medium text-[#a3a3a3] hover:text-white transition-colors"
-            >
-              Cancelar
-            </button>
+        <div className="rounded-2xl border border-[#D4A853]/30 bg-[#141414] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-white">Novo cliente</h3>
+            <span className="text-[10px] text-[#525252] uppercase tracking-wider">
+              Só o nome é obrigatório · preencha o resto quando quiser
+            </span>
           </div>
+
+          <ClientFullForm
+            value={newForm}
+            onChange={setNewForm}
+            disabled={isPending}
+            name={newName}
+            onNameChange={setNewName}
+          />
+
           {createError && (
             <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
               {createError}
             </p>
           )}
-          <p className="text-[11px] text-[#525252]">
-            Dica: clientes também nascem automaticamente ao criar um freelance/orçamento. Se o nome já existir, o cliente existente é reaproveitado.
-          </p>
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={isPending || !newName.trim()}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] disabled:opacity-60 transition-colors"
+            >
+              {isPending ? 'Criando…' : 'Criar cliente'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelCreate}
+              disabled={isPending}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-[#a3a3a3] hover:text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] transition-colors"
+            >
+              Cancelar
+            </button>
+            <span className="text-[11px] text-[#525252] ml-auto">
+              Se o nome já existir, o cliente existente é reaproveitado.
+            </span>
+          </div>
         </div>
       )}
 
