@@ -102,3 +102,30 @@ export type OrderActionResult =
 export type OrderItemActionResult =
   | { success: true; data?: OrderItem; order?: Order }
   | { success: false; message: string }
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+// Schema preexistente (status enum payment_status: previsto/pago/cancelado)
+
+export type OrderPaymentStatus = 'previsto' | 'pago' | 'cancelado'
+
+export interface OrderPayment {
+  id:           string
+  workspace_id: string
+  order_id:     string
+  amount:       number
+  currency:     string
+  due_date:     string | null
+  paid_at:      string | null
+  method:       string | null
+  reference:    string | null
+  status:       OrderPaymentStatus
+  notes:        string | null
+  created_by:   string | null
+  created_at:   string
+  updated_at:   string
+  deleted_at:   string | null
+}
+
+export type OrderPaymentActionResult =
+  | { success: true; data?: OrderPayment; order?: Order }
+  | { success: false; message: string }

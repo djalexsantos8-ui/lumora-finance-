@@ -56,6 +56,11 @@ export async function createExpense(fields: {
    * especificamente. Default: null (despesa geral do workspace).
    */
   job_id?:             string | null
+  /**
+   * Vínculo opcional com um order (Pedido). Mutuamente exclusivo com job_id
+   * na prática, mas o schema permite nulos em ambos (despesa geral).
+   */
+  order_id?:           string | null
 }): Promise<ExpenseActionResult & { installments?: Expense[] }> {
   const supabase = await createClient()
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
@@ -102,6 +107,7 @@ export async function createExpense(fields: {
       .insert({
         workspace_id:       workspaceId,
         job_id:             fields.job_id ?? null,
+        order_id:           fields.order_id ?? null,
         description,
         category:           fields.category,
         amount:             simpleAmt,
@@ -127,7 +133,8 @@ export async function createExpense(fields: {
     }
 
     revalidatePath('/expenses')
-    if (fields.job_id) revalidatePath(`/freelances/${fields.job_id}`)
+    if (fields.job_id)   revalidatePath(`/freelances/${fields.job_id}`)
+    if (fields.order_id) revalidatePath(`/pedidos/${fields.order_id}`)
     return { success: true, data }
   }
 
@@ -159,6 +166,7 @@ export async function createExpense(fields: {
       id:                 allIds[i],   // id explícito em TODOS os records
       workspace_id:       workspaceId,
       job_id:             fields.job_id ?? null,
+      order_id:           fields.order_id ?? null,
       description:        `${description} (${idx}/${n})`,
       category:           fields.category,
       amount:             parcelAmt,
@@ -519,6 +527,40 @@ export async function listJobExpenses(jobId: string): Promise<{
 
   if (error) {
     console.error('[expenses/list-by-job]', JSON.stringify(error))
+    return { success: false, message: translateSupabaseError(error) }
+  }
+
+  return { success: true, data: (data ?? []) as Expense[] }
+}
+
+// ─── LIST ORDER EXPENSES — despesas operacionais deste pedido ────────────────
+//
+// Espelha listJobExpenses usando expenses.order_id (migration 20260422050000).
+// Exibido no detalhe do Pedido para calcular lucro estimado.
+
+export async function listOrderExpenses(orderId: string): Promise<{
+  success:  boolean
+  data?:    Expense[]
+  message?: string
+}> {
+  const supabase = await createClient()
+  const { data: { user }, error: authErr } = await supabase.auth.getUser()
+  if (authErr || !user) return { success: false, message: 'Não autorizado.' }
+
+  const workspaceId = await getWorkspaceId(user.id)
+  if (!workspaceId) return { success: false, message: 'Workspace não encontrado.' }
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('order_id', orderId)
+    .is('deleted_at', null)
+    .order('expense_date', { ascending: false })
+    .order('created_at',   { ascending: false })
+
+  if (error) {
+    console.error('[expenses/list-by-order]', JSON.stringify(error))
     return { success: false, message: translateSupabaseError(error) }
   }
 

@@ -51,6 +51,16 @@ import {
   ORDER_FILE_MIME_WHITELIST,
   ORDER_FILE_MAX_FINAL_BYTES,
 } from '@/lib/order-files-constants'
+import {
+  addOrderPayment,
+  deleteOrderPayment,
+} from '@/lib/actions/order-payments'
+import {
+  createExpense,
+  deleteExpense,
+} from '@/lib/actions/expenses'
+import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS } from '@/types/expense'
+import type { Expense, ExpenseCategory } from '@/types/expense'
 import { createClient } from '@/lib/supabase/client'
 import type {
   Order,
@@ -60,6 +70,7 @@ import type {
   OrderFile,
   OrderItemCategory,
   OrderCostCategory,
+  OrderPayment,
 } from '@/types/order'
 import { OrderStatusBadge } from '../pedidos-list'
 
@@ -68,6 +79,8 @@ interface Props {
   items:       OrderItem[]
   costItems:   OrderCostItem[]
   files:       OrderFile[]
+  initialPayments?:      OrderPayment[]
+  initialOrderExpenses?: Expense[]
   itemsTableMissing:     boolean
   costsTableMissing:     boolean
   filesTableMissing:     boolean
@@ -115,6 +128,8 @@ export default function OrderEditor({
   items: initialItems,
   costItems: initialCostItems,
   files: initialFiles,
+  initialPayments = [],
+  initialOrderExpenses = [],
   itemsTableMissing,
   costsTableMissing,
   filesTableMissing,
@@ -149,6 +164,8 @@ export default function OrderEditor({
   const [items, setItems]         = useState<OrderItem[]>(initialItems)
   const [costItems, setCostItems] = useState<OrderCostItem[]>(initialCostItems)
   const [files, setFiles]         = useState<OrderFile[]>(initialFiles)
+  const [payments, setPayments]   = useState<OrderPayment[]>(initialPayments)
+  const [orderExpenses, setOrderExpenses] = useState<Expense[]>(initialOrderExpenses)
 
   const [revenueTotal, setRevenueTotal] = useState(Number(order.revenue_total ?? 0))
   const [costTotal, setCostTotal]       = useState(Number(order.cost_total ?? 0))
@@ -574,22 +591,24 @@ export default function OrderEditor({
           Renomeado de "Custos internos" (Fase 1 Pedidos mirror 2026-04-22):
           espelha a lógica de Freelances — o usuário paga um fornecedor (ex:
           equipamento alugado, equipe externa, viagem) e o cliente reembolsa.
-          Neutro para o ganho do usuário. Comprovantes sobem via seção Arquivos
-          logo abaixo. */}
+          Neutro para o ganho do usuário. Estilo visual paridade total com
+          Freelances (Fase 1b 2026-04-22). */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <h2 className={sectionTitle + ' mb-0'}>Repasses ao cliente</h2>
-            <span
-              title="Você paga e o cliente reembolsa. Neutro para seu ganho."
-              className="w-3.5 h-3.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[8px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
-            >
-              ?
-            </span>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm font-semibold text-white">Repasses ao cliente</h2>
+              <span
+                title="Itens que você paga mas repassa ao cliente. Não reduzem seu lucro real."
+                className="w-4 h-4 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[9px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
+              >?</span>
+            </div>
+            <p className="text-[10px] text-[#525252] mt-0.5">
+              {costItems.length > 0
+                ? `${costItems.length} ${costItems.length === 1 ? 'repasse' : 'repasses'} · ${formatCurrency(costTotal, form.currency)}`
+                : 'aluguel de gear, viagem cobrada, diária de assistente...'}
+            </p>
           </div>
-          <span className="text-xs text-[#525252]">
-            {costItems.length} {costItems.length === 1 ? 'repasse' : 'repasses'}
-          </span>
         </div>
 
         {costsTableMissing ? (
@@ -606,6 +625,70 @@ export default function OrderEditor({
           />
         )}
       </div>
+
+      {/* ═══ Despesas deste pedido ═════════════════════════════════════════
+          Saída de bolso. Reutiliza tabela expenses (expenses.order_id = este
+          pedido). Lucro estimado = itens − despesas. Paridade com Freelances. */}
+      <OrderExpensesSection
+        orderId={order.id}
+        currency={form.currency}
+        expenses={orderExpenses}
+        revenueTotal={revenueTotal}
+        onChange={setOrderExpenses}
+      />
+
+      {/* ═══ Detalhes ═══════════════════════════════════════════════════════
+          Paridade com Freelances: Período / Vencimento / Origem do lead /
+          Segmento do cliente. Commits via updateOrder (já usado no save
+          principal). */}
+      <OrderDetailsSection
+        orderId={order.id}
+        startDate={form.order_date_start}
+        endDate={form.order_date_end}
+        deliveryDate={form.delivery_date}
+        leadSource={form.lead_source}
+        clientSegment={form.client_segment}
+        onDateCommit={handleDateCommit}
+        onDeliveryCommit={async (val) => {
+          setForm(f => ({ ...f, delivery_date: val }))
+          startTransition(async () => {
+            await updateOrder(order.id, { delivery_date: val || null })
+            router.refresh()
+          })
+        }}
+        onLeadSourceCommit={async (val) => {
+          setForm(f => ({ ...f, lead_source: val }))
+          startTransition(async () => {
+            await updateOrder(order.id, { lead_source: val || null })
+            router.refresh()
+          })
+        }}
+        onSegmentCommit={async (val) => {
+          setForm(f => ({ ...f, client_segment: val }))
+          startTransition(async () => {
+            await updateOrder(order.id, { client_segment: val || null })
+            router.refresh()
+          })
+        }}
+      />
+
+      {/* ═══ Pagamentos recebidos ══════════════════════════════════════════
+          Paridade com Freelances: lista de order_payments + form inline
+          para registrar novo recebimento. Trigger no banco atualiza
+          orders.amount_paid automaticamente. */}
+      <OrderPaymentsSection
+        orderId={order.id}
+        currency={form.currency}
+        payments={payments}
+        totalDue={Math.max(0, (revenueTotal + costTotal) - (Number(form.amount_paid) || 0))}
+        onChange={(next, updatedOrder) => {
+          setPayments(next)
+          if (updatedOrder) {
+            setForm(f => ({ ...f, amount_paid: Number(updatedOrder.amount_paid ?? 0) }))
+          }
+          router.refresh()
+        }}
+      />
 
       {/* ═══ Arquivos ═════════════════════════════════════════════════════ */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
@@ -1144,6 +1227,443 @@ function FilesSection({
       >
         {uploading ? 'Enviando…' : '+ Anexar arquivo (PDF/imagem, até 10 MB)'}
       </button>
+    </div>
+  )
+}
+
+// ─── OrderExpensesSection ──────────────────────────────────────────────────
+// Despesas operacionais do pedido (saída de bolso). Espelha
+// JobExpensesSection do Freelances. Usa expenses.order_id (migration
+// 20260422050000). Exibe lucro estimado = revenueTotal − totalExpenses.
+
+function OrderExpensesSection({
+  orderId,
+  currency,
+  expenses,
+  revenueTotal,
+  onChange,
+}: {
+  orderId:      string
+  currency:     string
+  expenses:     Expense[]
+  revenueTotal: number
+  onChange:     (next: Expense[]) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  const [desc, setDesc] = useState('')
+  const [cat, setCat]   = useState<ExpenseCategory>('other')
+  const [amount, setAmount] = useState('')
+  const [dateInput, setDateInput] = useState(new Date().toISOString().slice(0, 10))
+
+  function reset() {
+    setDesc(''); setCat('other'); setAmount(''); setDateInput(new Date().toISOString().slice(0, 10))
+  }
+
+  function handleAdd() {
+    const amt = parseFloat(amount.replace(',', '.'))
+    if (!desc.trim()) { toast.error('Descrição obrigatória.'); return }
+    if (!amt || amt <= 0) { toast.error('Valor inválido.'); return }
+    startTransition(async () => {
+      const res = await createExpense({
+        description:   desc.trim(),
+        category:      cat,
+        amount:        amt,
+        currency,
+        expense_date:  dateInput,
+        is_deductible: true,
+        order_id:      orderId,
+      })
+      if (!res.success) { toast.error(res.message); return }
+      if (res.data) onChange([res.data as Expense, ...expenses])
+      reset()
+      setAdding(false)
+    })
+  }
+
+  function handleDelete(exp: Expense) {
+    if (!confirm(`Remover "${exp.description}"?`)) return
+    const optimistic = expenses.filter(e => e.id !== exp.id)
+    onChange(optimistic)
+    startTransition(async () => {
+      const res = await deleteExpense(exp.id)
+      if (!res.success) {
+        onChange(expenses)
+        toast.error(res.message)
+      }
+    })
+  }
+
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0)
+  const lucro = Math.max(0, revenueTotal - totalExpenses)
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Despesas deste pedido</h2>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            o que saiu do seu bolso neste pedido (motoboy, estacionamento, etc).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAdding(v => !v)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40"
+        >
+          <svg className={`w-3 h-3 transition-transform ${adding ? 'rotate-45' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar despesa
+        </button>
+      </div>
+
+      {adding && (
+        <div className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg p-4 mb-3 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Descrição"
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              className={inputCls + ' md:col-span-2'}
+            />
+            <select
+              value={cat}
+              onChange={e => setCat(e.target.value as ExpenseCategory)}
+              className={inputCls}
+            >
+              {EXPENSE_CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              className={inputCls + ' text-right'}
+            />
+            <input
+              type="date"
+              value={dateInput}
+              onChange={e => setDateInput(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => { reset(); setAdding(false) }}
+              className="text-xs text-[#a3a3a3] hover:text-white px-3 py-1.5 rounded transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleAdd}
+              disabled={isPending}
+              className="text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-60 px-3 py-1.5 rounded transition-colors"
+            >
+              {isPending ? 'Salvando…' : 'Adicionar'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {expenses.length === 0 && !adding ? (
+        <p className="text-xs text-[#525252] text-center py-6">
+          Nenhuma despesa registrada ainda.
+        </p>
+      ) : (
+        <div className="space-y-0">
+          {expenses.map(exp => (
+            <div key={exp.id} className="flex items-center justify-between py-2.5 border-b border-[#1c1c1c] last:border-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-white truncate">
+                  {exp.description}
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] text-[#a3a3a3] uppercase tracking-wider">
+                    {EXPENSE_CATEGORY_LABELS[exp.category]}
+                  </span>
+                </p>
+                <p className="text-xs text-[#525252] mt-0.5">
+                  {exp.expense_date.split('-').reverse().join('/')}
+                </p>
+              </div>
+              <p className="text-sm font-semibold text-red-400 shrink-0 ml-3">
+                − {formatCurrency(Number(exp.amount), exp.currency)}
+              </p>
+              <button
+                onClick={() => handleDelete(exp)}
+                disabled={isPending}
+                className="ml-2 text-[#3a3a3a] hover:text-red-400 disabled:opacity-40 transition-colors p-1 shrink-0"
+                aria-label="Remover despesa"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-6 mt-4 pt-4 border-t border-[#1c1c1c]">
+        <div>
+          <p className="text-[10px] text-[#525252] tracking-widest uppercase">Despesa</p>
+          <p className="text-sm font-semibold text-red-400 mt-1">
+            − {formatCurrency(totalExpenses, currency)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] text-[#525252] tracking-widest uppercase">Lucro estimado</p>
+          <p className="text-sm font-semibold text-emerald-400 mt-1">
+            {formatCurrency(lucro, currency)}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── OrderDetailsSection ───────────────────────────────────────────────────
+// Período / Vencimento / Origem do lead / Segmento do cliente.
+
+function OrderDetailsSection({
+  orderId: _orderId,
+  startDate,
+  endDate,
+  deliveryDate,
+  leadSource,
+  clientSegment,
+  onDateCommit,
+  onDeliveryCommit,
+  onLeadSourceCommit,
+  onSegmentCommit,
+}: {
+  orderId:            string
+  startDate:          string
+  endDate:            string | null
+  deliveryDate:       string
+  leadSource:         string
+  clientSegment:      string
+  onDateCommit:       (start: string, end: string | null) => void
+  onDeliveryCommit:   (val: string) => void
+  onLeadSourceCommit: (val: string) => void
+  onSegmentCommit:    (val: string) => void
+}) {
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
+      <h2 className="text-sm font-semibold text-white mb-3">Detalhes</h2>
+      <div className="space-y-2.5">
+        <InfoRow label="Período">
+          <FreelanceDateRange
+            startDate={startDate}
+            endDate={endDate}
+            onCommit={onDateCommit}
+          />
+        </InfoRow>
+        <InfoRow label="Vencimento">
+          <input
+            type="date"
+            value={deliveryDate}
+            onChange={e => onDeliveryCommit(e.target.value)}
+            className={inputCls + ' max-w-[200px]'}
+          />
+        </InfoRow>
+        <InfoRow label="Origem do lead">
+          <TagCombobox
+            value={leadSource}
+            options={LEAD_SOURCES}
+            placeholder="Como te encontraram?"
+            ariaLabel="Origem do lead"
+            onCommit={onLeadSourceCommit}
+          />
+        </InfoRow>
+        <InfoRow label="Segmento">
+          <TagCombobox
+            value={clientSegment}
+            options={CLIENT_SEGMENTS}
+            placeholder="Tipo de cliente"
+            ariaLabel="Segmento do cliente"
+            onCommit={onSegmentCommit}
+          />
+        </InfoRow>
+      </div>
+    </div>
+  )
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-4 py-1.5">
+      <span className="text-xs text-[#a3a3a3] w-24 shrink-0 pt-2">{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  )
+}
+
+// ─── OrderPaymentsSection ──────────────────────────────────────────────────
+// Lista + form inline para registrar pagamentos recebidos.
+
+function OrderPaymentsSection({
+  orderId,
+  currency,
+  payments,
+  totalDue,
+  onChange,
+}: {
+  orderId:  string
+  currency: string
+  payments: OrderPayment[]
+  totalDue: number
+  onChange: (next: OrderPayment[], order?: Order) => void
+}) {
+  const [showForm, setShowForm] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  const [amount, setAmount] = useState('')
+  const [date, setDate]     = useState(new Date().toISOString().slice(0, 10))
+  const [notes, setNotes]   = useState('')
+
+  function reset() { setAmount(''); setDate(new Date().toISOString().slice(0, 10)); setNotes('') }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const amt = parseFloat(amount.replace(',', '.'))
+    if (!amt || amt <= 0) { toast.error('Valor inválido.'); return }
+    startTransition(async () => {
+      const res = await addOrderPayment(orderId, {
+        amount:      amt,
+        received_at: date,
+        notes:       notes.trim() || undefined,
+        currency,
+      })
+      if (!res.success) { toast.error(res.message); return }
+      if (res.data) onChange([res.data, ...payments], res.order)
+      reset()
+      setShowForm(false)
+    })
+  }
+
+  function handleDelete(id: string) {
+    if (!confirm('Remover este pagamento?')) return
+    const optimistic = payments.filter(p => p.id !== id)
+    onChange(optimistic)
+    startTransition(async () => {
+      const res = await deleteOrderPayment(id, orderId)
+      if (!res.success) {
+        onChange(payments)
+        toast.error(res.message)
+      } else if (res.order) {
+        onChange(optimistic, res.order)
+      }
+    })
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-white">Pagamentos recebidos</h2>
+        <button
+          onClick={() => {
+            if (!showForm && totalDue > 0) {
+              setAmount(totalDue.toFixed(2).replace('.', ','))
+            }
+            setShowForm(v => !v)
+          }}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors"
+        >
+          <svg className={`w-3.5 h-3.5 transition-transform ${showForm ? 'rotate-45' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Registrar pagamento
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl p-4 mb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold text-[#525252] tracking-widest uppercase">VALOR</label>
+              <input
+                autoFocus
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                required
+                className={inputCls + ' mt-1'}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-[#525252] tracking-widest uppercase">DATA</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                required
+                className={inputCls + ' mt-1'}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-[#525252] tracking-widest uppercase">OBSERVAÇÃO (opcional)</label>
+            <input
+              type="text"
+              placeholder="Ex: Entrada, saldo final..."
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              className={inputCls + ' mt-1'}
+            />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={isPending}
+              className="text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-60 px-3 py-2 rounded-lg transition-colors"
+            >
+              {isPending ? 'Salvando…' : 'Confirmar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { reset(); setShowForm(false) }}
+              className="text-xs text-[#525252] hover:text-white transition-colors px-3 py-2"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+
+      {payments.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-sm text-[#525252]">Nenhum pagamento registrado</p>
+          <p className="text-xs text-[#3a3a3a] mt-1">Registre quando receber do cliente</p>
+        </div>
+      ) : (
+        <div className="space-y-0">
+          {payments.map(p => (
+            <div key={p.id} className="flex items-center justify-between py-2.5 border-b border-[#1c1c1c] last:border-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-emerald-400">
+                  + {formatCurrency(Number(p.amount), p.currency)}
+                </p>
+                <p className="text-xs text-[#525252] mt-0.5">
+                  {(p.paid_at ?? p.created_at.slice(0, 10)).split('-').reverse().join('/')}
+                  {p.notes && <span className="ml-2 text-[#3a3a3a]">· {p.notes}</span>}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDelete(p.id)}
+                disabled={isPending}
+                className="ml-3 text-[#3a3a3a] hover:text-red-400 disabled:opacity-40 transition-colors p-1 shrink-0"
+                aria-label="Remover pagamento"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

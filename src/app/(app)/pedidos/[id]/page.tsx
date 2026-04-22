@@ -8,7 +8,10 @@ import {
 } from '@/lib/queries/orders'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
-import type { Order, OrderItem, OrderCostItem, OrderFile } from '@/types/order'
+import { listPaymentsByOrder } from '@/lib/actions/order-payments'
+import { listOrderExpenses } from '@/lib/actions/expenses'
+import type { Order, OrderItem, OrderCostItem, OrderFile, OrderPayment } from '@/types/order'
+import type { Expense } from '@/types/expense'
 
 export const metadata = { title: 'Pedido — Lumora Finance' }
 
@@ -45,11 +48,13 @@ export default async function OrderDetailPage({
   if (!order) notFound()
 
   // Fetch related data in parallel — gracefully degrade if migration pending
-  const [itemsRes, costsRes, filesRes, linkedContracts] = await Promise.all([
+  const [itemsRes, costsRes, filesRes, linkedContracts, payments, expensesRes] = await Promise.all([
     listOrderItemsQuery(id),
     listOrderCostItemsQuery(id),
     listOrderFilesQuery(id),
     listContractsByOriginQuery('order', id),
+    listPaymentsByOrder(id),
+    listOrderExpenses(id),
   ])
 
   return (
@@ -59,6 +64,8 @@ export default async function OrderDetailPage({
         items={itemsRes.items as OrderItem[]}
         costItems={costsRes.items as OrderCostItem[]}
         files={filesRes.files as OrderFile[]}
+        initialPayments={payments as OrderPayment[]}
+        initialOrderExpenses={(expensesRes.data ?? []) as Expense[]}
         itemsTableMissing={itemsRes.tableMissing}
         costsTableMissing={costsRes.tableMissing}
         filesTableMissing={filesRes.tableMissing}

@@ -65,6 +65,12 @@ export interface Expense {
    *   · uuid → despesa operacional DESTE job (aparece no detalhe do freelance)
    */
   job_id:              string | null
+  /**
+   * Vínculo opcional com um order/pedido (migration 20260422050000).
+   *   · null → despesa sem pedido associado
+   *   · uuid → despesa operacional DESTE pedido
+   */
+  order_id:            string | null
   description:         string
   category:            ExpenseCategory
   amount:              number
