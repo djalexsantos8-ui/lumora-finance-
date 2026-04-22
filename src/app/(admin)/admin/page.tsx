@@ -18,8 +18,8 @@ async function loadKpis() {
     recentSignups,
   ] = await Promise.all([
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
-    supabase.from('subscriptions').select('status, plan'),
-    supabase.from('admin_grants').select('id', { count: 'exact', head: true }),
+    supabase.from('subscriptions').select('status, plan, trial_ends_at'),
+    supabase.from('admin_grants').select('id, expires_at'),
     supabase.from('coupon_codes').select('id, is_active', { count: 'exact' }),
     supabase.from('coupon_usages').select('id', { count: 'exact', head: true }),
     supabase
@@ -31,19 +31,34 @@ async function loadKpis() {
 
   const subRows = subs.data ?? []
   const statusCount = (s: string) => subRows.filter(r => r.status === s).length
+
+  // Trial ativo: status=trialing E trial_ends_at ainda no futuro
+  const now = Date.now()
+  const trialingAll = subRows.filter(r => r.status === 'trialing')
+  const trialingActive = trialingAll.filter(
+    r => r.trial_ends_at && new Date(r.trial_ends_at).getTime() > now
+  ).length
+  const trialingExpired = trialingAll.length - trialingActive
+
   const activeCoupons = (coupons.data ?? []).filter(c => c.is_active).length
+
+  // Grants válidos: expires_at is null OR > now
+  const grantsValid = (grants.data ?? []).filter(g =>
+    !g.expires_at || new Date(g.expires_at).getTime() > now
+  ).length
 
   return {
     totalUsers:        profiles.count ?? 0,
     totalSubs:         subRows.length,
-    trialing:          statusCount('trialing'),
+    trialing:          trialingActive,
+    trialingExpired,
     active:            statusCount('active'),
     pastDue:           statusCount('past_due'),
     canceled:          statusCount('canceled'),
     paused:            statusCount('paused'),
     monthly:           subRows.filter(r => r.plan === 'monthly').length,
     annual:            subRows.filter(r => r.plan === 'annual').length,
-    totalGrants:       grants.count ?? 0,
+    totalGrants:       grantsValid,
     totalCoupons:      coupons.count ?? 0,
     activeCoupons,
     totalCouponUsages: couponUsages.count ?? 0,
@@ -81,7 +96,8 @@ export default async function AdminOverviewPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Kpi label="Total de usuários"      value={k.totalUsers} />
           <Kpi label="Subscriptions"           value={k.totalSubs} />
-          <Kpi label="Em trial"                value={k.trialing} accent="gold" />
+          <Kpi label="Trials ativos"           value={k.trialing} accent="gold" />
+          <Kpi label="Trials expirados"        value={k.trialingExpired} accent={k.trialingExpired > 0 ? 'red' : undefined} />
           <Kpi label="Ativos pagando"          value={k.active} accent="green" />
           <Kpi label="Past due"                value={k.pastDue} accent={k.pastDue > 0 ? 'red' : undefined} />
           <Kpi label="Pausados"                value={k.paused} />

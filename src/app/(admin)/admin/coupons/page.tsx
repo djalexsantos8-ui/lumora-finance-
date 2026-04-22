@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkAdmin } from '@/lib/auth/is-admin'
 import { redirect } from 'next/navigation'
+import CouponForm from './coupon-form'
+import ToggleButton from './toggle-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +15,7 @@ async function loadCoupons() {
       .select('*')
       .order('created_at', { ascending: false }),
     supabase.from('coupon_usages').select('coupon_id'),
-    supabase.from('affiliates').select('id, name, email, is_active'),
+    supabase.from('affiliates').select('id, name, email, is_active').order('name'),
   ])
 
   const usageCount = new Map<string, number>()
@@ -29,7 +31,7 @@ async function loadCoupons() {
       usages:    usageCount.get(c.id) ?? 0,
       affiliate: c.affiliate_id ? affById.get(c.affiliate_id) : null,
     })),
-    affiliatesCount: (affiliates.data ?? []).length,
+    affiliates: affiliates.data ?? [],
   }
 }
 
@@ -42,9 +44,7 @@ function describeDiscount(c: {
   const value =
     c.discount_type === 'percentage'
       ? `${c.discount_value}%`
-      : c.discount_type === 'free_months'
-        ? `${c.discount_value} mês${Number(c.discount_value) === 1 ? '' : 'es'} grátis`
-        : `R$${c.discount_value}`
+      : `R$${c.discount_value}`
 
   const dur =
     c.duration === 'once'      ? 'uma vez' :
@@ -59,7 +59,7 @@ export default async function AdminCouponsPage() {
   const check = await checkAdmin()
   if (!check.isAdmin) redirect('/dashboard')
 
-  const { rows, affiliatesCount } = await loadCoupons()
+  const { rows, affiliates } = await loadCoupons()
 
   return (
     <div className="space-y-6">
@@ -70,19 +70,12 @@ export default async function AdminCouponsPage() {
           </p>
           <h1 className="text-2xl font-bold">Cupons cadastrados</h1>
           <p className="text-sm text-[#737373] mt-1">
-            {rows.length} cupom{rows.length === 1 ? '' : 's'} · {affiliatesCount} influencer{affiliatesCount === 1 ? '' : 's'} cadastrado{affiliatesCount === 1 ? '' : 's'}
+            {rows.length} cupom{rows.length === 1 ? '' : 's'} · {affiliates.length} influencer{affiliates.length === 1 ? '' : 's'} cadastrado{affiliates.length === 1 ? '' : 's'}
           </p>
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-amber-200">
-        <strong className="block mb-1">CRUD em breve.</strong>
-        Esta v1 é read-only. Para criar novos cupons, use o dashboard do Stripe
-        (Products → Coupons + Promotion codes) e depois rode um INSERT em
-        <code className="mx-1 px-1 bg-black/40 rounded">coupon_codes</code>
-        com o <code className="mx-1 px-1 bg-black/40 rounded">stripe_coupon_id</code>.
-        A sincronização automática fica na próxima rodada.
-      </div>
+      <CouponForm affiliates={affiliates} />
 
       <div className="rounded-lg border border-[#1a1a1a] overflow-hidden">
         <table className="w-full text-sm">
@@ -95,13 +88,14 @@ export default async function AdminCouponsPage() {
               <th className="text-left px-4 py-2.5 font-medium">Influencer</th>
               <th className="text-center px-4 py-2.5 font-medium">Status</th>
               <th className="text-left px-4 py-2.5 font-medium">Stripe</th>
+              <th className="text-right px-4 py-2.5 font-medium">Ação</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-[#525252] text-sm">
-                  Nenhum cupom cadastrado ainda.
+                <td colSpan={8} className="px-4 py-12 text-center text-[#525252] text-sm">
+                  Nenhum cupom cadastrado ainda. Use o botão acima para criar o primeiro.
                 </td>
               </tr>
             )}
@@ -156,10 +150,23 @@ export default async function AdminCouponsPage() {
                     </span>
                   )}
                 </td>
+                <td className="px-4 py-3 text-right">
+                  <ToggleButton id={c.id} active={c.is_active} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="rounded-lg border border-[#D4A853]/20 bg-[#D4A853]/5 p-4 text-xs text-[#D4A853]">
+        <strong className="block mb-1 text-[#D4A853]">Como funciona</strong>
+        <ul className="space-y-1 text-[#D4A853]/80 list-disc pl-4">
+          <li>Cada cupom criado aqui vira um <code className="bg-black/40 px-1 rounded">coupon</code> + <code className="bg-black/40 px-1 rounded">promotion_code</code> no Stripe com o mesmo código.</li>
+          <li>No checkout, o usuário digita o código e o desconto é aplicado automaticamente.</li>
+          <li>Desativar só desliga o promotion_code (não apaga histórico de usos).</li>
+          <li>Influencers são cadastrados aqui também — vincular cupom a influencer serve para rastrear quem trouxe quem.</li>
+        </ul>
       </div>
     </div>
   )

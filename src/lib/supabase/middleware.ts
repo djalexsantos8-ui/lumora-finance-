@@ -78,14 +78,35 @@ export async function updateSession(request: NextRequest) {
     // 2. Verificar status da subscription
     const { data: subscription } = await supabase
       .from('subscriptions')
-      .select('status')
+      .select('status, trial_ends_at')
       .eq('user_id', user.id)
       .single()
 
-    const allowedStatuses = ['trialing', 'active']
-    if (!subscription || !allowedStatuses.includes(subscription.status)) {
+    if (!subscription) {
       return NextResponse.redirect(new URL('/upgrade', request.url))
     }
+
+    // active passa direto
+    if (subscription.status === 'active') {
+      return supabaseResponse
+    }
+
+    // trialing: só passa se trial_ends_at ainda está no futuro
+    if (subscription.status === 'trialing') {
+      const trialEnds = subscription.trial_ends_at
+        ? new Date(subscription.trial_ends_at).getTime()
+        : 0
+      if (trialEnds > Date.now()) {
+        return supabaseResponse
+      }
+      // trial expirou — bloqueia com flag pra página /upgrade saber
+      const url = new URL('/upgrade', request.url)
+      url.searchParams.set('reason', 'trial_expired')
+      return NextResponse.redirect(url)
+    }
+
+    // paused, past_due, canceled, incomplete, etc → /upgrade
+    return NextResponse.redirect(new URL('/upgrade', request.url))
   }
 
   return supabaseResponse

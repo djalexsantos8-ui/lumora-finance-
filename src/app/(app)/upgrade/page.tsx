@@ -1,12 +1,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import CheckoutButton from './checkout-button'
+import { PLANS, TRIAL_DAYS } from '@/lib/stripe/pricing'
 
-export default async function UpgradePage() {
+export const dynamic = 'force-dynamic'
+
+type UpgradeSearchParams = Promise<{ reason?: string }>
+
+export default async function UpgradePage({
+  searchParams,
+}: {
+  searchParams: UpgradeSearchParams
+}) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
+
+  const params = await searchParams
+  const reason = params.reason ?? ''
 
   const { data: subscription } = await supabase
     .from('subscriptions')
@@ -15,21 +27,39 @@ export default async function UpgradePage() {
     .single()
 
   const status = subscription?.status
+  const trialEndsAt = subscription?.trial_ends_at
+    ? new Date(subscription.trial_ends_at)
+    : null
+  const now = Date.now()
 
-  const isPaused = status === 'paused'
-  const isPastDue = status === 'past_due'
-  const isActive = status === 'active'
+  // Estados úteis pra UI
+  const isPaused   = status === 'paused'
+  const isPastDue  = status === 'past_due'
+  const isActive   = status === 'active'
   const isTrialing = status === 'trialing'
+  const trialExpired =
+    isTrialing && trialEndsAt !== null && trialEndsAt.getTime() < now
+  const trialStillActive =
+    isTrialing && trialEndsAt !== null && trialEndsAt.getTime() > now
 
-  // Usuário ativo ou em trial não precisa estar aqui
-  if (isActive || isTrialing) {
+  // Usuário realmente ativo vai pro dashboard
+  if (isActive) {
     redirect('/dashboard')
   }
+
+  // Trial ainda válido e veio aqui sem flag de expiração → volta pro app
+  if (trialStillActive && reason !== 'trial_expired') {
+    redirect('/dashboard')
+  }
+
+  const daysLeft =
+    trialStillActive && trialEndsAt
+      ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now) / (1000 * 60 * 60 * 24)))
+      : 0
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
-
         {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold tracking-tight text-white">
@@ -37,15 +67,13 @@ export default async function UpgradePage() {
           </h1>
         </div>
 
-        {/* Card principal */}
         <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-8">
-
           {/* Ícone de status */}
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] flex items-center justify-center">
-              {isPaused ? (
+              {trialExpired || isPaused ? (
                 <svg className="w-8 h-8 text-[#f59e0b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               ) : isPastDue ? (
                 <svg className="w-8 h-8 text-[#ef4444]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -60,35 +88,53 @@ export default async function UpgradePage() {
           </div>
 
           {/* Mensagem de status */}
-          {isPaused && (
+          {trialExpired ? (
+            <>
+              <h2 className="text-xl font-semibold text-white text-center mb-2">
+                Seu período de teste terminou
+              </h2>
+              <p className="text-[#a3a3a3] text-sm text-center mb-6">
+                Você usou os {TRIAL_DAYS} dias de teste grátis. Para continuar
+                com acesso completo, escolha um plano e cadastre seu cartão.
+                Seus dados estão preservados.
+              </p>
+            </>
+          ) : isPaused ? (
             <>
               <h2 className="text-xl font-semibold text-white text-center mb-2">
                 Seu acesso está pausado
               </h2>
               <p className="text-[#a3a3a3] text-sm text-center mb-6">
-                Seu período de teste terminou. Adicione um método de pagamento para retomar o acesso aos seus dados e continuar usando o Lumora Finance.
+                Adicione um método de pagamento para retomar o acesso.
               </p>
             </>
-          )}
-
-          {isPastDue && (
+          ) : isPastDue ? (
             <>
               <h2 className="text-xl font-semibold text-white text-center mb-2">
                 Pagamento pendente
               </h2>
               <p className="text-[#a3a3a3] text-sm text-center mb-6">
-                Houve um problema com o seu pagamento. Atualize seu método de pagamento para recuperar o acesso.
+                Atualize seu método de pagamento para recuperar o acesso.
               </p>
             </>
-          )}
-
-          {!isPaused && !isPastDue && (
+          ) : trialStillActive ? (
+            <>
+              <h2 className="text-xl font-semibold text-white text-center mb-2">
+                Garanta sua assinatura
+              </h2>
+              <p className="text-[#a3a3a3] text-sm text-center mb-6">
+                Ainda faltam {daysLeft} {daysLeft === 1 ? 'dia' : 'dias'} de
+                teste. Assine agora para continuar sem interrupção quando o
+                teste terminar.
+              </p>
+            </>
+          ) : (
             <>
               <h2 className="text-xl font-semibold text-white text-center mb-2">
                 Escolha seu plano
               </h2>
               <p className="text-[#a3a3a3] text-sm text-center mb-6">
-                7 dias grátis, sem cartão de crédito. Cancele quando quiser.
+                {TRIAL_DAYS} dias grátis, sem cartão de crédito. Cancele quando quiser.
               </p>
             </>
           )}
@@ -102,7 +148,8 @@ export default async function UpgradePage() {
               <div>
                 <p className="text-sm font-medium text-white">Seus dados estão seguros</p>
                 <p className="text-xs text-[#a3a3a3] mt-0.5">
-                  Todos os seus jobs, despesas e histórico financeiro foram preservados. Retome o acesso a qualquer momento.
+                  Todos os jobs, clientes e histórico financeiro foram preservados.
+                  Retome o acesso a qualquer momento.
                 </p>
               </div>
             </div>
@@ -110,20 +157,17 @@ export default async function UpgradePage() {
 
           {/* Planos */}
           <div className="space-y-3 mb-6">
-            {/* Mensal */}
             <CheckoutButton
               plan="monthly"
-              label="Plano Mensal"
-              price="R$ 19,90/mês"
-              description="Cobrado mensalmente"
+              label={PLANS.monthly.label}
+              price={PLANS.monthly.priceLabel}
+              description={PLANS.monthly.description}
             />
-
-            {/* Anual */}
             <CheckoutButton
               plan="yearly"
-              label="Plano Anual"
-              price="R$ 149,90/ano"
-              description="Equivale a R$ 12,49/mês · Economize 37%"
+              label={PLANS.yearly.label}
+              price={PLANS.yearly.priceLabel}
+              description={PLANS.yearly.description}
               highlight
             />
           </div>
@@ -133,8 +177,8 @@ export default async function UpgradePage() {
             {[
               'Jobs, clientes e histórico ilimitados',
               'Controle de despesas e custos fixos',
-              'Geração de PDF por job',
-              'Dashboard financeiro completo',
+              'Orçamentos, contratos e PDFs',
+              'Dashboard executivo com narrativa',
               'Suporte por e-mail',
             ].map((feature) => (
               <div key={feature} className="flex items-center gap-2">
@@ -146,9 +190,8 @@ export default async function UpgradePage() {
             ))}
           </div>
 
-          {/* Segurança Stripe */}
           <p className="text-center text-xs text-[#525252]">
-            Pagamento seguro processado pelo Stripe · Cancele quando quiser
+            Pagamento seguro via Stripe · Cancele quando quiser
           </p>
         </div>
 

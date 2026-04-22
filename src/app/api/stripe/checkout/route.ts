@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@/lib/supabase/server'
+import { getPlan } from '@/lib/stripe/pricing'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
-const PRICE_IDS = {
-  monthly: process.env.STRIPE_PRICE_MONTHLY!,
-  yearly: process.env.STRIPE_PRICE_YEARLY!,
-}
-
+/**
+ * POST /api/stripe/checkout
+ *
+ * Modelo de trial SEM CARTÃO:
+ * - O usuário vira trialing no signup (trigger handle_new_user do Supabase),
+ *   com trial_ends_at = signup + 7 dias. Nenhuma subscription Stripe existe
+ *   nessa fase.
+ * - Quando o trial vence (middleware detecta trial_ends_at < now), ele é
+ *   redirecionado para /upgrade.
+ * - Aqui criamos a subscription Stripe já pagante. O webhook vai sincronizar
+ *   status='active' quando o pagamento for aprovado.
+ *
+ * Body: { plan: 'monthly' | 'yearly', promotionCode?: string }
+ */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -18,10 +28,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const plan = body.plan as 'monthly' | 'yearly'
+    const body = await request.json().catch(() => ({}))
+    const planConfig = getPlan(body.plan)
 
-    if (!plan || !PRICE_IDS[plan]) {
+    if (!planConfig) {
       return NextResponse.json({ error: 'Plano inválido' }, { status: 400 })
     }
 
@@ -50,23 +60,40 @@ export async function POST(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
       customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
-      line_items: [{ price: PRICE_IDS[plan], quantity: 1 }],
+      line_items: [{ price: planConfig.priceId, quantity: 1 }],
+      // Sem trial_period_days: o trial é local (7 dias no DB). No Stripe, o
+      // usuário já entra pagando quando converter.
       subscription_data: {
-        trial_period_days: 7,
-        trial_settings: {
-          end_behavior: {
-            missing_payment_method: 'pause',
-          },
-        },
         metadata: { supabase_user_id: user.id },
       },
+      allow_promotion_codes: true,
       success_url: `${appUrl}/dashboard?checkout=success`,
       cancel_url: `${appUrl}/upgrade`,
-    })
+    }
+
+    // Se veio código promocional direto (ex: link de influencer), aplica
+    if (body.promotionCode && typeof body.promotionCode === 'string') {
+      try {
+        const promos = await stripe.promotionCodes.list({
+          code: body.promotionCode,
+          active: true,
+          limit: 1,
+        })
+        if (promos.data.length > 0) {
+          sessionParams.discounts = [{ promotion_code: promos.data[0].id }]
+          // discounts e allow_promotion_codes são mutuamente exclusivos
+          delete sessionParams.allow_promotion_codes
+        }
+      } catch (e) {
+        console.warn('[checkout] promotion code lookup falhou:', e)
+      }
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams)
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
