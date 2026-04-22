@@ -176,6 +176,19 @@ validar:  Reproduzir o artefato: deixar tab em background, recarregar
           Trazer tab para foreground → rAF dispara → swap acontece.
 ```
 
+### 2026-04-22 — decisão: `next build --webpack` permanece
+
+```
+fato:     5b2a61f (flag --webpack) foi commitado com base em diagnóstico
+          errado, mas mantido como defense-in-depth.
+impacto:  Builds ~20-30% mais lentos em troca de estabilidade. Turbopack
+          prod em Next 16.2.x ainda beta.
+ação:     Manter até Next 16.3+/17 marcar Turbopack prod como GA OU
+          surgir bug real que webpack introduza.
+validar:  Reverter = trocar "build": "next build --webpack" por
+          "next build" em package.json. Sem side-effects.
+```
+
 ### 2026-04-22 — Chrome extension isolated world vs page world (adicionado à seção 7)
 
 ```
