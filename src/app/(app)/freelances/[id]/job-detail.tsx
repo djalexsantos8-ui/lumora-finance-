@@ -876,7 +876,6 @@ export default function JobDetail({
       <JobExpensesSection
         expenses={jobExpenses}
         currency={job.currency}
-        totalJob={fin.total}
         totalExpenses={totalJobExpenses}
         lucro={lucroEstimado}
         onAdd={handleAddJobExpense}
@@ -1774,7 +1773,6 @@ const btnGold  = 'flex items-center gap-2 bg-[#D4A853] hover:bg-[#E8C47A] disabl
 function JobExpensesSection({
   expenses,
   currency,
-  totalJob,
   totalExpenses,
   lucro,
   onAdd,
@@ -1782,7 +1780,6 @@ function JobExpensesSection({
 }: {
   expenses:      Expense[]
   currency:      string
-  totalJob:      number
   totalExpenses: number
   lucro:         number
   onAdd:         (description: string, amount: number) => Promise<AddResult>
@@ -1967,15 +1964,11 @@ function JobExpensesSection({
         <p className="text-xs text-[#525252] text-center py-6">Nenhuma despesa registrada ainda.</p>
       )}
 
-      {/* Resumo: valor do job - despesas = lucro estimado */}
+      {/* Resumo: despesas + lucro estimado (valor do job já aparece no cabeçalho) */}
       <div className="border-t border-[#1f1f1f] pt-3 mt-1">
-        <dl className="grid grid-cols-3 gap-2 text-xs">
+        <dl className="grid grid-cols-2 gap-4 text-xs">
           <div>
-            <dt className="text-[10px] text-[#525252] tracking-widest">VALOR DO JOB</dt>
-            <dd className="text-sm text-white tabular-nums">{formatCurrency(totalJob, currency)}</dd>
-          </div>
-          <div>
-            <dt className="text-[10px] text-[#525252] tracking-widest">DESPESAS</dt>
+            <dt className="text-[10px] text-[#525252] tracking-widest">DESPESA</dt>
             <dd className="text-sm text-[#a3a3a3] tabular-nums">
               − {formatCurrency(totalExpenses, currency)}
             </dd>

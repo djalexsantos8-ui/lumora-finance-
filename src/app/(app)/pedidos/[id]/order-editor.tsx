@@ -443,32 +443,33 @@ export default function OrderEditor({
           </div>
         </div>
 
-        {/* Resumo */}
-        <div className="flex items-center justify-between pt-4 border-t border-[#2a2a2a]">
-          <div className="text-xs text-[#525252] space-x-4">
-            <span>
-              Receita itens:{' '}
-              <span className="text-white font-semibold">
-                {formatCurrency(revenueTotal, form.currency)}
-              </span>
-            </span>
-            <span>
-              Custo:{' '}
-              <span className="text-white font-semibold">
-                {formatCurrency(costTotal, form.currency)}
-              </span>
-            </span>
-            <span>
-              Saldo:{' '}
-              <span className="text-white font-semibold">
-                {formatCurrency(Math.max(0, Number(form.amount) - Number(form.amount_paid)), form.currency)}
-              </span>
-            </span>
+        {/* Resumo — espelha Freelances: só Despesa + Lucro Estimado */}
+        <div className="pt-4 border-t border-[#2a2a2a]">
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-[10px] text-[#525252] tracking-widest">DESPESA</dt>
+              <dd className="text-sm text-[#a3a3a3] tabular-nums">
+                − {formatCurrency(costTotal, form.currency)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[10px] text-[#D4A853] tracking-widest">LUCRO ESTIMADO</dt>
+              <dd
+                className={`text-sm font-semibold tabular-nums ${
+                  (revenueTotal - costTotal) >= 0 ? 'text-emerald-400' : 'text-red-400'
+                }`}
+                title="Receita dos itens − custo dos itens deste pedido. Aproximação simples; não considera impostos."
+              >
+                {formatCurrency(revenueTotal - costTotal, form.currency)}
+              </dd>
+            </div>
+          </dl>
+          <div className="mt-3 flex justify-end">
+            {savedAt && !error && (
+              <span className="text-xs text-emerald-400">Salvo às {savedAt}</span>
+            )}
+            {error && <span className="text-xs text-red-400">{error}</span>}
           </div>
-          {savedAt && !error && (
-            <span className="text-xs text-emerald-400">Salvo às {savedAt}</span>
-          )}
-          {error && <span className="text-xs text-red-400">{error}</span>}
         </div>
 
         {/* Ações */}
