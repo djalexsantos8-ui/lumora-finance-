@@ -369,3 +369,67 @@ risco:    PDF com company_logo_url precisa de imagem acessível publicamente
           (react-pdf faz fetch server-side). Se logo for protegido por
           RLS/assinatura expirada, PDF falha — fallback mostra nome texto.
 ```
+
+---
+
+## 12. Fase 1b Pedidos — paridade total com Freelances (2026-04-22)
+
+```
+data:     2026-04-22 madrugada-3
+fase:     1b — paridade Pedidos ↔ Freelances (UX + dados ricos)
+entrega:  commit 61f97cb (main)
+contexto: Usuário apontou via screenshots que Pedidos só tinha 3 blocos
+          (Itens / Repasses / Arquivos), enquanto Freelances tem 7
+          (Itens / Repasses+subtitle / Despesas / Detalhes / Pagamentos /
+          Arquivos / Contratos). Pediu paridade total sem mexer em schema
+          crítico nem no dashboard.
+ação:     a) Migration 20260422050000 100% ADITIVA:
+             - expenses.order_id (nullable, FK orders on delete set null)
+             - índice parcial idx_expenses_order_id
+             - função + trigger recalculate_order_amount_paid que SOMA
+               apenas order_payments WHERE status='pago' AND deleted_at IS NULL
+             Não tocou em order_payments (já existia com schema rico:
+             status enum 'payment_status' com valores previsto/pago/cancelado,
+             due_date, paid_at, method, reference, notes).
+          b) src/lib/actions/order-payments.ts com 3 actions:
+             - listPaymentsByOrder
+             - addOrderPayment (sempre cria com status='pago', paid_at=due_date
+               = received_at; moeda herda do pedido)
+             - deleteOrderPayment (soft delete via deleted_at)
+             Retornam order atualizada pra o client aplicar amount_paid novo.
+          c) src/lib/actions/expenses.ts:
+             - createExpense agora aceita order_id (mutuamente exclusivo
+               com job_id na prática, mas aditivo — ambos nullable)
+             - listOrderExpenses(orderId) espelho de listJobExpenses
+             - revalidatePath('/pedidos/:id') quando order_id presente
+          d) UI src/app/(app)/pedidos/[id]/order-editor.tsx ganhou 3 novos
+             componentes internos seguindo layout EXATO de Freelances:
+             - OrderExpensesSection: form inline + lista + totais
+               Despesa/Lucro estimado (revenueTotal − expenses)
+             - OrderDetailsSection: Período (FreelanceDateRange) + Vencimento
+               + Origem lead (TagCombobox LEAD_SOURCES) + Segmento
+               (TagCombobox CLIENT_SEGMENTS). Auto-save via startTransition +
+               router.refresh().
+             - OrderPaymentsSection: toggleable form (valor/data/observação) +
+               lista verde com botão trash. Usa trigger do banco pra manter
+               orders.amount_paid sincronizado.
+          e) Repasses (OrderCostsSection existente) ganhou subtitle
+             "aluguel de gear, viagem cobrada, diária de assistente..." e
+             header estilizado no padrão Freelances.
+impacto:  Zero alteração em jobs/expenses/aggregators/narrativa/dashboard.
+          order_payments pré-existente NÃO foi modificado — apenas novo
+          trigger anexado. Migration roda sem downtime.
+gotcha:   order_payments.status é do tipo enum `payment_status` (não
+          `order_payment_status`). Descobri via pg_type/pg_enum após
+          enum_range(null::public.order_payment_status) retornar erro.
+          Sempre que criar trigger em tabela legada, listar colunas e
+          tipos exatos ANTES de escrever a função.
+gotcha2:  Shell cwd reseta entre comandos neste projeto. Sempre prefixar
+          com `cd "/Users/leleco/Documents/CLAUDE CODE/lumora-finance" &&`.
+validar:  tsc --noEmit exit 0, next build --webpack exit 0 (26 rotas),
+          commit 61f97cb pushed to main, deploy Vercel automático.
+          Backup backup-2026-04-22-0220-pre-pedidos-full/ salvo antes.
+risco:    Se usuário já tinha expenses antigas sem order_id, elas
+          continuam aparecendo em /expenses normalmente — coluna nova é
+          nullable e index é parcial. Nenhum retrocompatibility break.
+```
