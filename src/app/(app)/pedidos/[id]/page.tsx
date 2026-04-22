@@ -63,7 +63,8 @@ export default async function OrderDetailPage({
         costsTableMissing={costsRes.tableMissing}
         filesTableMissing={filesRes.tableMissing}
       />
-      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
+      {/* Alinhado com max-w do order-editor (max-w-4xl) */}
+      <div className="max-w-4xl mx-auto px-6 md:px-8 pb-10">
         <ContractEntryPoint
           originKind="order"
           originId={id}

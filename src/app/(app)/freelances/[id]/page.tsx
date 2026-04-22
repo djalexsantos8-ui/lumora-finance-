@@ -98,7 +98,8 @@ export default async function JobDetailPage({ params }: Props) {
         initialJobExpenses={(jobExpenses ?? []) as Expense[]}
         initialJobFiles={(jobFiles      ?? []) as JobFile[]}
       />
-      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
+      {/* Alinhado com max-w do job-detail (max-w-3xl) para margem/padding consistente */}
+      <div className="max-w-3xl mx-auto px-6 md:px-8 pb-10">
         <ContractEntryPoint
           originKind="freelance"
           originId={id}

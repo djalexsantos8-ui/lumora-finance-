@@ -44,7 +44,8 @@ export default async function RecurringDetailPage({
   return (
     <>
       <RecurringEditor item={data as RecurringRevenue} />
-      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
+      {/* Alinhado com max-w do recurring-editor (max-w-3xl) */}
+      <div className="max-w-3xl mx-auto px-6 md:px-8 pb-10">
         <ContractEntryPoint
           originKind="recurring"
           originId={id}
