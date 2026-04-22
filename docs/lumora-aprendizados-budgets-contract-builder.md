@@ -433,3 +433,63 @@ risco:    Se usuário já tinha expenses antigas sem order_id, elas
           continuam aparecendo em /expenses normalmente — coluna nova é
           nullable e index é parcial. Nenhum retrocompatibility break.
 ```
+
+---
+
+## 13. Fase 1c + 1d Pedidos — paridade Serviços/Repasses + Comprovante upload (2026-04-22)
+
+```
+data:     2026-04-22 madrugada-4
+fase:     1c (visual parity) + 1d (Comprovante no bloco Repasses)
+commits:  706925c (1c) + 7b7b235 (1d) — main
+contexto: Após 1b, usuário enviou screenshots dizendo "não ficou igual".
+          ItemsSection/CostItemsSection de Pedidos ainda usavam layout
+          antigo com header uppercase ("ITENS DO PEDIDO") e botão dashed
+          full-width "+ Adicionar". Depois feedback específico de que no
+          bloco "Repasses ao cliente" faltava o botão "Comprovante" para
+          anexar nota/recibo (que existe em Freelances).
+ação 1c:  Reescrito ItemsSection e CostItemsSection inteiros espelhando
+          ServiceTable e RepassTable do job-detail.tsx:
+          · Header em title-case ("Serviços" / "Repasses ao cliente") +
+            subtitle helper.
+          · Botão "+ Adicionar serviço" / "Adicionar repasse" no topo
+            direito (pill dourada, não full-width).
+          · Grid inline 80/1fr/56/84/84/28 para CATEGORIA/DESCRIÇÃO/QTD/
+            UNIT/TOTAL/trash.
+          · Empty state com mensagem explicativa contextual.
+          · Edição inline via click na linha + Enter/Esc/blur.
+          · Adicionada action updateOrderCostItem em order-items.ts
+            (faltava — só havia update para revenue items).
+ação 1d:  Três novos arquivos + wiring:
+          · src/lib/storage/order-file-upload.ts — mirror de
+            job-file-upload.ts. Reaproveita prepareJobFile (compressão
+            genérica client-side). Bucket: order-files.
+          · src/components/orders/order-file-upload-modal.tsx — mirror
+            portal modal de Freelances. Drag/drop, lista "enviados nesta
+            sessão", footer Adicionar mais/Concluir.
+          · src/components/orders/order-comprovantes-list.tsx — mirror
+            ComprovantesList. Embedded no card de Repasses, signed URL
+            via createOrderFileSignedUrl (TTL 1h), delete otimista com
+            rollback.
+          · order-editor.tsx: state uploadOpen, modal montado condicional
+            filesTableMissing, CostItemsSection ganhou props opcionais
+            files/onAddFile/onFileDeletedOptimistic/onFileDeleteRollback.
+            Botão "Comprovante" renderizado apenas se onAddFile presente.
+impacto:  Zero mudança de schema — bucket order-files, tabela order_files,
+          actions add/delete/createSignedUrl TODAS já existiam desde a
+          migration 20260421040000 (fase 1a). Só faltava a UI.
+gotcha:   JSX grouping — botões "Comprovante" + "Adicionar repasse"
+          precisam ficar em <div flex gap-1.5 shrink-0> para não quebrar
+          o flex layout do header (que tem um <div> do título à esquerda
+          e os botões à direita). Colocar os dois botões soltos sem
+          wrapper faz o header quebrar em linhas diferentes.
+validar:  tsc exit 0 (sem types novos necessários — OrderFile já existia),
+          next build exit 0, commit 7b7b235 pushed, curl em 12 rotas
+          principais 307 em <130ms. Usuário logado precisa testar:
+          1. Abrir /pedidos/<id> → ver bloco "Repasses ao cliente".
+          2. Clicar "Comprovante" → modal portal abre.
+          3. Drag/drop ou click para anexar PDF/JPG/PNG/HEIC.
+          4. Lista "Comprovantes" aparece abaixo do total.
+          5. Click no nome abre signed URL em nova aba.
+          6. Trash remove com toast + rollback se falhar.
+```
