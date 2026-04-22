@@ -18,7 +18,12 @@
 
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateClient, deleteClient, bulkDeleteClients } from '@/lib/actions/clients'
+import {
+  updateClient,
+  deleteClient,
+  bulkDeleteClients,
+  quickCreateClient,
+} from '@/lib/actions/clients'
 import { normalizeName } from '@/lib/utils/normalize-name'
 import type { Client } from '@/types/client'
 import {
@@ -38,6 +43,9 @@ export function ClientesClient({ initialClients }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
   const [confirming, setConfirming] = useState(false)
+  const [creating, setCreating]   = useState(false)
+  const [newName, setNewName]     = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const q = normalizeName(query)
@@ -83,6 +91,36 @@ export function ClientesClient({ initialClients }: Props) {
     setOpenId(null)
   }
 
+  function handleCreate() {
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      setCreateError('Digite o nome do cliente.')
+      return
+    }
+    setCreateError(null)
+    startTransition(async () => {
+      const res = await quickCreateClient(trimmed)
+      if (!res.success) {
+        setCreateError(res.message ?? 'Erro ao criar cliente.')
+        return
+      }
+      // Idempotente: se já existia, recebemos o existente. Evita duplicar na lista.
+      setClients(prev =>
+        prev.some(c => c.id === res.data.id) ? prev : [res.data, ...prev]
+      )
+      setOpenId(res.data.id)
+      setNewName('')
+      setCreating(false)
+      router.refresh()
+    })
+  }
+
+  function cancelCreate() {
+    setCreating(false)
+    setNewName('')
+    setCreateError(null)
+  }
+
   function handleBulkDelete() {
     if (selected.size === 0) return
     const ids = [...selected]
@@ -104,16 +142,74 @@ export function ClientesClient({ initialClients }: Props) {
 
   return (
     <div className="space-y-4 max-w-3xl">
-      {/* Busca */}
-      <div className="relative">
+      {/* Busca + Novo cliente */}
+      <div className="flex items-center gap-2">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar cliente…"
-          className="w-full bg-[#141414] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
+          className="flex-1 bg-[#141414] border border-[#2a2a2a] rounded-xl px-4 py-2.5 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
         />
+        {!creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="shrink-0 px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] transition-colors"
+          >
+            + Novo cliente
+          </button>
+        )}
       </div>
+
+      {/* Inline create row */}
+      {creating && (
+        <div className="rounded-2xl border border-[#D4A853]/30 bg-[#141414] p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleCreate()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancelCreate()
+                }
+              }}
+              autoFocus
+              placeholder="Nome do cliente"
+              className="flex-1 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={isPending || !newName.trim()}
+              className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] text-[#0a0a0a] disabled:opacity-60 transition-colors"
+            >
+              {isPending ? 'Criando…' : 'Criar'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelCreate}
+              disabled={isPending}
+              className="px-3 py-2 rounded-lg text-xs font-medium text-[#a3a3a3] hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+          {createError && (
+            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {createError}
+            </p>
+          )}
+          <p className="text-[11px] text-[#525252]">
+            Dica: clientes também nascem automaticamente ao criar um freelance/orçamento. Se o nome já existir, o cliente existente é reaproveitado.
+          </p>
+        </div>
+      )}
 
       {/* Toolbar (só aparece quando há clientes na listagem filtrada) */}
       {filtered.length > 0 && (
@@ -190,7 +286,7 @@ export function ClientesClient({ initialClients }: Props) {
         <div className="rounded-2xl border border-[#2a2a2a] bg-[#141414] p-8 text-center">
           <p className="text-sm text-[#737373]">
             {clients.length === 0
-              ? 'Nenhum cliente ainda. Eles aparecem aqui automaticamente quando você cadastra um job.'
+              ? 'Nenhum cliente ainda. Clique em “+ Novo cliente” ou cadastre um freelance/orçamento — o cliente nasce automaticamente.'
               : 'Nenhum cliente encontrado para essa busca.'}
           </p>
         </div>
