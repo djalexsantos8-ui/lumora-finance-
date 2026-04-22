@@ -44,15 +44,6 @@ import {
   deleteOrderCostItem,
 } from '@/lib/actions/order-items'
 import {
-  addOrderFile,
-  deleteOrderFile,
-  createOrderFileSignedUrl,
-} from '@/lib/actions/order-files'
-import {
-  ORDER_FILE_MIME_WHITELIST,
-  ORDER_FILE_MAX_FINAL_BYTES,
-} from '@/lib/order-files-constants'
-import {
   addOrderPayment,
   deleteOrderPayment,
 } from '@/lib/actions/order-payments'
@@ -62,7 +53,6 @@ import {
 } from '@/lib/actions/expenses'
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS } from '@/types/expense'
 import type { Expense, ExpenseCategory } from '@/types/expense'
-import { createClient } from '@/lib/supabase/client'
 import type {
   Order,
   OrderStatus,
@@ -120,9 +110,6 @@ const COST_CATEGORIES: { value: OrderCostCategory; label: string }[] = [
 const inputCls =
   'w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] ' +
   'focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors'
-
-const sectionTitle =
-  'text-[11px] font-semibold uppercase tracking-wider text-[#737373] mb-3'
 
 // ─── helpers inline (paridade ServiceTable / RepassTable do job-detail) ──
 const inputSm =
@@ -674,26 +661,6 @@ export default function OrderEditor({
           router.refresh()
         }}
       />
-
-      {/* ═══ Arquivos ═════════════════════════════════════════════════════ */}
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className={sectionTitle + ' mb-0'}>Arquivos</h2>
-          <span className="text-xs text-[#525252]">
-            {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'}
-          </span>
-        </div>
-
-        {filesTableMissing ? (
-          <MigrationPendingNotice section="arquivos" />
-        ) : (
-          <FilesSection
-            orderId={order.id}
-            files={files}
-            onChange={setFiles}
-          />
-        )}
-      </div>
 
       {/* Modal compartilhado de upload de comprovante (disparado pelo bloco Repasses) */}
       {!filesTableMissing && (
@@ -1386,150 +1353,6 @@ function CostItemsSection({
           onFileDeleteRollback={onFileDeleteRollback}
         />
       )}
-    </div>
-  )
-}
-
-// ─── Files Section ──────────────────────────────────────────────────────────
-
-function FilesSection({
-  orderId,
-  files,
-  onChange,
-}: {
-  orderId: string
-  files: OrderFile[]
-  onChange: (next: OrderFile[]) => void
-}) {
-  const [uploading, setUploading] = useState(false)
-  const [isPending, startTransition] = useTransition()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (!ORDER_FILE_MIME_WHITELIST.includes(file.type as (typeof ORDER_FILE_MIME_WHITELIST)[number])) {
-      toast.error(`Tipo não suportado: ${file.type}`)
-      return
-    }
-    if (file.size > ORDER_FILE_MAX_FINAL_BYTES) {
-      toast.error('Arquivo maior que 10 MB.')
-      return
-    }
-
-    setUploading(true)
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Não autorizado')
-
-      const { data: member } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle()
-      if (!member) throw new Error('Workspace não encontrado')
-
-      const ext = file.name.split('.').pop() || 'bin'
-      const key = `${member.workspace_id}/${orderId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-
-      const up = await supabase.storage.from('order-files').upload(key, file, {
-        cacheControl: '3600',
-        upsert: false,
-        contentType: file.type,
-      })
-      if (up.error) throw up.error
-
-      const res = await addOrderFile({
-        orderId,
-        storagePath: key,
-        fileName:    file.name,
-        mimeType:    file.type,
-        sizeBytes:   file.size,
-      })
-      if (!res.success) {
-        await supabase.storage.from('order-files').remove([key])
-        toast.error(res.message)
-        return
-      }
-      if (res.data) onChange([res.data as OrderFile, ...files])
-      toast.success('Arquivo enviado')
-    } catch (err) {
-      toast.error((err as Error).message ?? 'Erro no upload')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  async function handleOpen(f: OrderFile) {
-    const res = await createOrderFileSignedUrl(f.id)
-    if (!res.success) { toast.error(res.message); return }
-    window.open(res.url, '_blank', 'noopener,noreferrer')
-  }
-
-  function handleDelete(f: OrderFile) {
-    if (!confirm(`Remover "${f.file_name}"?`)) return
-    const optimistic = files.filter(x => x.id !== f.id)
-    onChange(optimistic)
-    startTransition(async () => {
-      const res = await deleteOrderFile(f.id)
-      if (!res.success) {
-        onChange(files)
-        toast.error(res.message)
-      } else {
-        toast.success('Arquivo removido')
-      }
-    })
-  }
-
-  return (
-    <div className="space-y-3">
-      {files.length > 0 && (
-        <ul className="divide-y divide-[#1f1f1f] border border-[#1f1f1f] rounded-lg overflow-hidden">
-          {files.map(f => (
-            <li key={f.id} className="flex items-center gap-3 px-4 py-3 bg-[#0a0a0a]">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-white truncate">{f.file_name}</div>
-                <div className="text-xs text-[#525252] mt-0.5">
-                  {(Number(f.size_bytes) / 1024 / 1024).toFixed(2)} MB · {f.mime_type}
-                </div>
-              </div>
-              <button
-                onClick={() => handleOpen(f)}
-                className="text-[11px] text-[#D4A853] hover:text-[#E8C47A] px-2 py-1 rounded transition-colors"
-              >
-                Abrir
-              </button>
-              <button
-                onClick={() => handleDelete(f)}
-                disabled={isPending}
-                className="text-[11px] text-red-400 hover:text-red-300 px-2 py-1 rounded transition-colors"
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        hidden
-        accept={ORDER_FILE_MIME_WHITELIST.join(',')}
-        onChange={handleUpload}
-      />
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-        className="w-full text-xs text-[#a3a3a3] hover:text-white border border-dashed border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg py-2.5 transition-colors disabled:opacity-60"
-      >
-        {uploading ? 'Enviando…' : '+ Anexar arquivo (PDF/imagem, até 10 MB)'}
-      </button>
     </div>
   )
 }
