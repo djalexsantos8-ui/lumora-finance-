@@ -700,17 +700,47 @@ export default function BudgetEditor({
               </div>
             </div>
 
-            {/* Prazo de pagamento — aparece no PDF e orienta o cliente */}
+            {/* Prazo de pagamento — aparece no PDF e orienta o cliente.
+                Pente fino Fase C (2026-04-22): presets rápidos espelhando
+                Freelances (upfront / 7d / 15d / 30d / 60d / 90d) + free
+                text mantido para condições compostas ("50% + 50%"). */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                 Prazo / condição de pagamento
                 <span className="text-[#525252] font-normal ml-1">(aparece no PDF)</span>
               </label>
+              <div className="flex gap-1.5 flex-wrap mb-2">
+                {([
+                  { label: 'À vista',       value: 'À vista'                           },
+                  { label: '7 dias',        value: '7 dias'                            },
+                  { label: '15 dias',       value: '15 dias'                           },
+                  { label: '30 dias',       value: '30 dias'                           },
+                  { label: '60 dias',       value: '60 dias'                           },
+                  { label: '90 dias',       value: '90 dias'                           },
+                  { label: '50% + 50%',     value: '50% na assinatura + 50% na entrega'},
+                ] as const).map((opt) => {
+                  const active = paymentTerm.trim() === opt.value
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      onClick={() => field(setPaymentTerm)(opt.value)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${
+                        active
+                          ? 'bg-[#D4A853]/10 border-[#D4A853]/50 text-[#E8C47A]'
+                          : 'bg-[#1c1c1c] border-[#2a2a2a] text-[#a3a3a3] hover:border-[#3a3a3a]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
               <input
                 type="text"
                 value={paymentTerm}
                 onChange={e => field(setPaymentTerm)(e.target.value)}
-                placeholder="Ex: 50% na assinatura + 50% na entrega · 30/60/90 · boleto"
+                placeholder="Ou escreva uma condição personalizada…"
                 className={inputCls}
               />
             </div>
