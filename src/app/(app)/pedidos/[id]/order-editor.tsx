@@ -249,6 +249,62 @@ export default function OrderEditor({
         </div>
       </div>
 
+      {/* ═══ 5 cards financeiros ═══════════════════════════════════════════
+          Espelha Freelances/job-detail.tsx. Visão imediata do estado financeiro:
+          ITENS DO PEDIDO (receita) · REPASSES (pass-through) · TOTAL (cliente
+          paga) · RECEBIDO · A RECEBER. Neutro quanto ao banco — usa revenueTotal
+          / costTotal calculados por trigger e amount_paid já presente no order. */}
+      {(() => {
+        const fin = {
+          revenue:  revenueTotal,
+          cost:     costTotal,
+          total:    revenueTotal + costTotal,
+          received: Number(form.amount_paid) || 0,
+        }
+        const due = Math.max(0, fin.total - fin.received)
+        const progressPct = fin.total > 0
+          ? Math.min(100, Math.round((fin.received / fin.total) * 100))
+          : 0
+        return (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+              <FinCardMini label="ITENS DO PEDIDO" value={fin.revenue} currency={form.currency}
+                color="text-white" tooltip="Total pelos seus itens/serviços." />
+              <FinCardMini label="REPASSES" value={fin.cost} currency={form.currency}
+                color="text-[#a3a3a3]" tooltip="Você paga e o cliente reembolsa. Neutro." />
+              <FinCardMini label="TOTAL" value={fin.total} currency={form.currency}
+                color="text-white"
+                tooltip="Itens + repasses. Total que o cliente paga."
+                sub={fin.cost > 0 ? `${formatCurrency(fin.revenue, form.currency)} + repasses` : undefined} />
+              <FinCardMini label="RECEBIDO" value={fin.received} currency={form.currency}
+                color={fin.received > 0 ? 'text-emerald-400' : 'text-[#525252]'}
+                sub={fin.total > 0 && fin.received > 0
+                  ? `${Math.round((fin.received / fin.total) * 100)}% do total`
+                  : undefined} />
+              <FinCardMini label="A RECEBER" value={due} currency={form.currency}
+                color={due > 0 ? 'text-[#D4A853]' : 'text-emerald-400'} />
+            </div>
+            {fin.total > 0 && form.status !== 'cancelled' && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-[#525252]">
+                    {formatCurrency(fin.received, form.currency)} recebido de {formatCurrency(fin.total, form.currency)}
+                  </span>
+                  <span className="text-[10px] text-[#525252]">{progressPct}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-[#1c1c1c] rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-500 ${
+                    progressPct === 100 ? 'bg-emerald-500'
+                    : progressPct > 0   ? 'bg-[#D4A853]'
+                    :                     'bg-[#2a2a2a]'
+                  }`} style={{ width: `${progressPct}%` }} />
+                </div>
+              </div>
+            )}
+          </>
+        )
+      })()}
+
       {/* ═══ Card Principal ═══════════════════════════════════════════════ */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 space-y-5 mb-6">
         {/* Título */}
@@ -517,12 +573,25 @@ export default function OrderEditor({
         )}
       </div>
 
-      {/* ═══ Custos ═══════════════════════════════════════════════════════ */}
+      {/* ═══ Repasses ao cliente ═══════════════════════════════════════════
+          Renomeado de "Custos internos" (Fase 1 Pedidos mirror 2026-04-22):
+          espelha a lógica de Freelances — o usuário paga um fornecedor (ex:
+          equipamento alugado, equipe externa, viagem) e o cliente reembolsa.
+          Neutro para o ganho do usuário. Comprovantes sobem via seção Arquivos
+          logo abaixo. */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className={sectionTitle + ' mb-0'}>Custos internos</h2>
+          <div className="flex items-center gap-2">
+            <h2 className={sectionTitle + ' mb-0'}>Repasses ao cliente</h2>
+            <span
+              title="Você paga e o cliente reembolsa. Neutro para seu ganho."
+              className="w-3.5 h-3.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[8px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
+            >
+              ?
+            </span>
+          </div>
           <span className="text-xs text-[#525252]">
-            {costItems.length} {costItems.length === 1 ? 'custo' : 'custos'}
+            {costItems.length} {costItems.length === 1 ? 'repasse' : 'repasses'}
           </span>
         </div>
 
@@ -1078,6 +1147,37 @@ function FilesSection({
       >
         {uploading ? 'Enviando…' : '+ Anexar arquivo (PDF/imagem, até 10 MB)'}
       </button>
+    </div>
+  )
+}
+
+// ─── FinCardMini ────────────────────────────────────────────────────────────
+// Versão leve do FinCard de job-detail.tsx. Sem animação de flash (menos
+// state, menos re-render) — o pedido não tem item-level live sync tão
+// agressivo quanto o freelance. Se futuramente precisar de flash, basta
+// promover para usar useEffect+ref como no job-detail.
+
+function FinCardMini({
+  label, value, currency, color, sub, tooltip,
+}: {
+  label: string; value: number; currency: string; color: string
+  sub?: string; tooltip?: string
+}) {
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
+      <div className="flex items-center gap-1 mb-1">
+        <p className="text-[10px] font-semibold text-[#525252] tracking-widest">{label}</p>
+        {tooltip && (
+          <span title={tooltip}
+            className="w-3.5 h-3.5 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[8px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none">
+            ?
+          </span>
+        )}
+      </div>
+      <p className={`text-base font-bold ${color}`}>
+        {formatCurrency(value, currency)}
+      </p>
+      {sub && <p className="text-[10px] text-[#525252] mt-0.5">{sub}</p>}
     </div>
   )
 }
