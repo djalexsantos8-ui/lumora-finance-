@@ -65,16 +65,20 @@ export async function resolveContractContext(
 
   if (input.originKind && input.originId) {
     if (input.originKind === 'budget') {
+      // budgets NÃO tem coluna client_id nem FK para clients — não dá pra
+      // embedar `client:clients(*)` (PostgREST retorna "Could not find a
+      // relationship"). Selecionamos só as colunas que existem de fato.
+      // Cliente vem do texto livre (client_name) e o Builder pede o restante.
       const { data: b } = await supabase
         .from('budgets')
-        .select('*, client:clients(*)')
+        .select('*')
         .eq('id', input.originId)
         .eq('workspace_id', input.workspaceId)
         .maybeSingle()
 
       if (b) {
-        originClientId = b.client_id || (b.client?.id ?? null)
-        originClientName = b.client_name || b.client?.name || null
+        originClientId = null
+        originClientName = b.client_name || null
         setVal('titulo_projeto',     b.title, 'orçamento')
         setVal('descricao_projeto',  b.project_description, 'orçamento')
         setVal('escopo_entregaveis', b.deliverables, 'orçamento')
