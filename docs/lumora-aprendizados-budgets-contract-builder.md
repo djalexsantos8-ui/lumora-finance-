@@ -332,3 +332,40 @@ ação:     a) Primeiro: backup completo em /backup-2026-04-22-0005-reta-final/
 validar:  Todos os 14 deploys sucessivos fecharam verdes. curl em 14 rotas
           de produção retornou 200 em 155-882ms (média ~300ms).
 ```
+
+### Fase 4 — Receita recorrente: histórico de cobranças + PDF mensal (commit `f3d274c`)
+
+```
+fato:     Receita recorrente existia apenas como "regra" (valor + dia de
+          cobrança), sem histórico de emissões. Usuário não tinha registro
+          mensal nem PDF para enviar ao cliente.
+ação:     a) Migration 100% ADITIVA (zero ALTER em tabelas existentes):
+             nova tabela recurring_revenue_invoices com unique
+             (recurring_revenue_id, period_year, period_month) → idempotência
+             garantida por banco. RLS via workspace_members status='active'.
+          b) Server actions em src/lib/actions/recurring-invoices.ts com
+             snapshot pattern: title/amount/client_name são COPIADOS da
+             recorrência no momento da emissão. Se o valor mudar depois,
+             invoices antigas ficam imutáveis → histórico confiável.
+          c) PDF gerado server-side com @react-pdf/renderer (dynamic import
+             pra não bloatar cold start). Rota Node runtime:
+             /api/recurring-revenues/:id/invoices/:invoiceId/pdf. Palette
+             alinhada com budget/contract (GOLD #C49A2C + DARK #1a1a1a).
+          d) Seção "Cobranças mensais" no editor exibe form de geração
+             (select mês/ano) + lista de invoices com status pill, totais
+             faturado/recebido, ações marcar pago/reabrir/excluir/baixar PDF.
+impacto:  Dashboard/aggregators/narrativa NÃO foram tocados. Migration pode
+          rodar a qualquer hora sem downtime — é só CREATE TABLE.
+gotcha:   WorkspaceSettings usa prefixo `company_*` (company_logo_url,
+          company_cnpj, company_cpf, company_email, company_legal_name).
+          Tentar `settings.logo_url` dá tsc error. Sempre ver o tipo em
+          src/types/workspace-settings.ts antes de usar.
+validar:  Fluxo completo testado: migration aplicada via Supabase MCP (18
+          colunas confirmadas), tsc exit 0, next build exit 0, rota
+          /api/.../pdf listada no output do build. Idempotência testada
+          por tentativa dupla de generateInvoice(mesmo ano/mês) → devolve
+          existing sem erro.
+risco:    PDF com company_logo_url precisa de imagem acessível publicamente
+          (react-pdf faz fetch server-side). Se logo for protegido por
+          RLS/assinatura expirada, PDF falha — fallback mostra nome texto.
+```
