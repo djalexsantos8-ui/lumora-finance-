@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
+import AppFooter from '@/components/layout/app-footer'
+import FeedbackWidget from '@/components/feedback/feedback-widget'
 
 export default async function AppLayout({
   children,
@@ -95,7 +97,12 @@ export default async function AppLayout({
   return (
     <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
       <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto flex flex-col">
+        <div className="flex-1">{children}</div>
+        <AppFooter />
+      </main>
+      {/* Widget flutuante de feedback — disponível em toda área autenticada */}
+      <FeedbackWidget />
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { APP_FOOTER_LABEL } from '@/lib/app-version'
 
 interface Props {
   email: string
@@ -12,6 +13,7 @@ interface Props {
 const NAV = [
   { href: '/admin',          label: 'Visão geral' },
   { href: '/admin/users',    label: 'Usuários' },
+  { href: '/admin/feedback', label: 'Feedback' },
   { href: '/admin/coupons',  label: 'Cupons' },
   { href: '/admin/grants',   label: 'Grants de acesso' },
 ] as const
@@ -71,8 +73,9 @@ export default function AdminShell({ email, grantType, children }: Props) {
         {children}
       </main>
 
-      <footer className="border-t border-[#1a1a1a] py-4 text-center text-[10px] uppercase tracking-wider text-[#525252]">
-        Área restrita · acesso gerenciado por admin_grants
+      <footer className="border-t border-[#1a1a1a] py-4 text-center text-[10px] uppercase tracking-wider text-[#525252] space-y-1">
+        <div>Área restrita · acesso gerenciado por admin_grants</div>
+        <div className="normal-case tracking-wide text-[#3f3f46]">{APP_FOOTER_LABEL}</div>
       </footer>
     </div>
   )
