@@ -12,17 +12,20 @@ import { formatDate, getCurrencyDecimals } from '@/lib/utils/format'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-function formatMoney(value: number, currency = 'BRL'): string {
-  const digits = getCurrencyDecimals(currency)
+function formatMoney(value: number | string | null | undefined, currency = 'BRL'): string {
+  const cur = (currency && typeof currency === 'string' ? currency : 'BRL').toUpperCase()
+  const digits = getCurrencyDecimals(cur)
+  const n = value == null ? 0 : Number(value)
+  const safe = Number.isFinite(n) ? n : 0
   try {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
-      currency,
+      currency: cur,
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
-    }).format(value)
+    }).format(safe)
   } catch {
-    return `${currency} ${value.toFixed(digits)}`
+    return `${cur} ${safe.toFixed(digits)}`
   }
 }
 
