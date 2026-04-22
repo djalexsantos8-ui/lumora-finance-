@@ -74,6 +74,8 @@ import type {
   OrderPayment,
 } from '@/types/order'
 import { OrderStatusBadge } from '../pedidos-list'
+import { OrderFileUploadModal } from '@/components/orders/order-file-upload-modal'
+import { OrderComprovantesList } from '@/components/orders/order-comprovantes-list'
 
 interface Props {
   order:       Order
@@ -197,6 +199,9 @@ export default function OrderEditor({
 
   const [revenueTotal, setRevenueTotal] = useState(Number(order.revenue_total ?? 0))
   const [costTotal, setCostTotal]       = useState(Number(order.cost_total ?? 0))
+
+  // Modal compartilhado de upload (aberto pelo botão "Comprovante" no bloco Repasses)
+  const [uploadOpen, setUploadOpen]     = useState(false)
 
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError]     = useState<string | null>(null)
@@ -624,6 +629,14 @@ export default function OrderEditor({
             setCostItems(next)
             if (order) setCostTotal(Number(order.cost_total ?? 0))
           }}
+          files={files}
+          onAddFile={filesTableMissing ? undefined : () => setUploadOpen(true)}
+          onFileDeletedOptimistic={(fileId) =>
+            setFiles(prev => prev.filter(f => f.id !== fileId))
+          }
+          onFileDeleteRollback={(file) =>
+            setFiles(prev => [file, ...prev.filter(f => f.id !== file.id)])
+          }
         />
       )}
 
@@ -710,6 +723,17 @@ export default function OrderEditor({
           />
         )}
       </div>
+
+      {/* Modal compartilhado de upload de comprovante (disparado pelo bloco Repasses) */}
+      {!filesTableMissing && (
+        <OrderFileUploadModal
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          workspaceId={order.workspace_id}
+          orderId={order.id}
+          onUploaded={(file) => setFiles(prev => [file, ...prev])}
+        />
+      )}
 
       {/* Modal de confirmação delete */}
       {confirmingDelete && (
@@ -1076,12 +1100,20 @@ function CostItemsSection({
   items,
   total,
   onChange,
+  files,
+  onAddFile,
+  onFileDeletedOptimistic,
+  onFileDeleteRollback,
 }: {
   orderId:  string
   currency: string
   items:    OrderCostItem[]
   total:    number
   onChange: (next: OrderCostItem[], order?: Order) => void
+  files?:   OrderFile[]
+  onAddFile?: () => void
+  onFileDeletedOptimistic?: (fileId: string) => void
+  onFileDeleteRollback?:    (file: OrderFile) => void
 }) {
   const [adding,       setAdding]       = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -1195,17 +1227,34 @@ function CostItemsSection({
               : 'aluguel de gear, viagem cobrada, diária de assistente...'}
           </p>
         </div>
-        <button
-          type="button"
-          onMouseDown={e => e.preventDefault()}
-          onClick={handleHeaderButtonClick}
-          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Adicionar repasse
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onAddFile && (
+            <button
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={onAddFile}
+              title="Anexar comprovante (recibo, nota, foto do pagamento)"
+              className="flex items-center gap-1.5 text-xs font-medium text-[#a3a3a3] hover:text-white transition-colors px-2.5 py-1.5 rounded-lg border border-[#2a2a2a] hover:border-[#3a3a3a] hover:bg-[#1c1c1c]"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              Comprovante
+            </button>
+          )}
+          <button
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={handleHeaderButtonClick}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Adicionar repasse
+          </button>
+        </div>
       </div>
 
       {(items.length > 0 || adding) && (
@@ -1356,6 +1405,15 @@ function CostItemsSection({
           <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
           <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
         </div>
+      )}
+
+      {/* Comprovantes anexados (nota, recibo, foto do pagamento) */}
+      {files && files.length > 0 && onFileDeletedOptimistic && onFileDeleteRollback && (
+        <OrderComprovantesList
+          files={files}
+          onFileDeletedOptimistic={onFileDeletedOptimistic}
+          onFileDeleteRollback={onFileDeleteRollback}
+        />
       )}
     </div>
   )
