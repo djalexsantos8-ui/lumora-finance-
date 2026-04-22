@@ -4,6 +4,10 @@ import { CONTRACT_TYPES_LIST } from '@/lib/contracts/catalog'
 
 export const metadata = { title: 'Contratos — Lumora Finance' }
 
+// Auth-gated: sempre dinâmico (depende de cookies do usuário).
+// Evita warning de "Dynamic server usage" durante o build do Next 16.
+export const dynamic = 'force-dynamic'
+
 // ─── Contratos V2 — Builder real ────────────────────────────────────────────
 //
 // V1 (galeria de templates) → V2 (Contract Builder integrado):
