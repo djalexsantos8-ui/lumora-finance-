@@ -256,7 +256,13 @@ export default function RecurringEditor({ item }: Props) {
             </select>
           </div>
           <div className="col-span-2">
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Valor por cobrança</label>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">
+              {form.frequency === 'monthly' ? 'Valor da mensalidade' :
+               form.frequency === 'weekly'  ? 'Valor semanal' :
+               form.frequency === 'quarterly' ? 'Valor trimestral' :
+               form.frequency === 'yearly'  ? 'Valor anual' :
+               'Valor por cobrança'}
+            </label>
             <input
               type="number"
               step="0.01"
@@ -283,19 +289,25 @@ export default function RecurringEditor({ item }: Props) {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Dia de cobrança (1-31)</label>
-            <input
-              type="number"
-              min="1"
-              max="31"
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">
+              Dia da cobrança
+              <span className="text-[#525252]"> (1-31)</span>
+            </label>
+            <select
               value={form.billing_day ?? ''}
               onChange={e => setForm(f => ({
                 ...f,
                 billing_day: e.target.value ? Number(e.target.value) : null,
               }))}
               className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
-              placeholder="—"
-            />
+            >
+              <option value="">— Definir depois —</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                <option key={d} value={d}>
+                  Dia {d}{d === 1 ? ' (início do mês)' : d === 15 ? ' (meio do mês)' : d >= 28 ? ' (final do mês)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -311,7 +323,9 @@ export default function RecurringEditor({ item }: Props) {
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Próxima cobrança</label>
+            <label className="block text-xs text-[#a3a3a3] mb-1.5">
+              {form.frequency === 'monthly' ? 'Próxima mensalidade' : 'Próxima cobrança'}
+            </label>
             <input
               type="date"
               value={form.next_billing_at}
