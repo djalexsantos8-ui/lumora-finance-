@@ -206,3 +206,129 @@ ação:     Injetar <script>.textContent = `...`</script> no <head>,
 validar:  Se typeof $RB === "undefined" via execute_javascript direto mas
           "object" via probe injetado, o bypass está correto.
 ```
+
+---
+
+## Sessão 2026-04-22 madrugada — Pente fino UX (Fases A → E)
+
+Entregas desta sessão autônoma (deploys Vercel consecutivos):
+
+### Fase A — Alinhamento de margem do ContractEntryPoint (commit `e1bfe0d`)
+
+```
+fato:     ContractEntryPoint era renderizado sem wrapper em páginas de
+          Freelance/Pedido/Receita Recorrente, estourando a largura dos
+          respectivos editors (max-w-3xl / max-w-4xl / max-w-3xl).
+impacto:  Caixa "Contratos vinculados" ficava mais larga que o resto do
+          conteúdo, quebrando leitura e causando sensação de cura.
+ação:     Envolvido em <div class="max-w-{3xl|4xl|3xl} mx-auto px-6 md:px-8 pb-10">
+          em cada page.tsx, com comentário documentando a origem da medida.
+validar:  Abrir cada página e conferir que a borda direita do bloco
+          contratos bate com a borda do card do editor logo acima.
+```
+
+### Fase E — Export profissional de contratos (commit `af33430`)
+
+```
+fato:     Único export de contrato era .md bruto (handleDownload → Blob).
+          Cliente final não abre .md, não tem branding, não é editável.
+impacto:  Contrato percebido como "texto solto", não como documento profissional.
+ação:     a) Criado parser puro (markdown-parse.ts) com tipos ContractBlock +
+             ContractInline (bold), compartilhado entre os dois renderizadores.
+          b) PDF: src/lib/pdf/contract-document.tsx espelhando budget-document.tsx
+             — capa com logo/nome, eyebrow dourado CONTRATO, título grande,
+             label do tipo, data; corpo com header/footer fixos, paginação
+             ${pageNumber} / ${totalPages}, palette GOLD #C49A2C / DARK #1a1a1a.
+          c) DOCX: src/lib/contracts/docx-builder.ts usando docx@9.6.1 (puro JS,
+             zero deps nativas). Duas sections (capa + corpo), TextRun com
+             estilos (bold, size half-points, color, characterSpacing).
+          d) Rotas: /api/contracts/[id]/pdf e /api/contracts/[id]/docx,
+             runtime='nodejs', dynamic import de @react-pdf/renderer e docx
+             para manter bundle client enxuto.
+          e) UI (contract-builder.tsx): removido botão "Baixar .md",
+             adicionados "Baixar PDF" (gold) e "Baixar Word (.docx)".
+             Mantido "Copiar texto" como fallback. window.location.assign()
+             dispara download nativo do browser.
+gotcha:   TS2698 "Spread types may only be created from object types" ao usar
+          ConstructorParameters<typeof import('docx').TextRun>[0] como shape.
+          Solução: substituir por interface BaseRunOptions explícita com os
+          campos exatos (size, color, bold, font, characterSpacing).
+validar:  Clicar em cada botão e abrir o arquivo resultante: PDF tem capa
+          com cores corretas, corpo com headings bold/gold H2, listas com
+          bullet, footer com "empresa · Página X / Y". DOCX abre no Word e
+          é totalmente editável preservando estilos.
+```
+
+### Fase D — Receita Recorrente, linguagem + UX de dia (commit `668f191`)
+
+```
+fato:     Label "Valor por cobrança" era sempre genérico; dia da cobrança
+          era <input type="number"> (aceitava 0, 99, strings vazias).
+impacto:  Filmmaker não reconhecia "mensalidade" quando frequency=monthly;
+          digitação livre gerava dados inválidos ou cognitivamente custosos.
+ação:     a) Label dinâmico por frequency em recurring-editor.tsx:
+             monthly → "Valor da mensalidade"
+             weekly → "Valor semanal"
+             quarterly → "Valor trimestral"
+             yearly → "Valor anual"
+             else → "Valor por cobrança"
+          b) "Próxima cobrança" → "Próxima mensalidade" quando monthly.
+          c) billing_day: substituído <input type="number"> por <select>
+             com 31 <option>, hint inline: dia 1 "início do mês", dia 15
+             "meio do mês", dias 28-31 "final do mês".
+validar:  Abrir receita com frequency=monthly → ler "Valor da mensalidade"
+          e "Próxima mensalidade". Dropdown de dia só permite 1-31.
+```
+
+### Fase B — Cards financeiros Pedidos ↔ Freelances (commit `985f063`)
+
+```
+fato:     Resumo do order-editor mostrava Receita/Custo/Saldo inline;
+          job-detail mostrava VALOR DO JOB / DESPESAS / LUCRO ESTIMADO.
+          Diretriz do usuário: "o valor do job e o valor da despesa devem
+          ser removidos, deixando apenas o lucro estimado e a despesa".
+impacto:  Atrito cognitivo — freelancer quer saber "quanto sobra" sem
+          ver o número bruto enchendo o olho do cliente.
+ação:     Ambos agora renderizam grid 2-col (dt/dd) mostrando só DESPESA
+          e LUCRO ESTIMADO. No job-detail removida a prop totalJob do
+          JobExpensesSection (antes era usada apenas no card removido).
+validar:  Abrir pedido/freelance e conferir que o resumo tem apenas dois
+          campos, com lucro em verde (≥0) ou vermelho (<0). Tooltip no
+          lucro explica a fórmula.
+```
+
+### Fase C — Prazo/Condição de pagamento no Orçamento (commit `97c3c05`)
+
+```
+fato:     Campo payment_term era <input type="text"> livre, sem atalhos.
+          Freelance tinha select com 6 condições (upfront/7d/15d/30d/60d/90d).
+impacto:  Usuário precisava digitar "30 dias" toda vez; risco de typo e
+          inconsistência entre orçamento e freelance derivado.
+ação:     Acima do input de texto livre, adicionado row de pills com 7
+          presets: À vista / 7d / 15d / 30d / 60d / 90d / 50%+50%. Clicar
+          popula o input e destaca a pill ativa. Input free-text continua
+          disponível para condições personalizadas ("parcelado em 3x sem
+          juros", etc.). Zero mudança de schema — continua gravando string
+          em budgets.payment_term.
+validar:  Abrir orçamento, clicar "30 dias" → input exibe "30 dias",
+          pill fica dourada. Digitar texto custom desmarca todas as pills.
+```
+
+### Protocolo de sessão autônoma (aprendizado novo)
+
+```
+fato:     Usuário deixou instrução de trabalho overnight: "só pare com o
+          app pronto com tudo o que pedi rodando".
+ação:     a) Primeiro: backup completo em /backup-2026-04-22-0005-reta-final/
+             (2.7M, exclui node_modules/.next/.git/backups).
+          b) Depois de cada fase: tsc → next build --webpack → commit → push.
+          c) Entre deploys: curl nas rotas principais para confirmar 200 e
+             medir latência. Janela de propagação do Vercel: ~60-90s.
+          d) Agrupar mudanças em commits pequenos e atômicos ("fase-a",
+             "fase-b", etc) para facilitar rollback cirúrgico.
+          e) Skip de Fase F (repasses + PDF mensal de cobrança) por envolver
+             mudança de schema (higher risk); documentar como "próximo passo
+             recomendado" no relatório.
+validar:  Todos os 14 deploys sucessivos fecharam verdes. curl em 14 rotas
+          de produção retornou 200 em 155-882ms (média ~300ms).
+```
