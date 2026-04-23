@@ -193,10 +193,15 @@ async function convertToOrder(
       lead_source:         budget.lead_source ?? null,
       project_description: budget.project_description ?? null,
       deliverables:        budget.deliverables ?? null,
+      // Multi-datas: propaga o mesmo padrão. Se o budget é multi-day,
+      // event_date leva o início; orders ainda não tem event_date_end próprio,
+      // então delivery_date passa a representar o fim. Se single, ambos iguais.
       event_date:          budget.event_date ?? null,
-      notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,
+      notes_internal:      budget.is_multi_day && budget.event_date_end && budget.event_date_end !== budget.event_date
+        ? `Convertido do orçamento "${budget.title}" em ${today}. Período: ${budget.event_date} a ${budget.event_date_end}.`
+        : `Convertido do orçamento "${budget.title}" em ${today}.`,
       order_date:          today,
-      delivery_date:       budget.event_date ?? null,
+      delivery_date:       budget.event_date_end ?? budget.event_date ?? null,
       currency:            budget.currency,
       amount:              budget.total,
       status:              'in_progress',
@@ -271,7 +276,15 @@ async function convertToFreelance(
       payment_condition: 'upfront',
       currency:          budget.currency,
       total_value:       budget.total,
+      // Multi-datas 2026-04-23: propaga padrão pra jobs (que já suporta as 4
+      // colunas). Se o budget é single, job fica single também. Se multi,
+      // job nasce com período correto (igual ao FreelanceDateRange manual).
       job_date:          budget.event_date || today,
+      job_date_start:    budget.event_date || today,
+      job_date_end:      budget.is_multi_day && budget.event_date_end
+        ? budget.event_date_end
+        : (budget.event_date || today),
+      is_multi_day:      !!(budget.is_multi_day && budget.event_date_end && budget.event_date_end !== budget.event_date),
       notes:             `Convertido do orçamento "${budget.title}" em ${today}.`,
       budget_id:         budget.id,
     })

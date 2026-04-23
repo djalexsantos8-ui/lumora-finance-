@@ -18,7 +18,8 @@
  *     segment:             string | null  (da lista canonical)
  *     lead_source:         string | null  (da lista canonical)
  *     payment_term:        string | null
- *     event_date_hint:     string | null  (YYYY-MM-DD ou null)
+ *     event_date_hint:     string | null  (YYYY-MM-DD início ou null)
+ *     event_date_end_hint: string | null  (YYYY-MM-DD fim — só se multi-dia)
  *     intended_destination: 'freelance' | 'order' | 'recurring' | null
  *     rationale:           string  (porquê o modelo sugeriu isso)
  *   }
@@ -49,7 +50,8 @@ export type GenerateBudgetFieldsResult =
         segment:               string | null
         lead_source:           string | null
         payment_term:          string | null
-        event_date_hint:       string | null
+        event_date_hint:       string | null   // ISO YYYY-MM-DD = início (ou data única)
+        event_date_end_hint:   string | null   // ISO YYYY-MM-DD = fim (só se multi-dia)
         intended_destination:  'freelance' | 'order' | 'recurring' | null
         rationale:             string
       }
@@ -78,6 +80,7 @@ const BUDGET_JSON_SCHEMA = {
       lead_source:          { type: ['string', 'null'] },
       payment_term:         { type: ['string', 'null'] },
       event_date_hint:      { type: ['string', 'null'] },
+      event_date_end_hint:  { type: ['string', 'null'] },
       intended_destination: {
         type: ['string', 'null'],
         enum: ['freelance', 'order', 'recurring', null],
@@ -87,7 +90,8 @@ const BUDGET_JSON_SCHEMA = {
     required: [
       'title', 'client_name', 'project_description', 'deliverables',
       'internal_notes', 'segment', 'lead_source', 'payment_term',
-      'event_date_hint', 'intended_destination', 'rationale',
+      'event_date_hint', 'event_date_end_hint',
+      'intended_destination', 'rationale',
     ],
   },
 }
@@ -228,7 +232,13 @@ OUTROS CAMPOS
 • title: frase descritiva curta (cliente + tipo). Ex: "Casamento João & Maria · Cobertura completa".
 • client_name: extrair do briefing; se não mencionado, string vazia.
 • payment_term: condição de pagamento sugerida (ex: "50% na assinatura + 50% na entrega"). Razoável pro tipo se o briefing não fala.
-• event_date_hint: ISO YYYY-MM-DD se o briefing cita. Senão null.
+• event_date_hint: ISO YYYY-MM-DD do INÍCIO do evento se o briefing cita. Senão null.
+• event_date_end_hint: ISO YYYY-MM-DD do FIM do evento SE, e somente se, o briefing deixar claro que o projeto ocorre em MAIS DE UM DIA. Caso seja um único dia, use null.
+   – Se o briefing listar vários dias (ex: "dias 07, 08, 09, 14, 15 e 16 de maio"), use o PRIMEIRO dia citado em event_date_hint e o ÚLTIMO em event_date_end_hint, mesmo que os dias do meio não sejam consecutivos. O produto tratará como período contínuo entre início e fim.
+   – Se o briefing diz "de 10 a 15 de maio" → event_date_hint="2026-05-10", event_date_end_hint="2026-05-15".
+   – Se diz apenas "10 de maio" ou "dia 10" → event_date_end_hint=null.
+   – Se não cita nenhuma data → ambos null.
+   – event_date_end_hint JAMAIS pode ser anterior ou igual a event_date_hint. Em dúvida, retorne null.
 • intended_destination: 'freelance' (trabalho único com diárias/equipe), 'order' (pacote fechado/produto), 'recurring' (mensalidade/contrato contínuo). Ambíguo → null.
 • rationale: 1 frase explicando as escolhas principais (para o usuário poder ajustar rapidamente).
 
@@ -280,6 +290,7 @@ Gere os campos estruturados.`
     lead_source?:          string | null
     payment_term?:         string | null
     event_date_hint?:      string | null
+    event_date_end_hint?:  string | null
     intended_destination?: 'freelance' | 'order' | 'recurring' | null
     rationale?:            string
   }
@@ -296,6 +307,12 @@ Gere os campos estruturados.`
   }
 
   // Normalização defensiva: garantir strings seguras e enum válido.
+  const startHint = sanitizeDate(parsed.event_date_hint ?? null)
+  const rawEndHint = sanitizeDate(parsed.event_date_end_hint ?? null)
+  // Coerção de segurança: fim só é válido se depois do início (defense in depth
+  // caso o modelo alucine um intervalo invertido mesmo após a regra no prompt).
+  const endHint = startHint && rawEndHint && rawEndHint > startHint ? rawEndHint : null
+
   const fields: (GenerateBudgetFieldsResult & { success: true })['fields'] = {
     title:                (parsed.title ?? '').trim(),
     client_name:          (parsed.client_name ?? '').trim(),
@@ -305,7 +322,8 @@ Gere os campos estruturados.`
     segment:              parsed.segment ? parsed.segment.trim() || null : null,
     lead_source:          parsed.lead_source ? parsed.lead_source.trim() || null : null,
     payment_term:         parsed.payment_term ? parsed.payment_term.trim() || null : null,
-    event_date_hint:      sanitizeDate(parsed.event_date_hint ?? null),
+    event_date_hint:      startHint,
+    event_date_end_hint:  endHint,
     intended_destination: parsed.intended_destination === 'freelance'
       || parsed.intended_destination === 'order'
       || parsed.intended_destination === 'recurring'

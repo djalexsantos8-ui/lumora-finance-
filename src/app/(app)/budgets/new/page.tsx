@@ -56,6 +56,8 @@ export default async function NewBudgetPage() {
     project_description: null,
     deliverables:        null,
     event_date:          null,
+    event_date_end:      null,
+    is_multi_day:        false,
     valid_until:         null,
     status:              'draft',
     currency:            'BRL',

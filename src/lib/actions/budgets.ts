@@ -73,6 +73,12 @@ export async function createBudget(
     project_description?:   string
     deliverables?:          string
     event_date?:            string
+    // ── Multi-datas 2026-04-23 — adapter {date_start, date_end} espelha jobs.
+    // Quando ambos vierem: event_date=start, event_date_end=end (se > start),
+    // is_multi_day=true. Se só vier date_start (ou date_end vazio) é single-day.
+    // event_date "cru" ainda é aceito como fallback pra callers legados.
+    date_start?:            string | null
+    date_end?:              string | null
     valid_until?:           string
     currency?:              string
     notes_internal?:        string
@@ -113,6 +119,24 @@ export async function createBudget(
       ? fields.client_id
       : (resolvedClient && 'id' in resolvedClient ? (resolvedClient as { id: string }).id : null)
 
+  // ── Multi-datas adapter — mesma lógica de updateJob({date_start, date_end})
+  // Prioridade: date_start/date_end (explicita) > event_date (legado/caller raso).
+  let insertEventDate: string | null = null
+  let insertEventDateEnd: string | null = null
+  let insertIsMultiDay = false
+  if (fields.date_start !== undefined) {
+    const start = fields.date_start || null
+    const rawEnd = fields.date_end ?? null
+    const safeEnd = start && rawEnd && rawEnd > start ? rawEnd : null
+    insertEventDate    = start
+    insertEventDateEnd = safeEnd // null quando single-day
+    insertIsMultiDay   = safeEnd !== null
+  } else if (fields.event_date !== undefined) {
+    insertEventDate    = fields.event_date || null
+    insertEventDateEnd = null
+    insertIsMultiDay   = false
+  }
+
   const { data, error } = await supabase
     .from('budgets')
     .insert({
@@ -125,7 +149,9 @@ export async function createBudget(
       lead_source:         fields.lead_source?.trim() || null,
       project_description: fields.project_description?.trim() || null,
       deliverables:        fields.deliverables?.trim() || null,
-      event_date:          fields.event_date || null,
+      event_date:          insertEventDate,
+      event_date_end:      insertEventDateEnd,
+      is_multi_day:        insertIsMultiDay,
       valid_until:         fields.valid_until || null,
       status:              'draft',
       currency:            fields.currency || 'BRL',
@@ -157,6 +183,9 @@ export async function updateBudgetInfo(
     project_description?:   string
     deliverables?:          string
     event_date?:            string
+    // Adapter unificado multi-datas (preferir esses campos, não event_date cru).
+    date_start?:            string | null
+    date_end?:              string | null
     valid_until?:           string
     currency?:              string
     notes_internal?:        string
@@ -212,8 +241,28 @@ export async function updateBudgetInfo(
     payload.project_description = fields.project_description.trim() || null
   if (fields.deliverables !== undefined)
     payload.deliverables = fields.deliverables.trim() || null
-  if (fields.event_date !== undefined)
-    payload.event_date = fields.event_date || null
+
+  // ── Multi-datas adapter — sincroniza 3 colunas atomicamente. Se o caller
+  // mandar {date_start, date_end}, ele vence event_date cru.
+  // Semântica:
+  //   date_start null/vazio  → limpa todas (sem data)
+  //   date_start + sem end   → single-day (event_date=start, end=null, multi=false)
+  //   date_start + end>start → multi-day  (event_date=start, end=end,  multi=true)
+  //   date_start + end<=start → coage pra single-day (defesa)
+  if (fields.date_start !== undefined) {
+    const start = fields.date_start || null
+    const rawEnd = fields.date_end ?? null
+    const safeEnd = start && rawEnd && rawEnd > start ? rawEnd : null
+    payload.event_date     = start
+    payload.event_date_end = safeEnd
+    payload.is_multi_day   = safeEnd !== null
+  } else if (fields.event_date !== undefined) {
+    // Caller legado ainda aceito — força single-day explicitamente.
+    payload.event_date     = fields.event_date || null
+    payload.event_date_end = null
+    payload.is_multi_day   = false
+  }
+
   if (fields.valid_until !== undefined)
     payload.valid_until = fields.valid_until || null
   if (fields.currency !== undefined)

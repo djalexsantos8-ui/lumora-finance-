@@ -60,6 +60,27 @@ export function formatJobDateRange(job: {
   return `desde ${start}`
 }
 
+/**
+ * Versão longa (DD/MM/YYYY) do range de datas — usada em PDF e preview de
+ * orçamento. Funciona com qualquer entidade que tenha as colunas no padrão
+ * {start, end, is_multi_day}.
+ *
+ * - Single day:       "10/05/2026"
+ * - Multi-day com fim: "10/05/2026 a 16/05/2026"
+ * - Sem data:          '—'
+ */
+export function formatDateRangeLong(input: {
+  start:        string | null | undefined
+  end:          string | null | undefined
+  is_multi_day: boolean
+}): string {
+  if (!input.start) return '—'
+  if (input.is_multi_day && input.end && input.end !== input.start) {
+    return `${formatDate(input.start)} a ${formatDate(input.end)}`
+  }
+  return formatDate(input.start)
+}
+
 // ─── Moeda ────────────────────────────────────────────────────────────────────
 
 /**

@@ -8,7 +8,7 @@ import {
 } from '@react-pdf/renderer'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
-import { formatDate, getCurrencyDecimals } from '@/lib/utils/format'
+import { formatDate, formatDateRangeLong, getCurrencyDecimals } from '@/lib/utils/format'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -362,9 +362,19 @@ export default function BudgetDocument({
 
           {budget.event_date && (
             <View style={S.section}>
-              <Text style={S.sectionTitle}>Data do Evento</Text>
+              <Text style={S.sectionTitle}>
+                {budget.is_multi_day && budget.event_date_end && budget.event_date_end !== budget.event_date
+                  ? 'Período do Evento'
+                  : 'Data do Evento'}
+              </Text>
               <View style={S.sectionDivider} />
-              <Text style={S.bodyText}>{formatDate(budget.event_date)}</Text>
+              <Text style={S.bodyText}>
+                {formatDateRangeLong({
+                  start: budget.event_date,
+                  end: budget.event_date_end,
+                  is_multi_day: budget.is_multi_day,
+                })}
+              </Text>
             </View>
           )}
 

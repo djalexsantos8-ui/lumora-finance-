@@ -29,6 +29,7 @@ import {
   type ClientFullFormValue,
 } from '@/components/clients/client-full-form'
 import { TagCombobox } from '@/components/freelances/tag-combobox'
+import { FreelanceDateRange } from '@/components/freelances/date-range'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { AIFieldsCard } from '@/components/ai/ai-fields-card'
@@ -112,7 +113,12 @@ export default function BudgetEditor({
   const [client,   setClient]   = useState(budget.client_name)
   const [desc,     setDesc]     = useState(budget.project_description ?? '')
   const [delivers, setDelivers] = useState(budget.deliverables ?? '')
+  // Multi-datas 2026-04-23 — evtDate = início (semântica nova).
+  // evtEnd só é preenchido quando is_multi_day. Reusa FreelanceDateRange.
   const [evtDate,  setEvtDate]  = useState(budget.event_date ?? '')
+  const [evtEnd,   setEvtEnd]   = useState(
+    budget.is_multi_day ? (budget.event_date_end ?? '') : ''
+  )
   const [validUntil, setValidUntil] = useState(budget.valid_until ?? '')
   const [currency, setCurrency] = useState(budget.currency)
   const [notesInt, setNotesInt] = useState(budget.notes_internal ?? '')
@@ -149,11 +155,11 @@ export default function BudgetEditor({
   // ─── auto-save (latest-ref pattern) ─────────────────────────────────────────
   // Ref sempre sincronizado com o estado mais recente dos campos
   const latestFields = useRef({
-    title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
+    title, client, desc, delivers, evtDate, evtEnd, validUntil, currency, notesInt,
     paymentTerm, intendedDest, segment, leadSource,
   })
   latestFields.current = {
-    title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
+    title, client, desc, delivers, evtDate, evtEnd, validUntil, currency, notesInt,
     paymentTerm, intendedDest, segment, leadSource,
   }
 
@@ -184,7 +190,8 @@ export default function BudgetEditor({
           client_name:          f.client,
           project_description:  f.desc,
           deliverables:         f.delivers,
-          event_date:           f.evtDate,
+          date_start:           f.evtDate || null,
+          date_end:             f.evtEnd  || null,
           valid_until:          f.validUntil,
           currency:             f.currency,
           notes_internal:       f.notesInt,
@@ -239,7 +246,8 @@ export default function BudgetEditor({
         client_name:          f.client,
         project_description:  f.desc,
         deliverables:         f.delivers,
-        event_date:           f.evtDate,
+        date_start:           f.evtDate || null,
+        date_end:             f.evtEnd  || null,
         valid_until:          f.validUntil,
         currency:             f.currency,
         notes_internal:       f.notesInt,
@@ -420,7 +428,8 @@ export default function BudgetEditor({
       client_name:          f.client,
       project_description:  f.desc,
       deliverables:         f.delivers,
-      event_date:           f.evtDate,
+      date_start:           f.evtDate || null,
+      date_end:             f.evtEnd  || null,
       valid_until:          f.validUntil,
       currency:             f.currency,
       notes_internal:       f.notesInt,
@@ -544,7 +553,8 @@ export default function BudgetEditor({
                       client_name:          f.client,
                       project_description:  f.desc,
                       deliverables:         f.delivers,
-                      event_date:           f.evtDate,
+                      date_start:           f.evtDate || null,
+          date_end:             f.evtEnd  || null,
                       valid_until:          f.validUntil,
                       currency:             f.currency,
                       notes_internal:       f.notesInt,
@@ -736,6 +746,19 @@ export default function BudgetEditor({
               if (fields.lead_source)         field(setLeadSource)(fields.lead_source)
               if (fields.payment_term)        field(setPaymentTerm)(fields.payment_term)
               if (fields.event_date_hint)     field(setEvtDate)(fields.event_date_hint)
+              // Multi-datas: só aplicamos fim se início existir E fim > início.
+              // O server-action já sanitiza, mas defense in depth no cliente
+              // também evita bug caso a IA alucine intervalo invertido.
+              if (
+                fields.event_date_end_hint &&
+                fields.event_date_hint &&
+                fields.event_date_end_hint > fields.event_date_hint
+              ) {
+                field(setEvtEnd)(fields.event_date_end_hint)
+              } else if (!fields.event_date_end_hint) {
+                // IA detectou evento single-day: limpar eventual fim residual.
+                field(setEvtEnd)('')
+              }
               if (fields.intended_destination) {
                 field(setIntendedDest)(fields.intended_destination as BudgetIntendedDestination)
               }
@@ -850,19 +873,32 @@ export default function BudgetEditor({
               />
             </div>
 
-            {/* Datas + Moeda */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
-                  Data do evento
-                </label>
-                <input
-                  type="date"
-                  value={evtDate}
-                  onChange={e => field(setEvtDate)(e.target.value)}
-                  className={`${inputCls} [color-scheme:dark]`}
-                />
-              </div>
+            {/* ── Data do evento (multi-datas 2026-04-23) ──────────────────
+                Reusa FreelanceDateRange — mesmo componente, mesma UX. Toggle
+                "Usar múltiplas datas" revela campo de fim; commit chama o
+                adapter {date_start, date_end} em updateBudgetInfo que sincroniza
+                event_date / event_date_end / is_multi_day no banco.
+                align="start" pro layout stacked do formulário. */}
+            <div>
+              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                Data do evento
+              </label>
+              <FreelanceDateRange
+                align="start"
+                startDate={evtDate}
+                endDate={evtEnd || null}
+                onCommit={(start, end) => {
+                  // Commit local: atualiza state + agenda auto-save.
+                  // A action usa {date_start, date_end} do latestFields.
+                  setEvtDate(start)
+                  setEvtEnd(end ?? '')
+                  scheduleAutoSave()
+                }}
+              />
+            </div>
+
+            {/* Válido até + Moeda (grid 2 col) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                   Válido até

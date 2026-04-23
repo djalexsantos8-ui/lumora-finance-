@@ -195,9 +195,17 @@ export default function BudgetPreview({ budget, settings, items }: Props) {
 
               {budget.event_date && (
                 <div>
-                  <p className="text-[10px] font-bold text-[#D4A853] tracking-[3px] mb-3">DATA DO EVENTO</p>
+                  <p className="text-[10px] font-bold text-[#D4A853] tracking-[3px] mb-3">
+                    {budget.is_multi_day && budget.event_date_end && budget.event_date_end !== budget.event_date
+                      ? 'PERÍODO DO EVENTO'
+                      : 'DATA DO EVENTO'}
+                  </p>
                   <div className="h-px bg-gray-100 mb-4" />
-                  <p className="text-sm text-gray-700">{formatDate(budget.event_date)}</p>
+                  <p className="text-sm text-gray-700">
+                    {budget.is_multi_day && budget.event_date_end && budget.event_date_end !== budget.event_date
+                      ? `${formatDate(budget.event_date)} a ${formatDate(budget.event_date_end)}`
+                      : formatDate(budget.event_date)}
+                  </p>
                 </div>
               )}
             </div>

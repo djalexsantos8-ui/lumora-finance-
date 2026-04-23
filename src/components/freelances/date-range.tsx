@@ -32,6 +32,15 @@ interface FreelanceDateRangeProps {
   startDate: string
   endDate: string | null
   disabled?: boolean
+  /**
+   * Alinhamento do bloco. 'end' (default) é o usado no detalhe de Freelance
+   * (InfoRow à direita). 'start' é usado no editor de Orçamento onde o bloco
+   * vive num campo full-width com label em cima — ver budget-editor.tsx.
+   *
+   * Padrão oficial 2026-04-23: este mesmo componente serve Freelances e
+   * Orçamentos. Qualquer alteração deve manter compatibilidade com ambos.
+   */
+  align?: 'start' | 'end'
   /** Chamado quando o usuário confirma (onBlur, Enter ou toggle que força commit). */
   onCommit: (start: string, end: string | null) => void | Promise<void>
 }
@@ -40,6 +49,7 @@ export function FreelanceDateRange({
   startDate,
   endDate,
   disabled = false,
+  align = 'end',
   onCommit,
 }: FreelanceDateRangeProps) {
   const [start, setStart] = useState<string>(startDate)
@@ -86,7 +96,7 @@ export function FreelanceDateRange({
     'text-xs bg-[#1c1c1c] border border-[#2a2a2a] rounded px-2 py-1 text-white outline-none focus:border-[#D4A853]/50 disabled:opacity-60 w-32 transition-colors'
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className={`flex flex-col gap-1 ${align === 'start' ? 'items-start' : 'items-end'}`}>
       <div className="flex items-center gap-1.5">
         <input
           type="date"

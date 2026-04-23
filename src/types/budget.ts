@@ -31,6 +31,14 @@ export interface Budget {
   project_description: string | null
   deliverables: string | null
   event_date: string | null
+  // ─── Multi-datas 2026-04-23 (migration 20260423030000) ──────────────────
+  // Padrão espelhado de jobs (migration 014) — ver FreelanceDateRange.
+  //   event_date      = início  (null = sem data, não é start "zerado")
+  //   event_date_end  = fim     (null OR igual a event_date → single day)
+  //   is_multi_day    = cache booleano, true quando end > start
+  // Adapter em updateBudget recebe {date_start, date_end} e sincroniza.
+  event_date_end: string | null
+  is_multi_day: boolean
   valid_until: string | null
   status: BudgetStatus
   currency: string
