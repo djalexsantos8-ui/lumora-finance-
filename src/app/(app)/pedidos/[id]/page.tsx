@@ -10,6 +10,7 @@ import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { listPaymentsByOrder } from '@/lib/actions/order-payments'
 import { listOrderExpenses } from '@/lib/actions/expenses'
+import { getAIQuota } from '@/lib/ai/quota'
 import type { Order, OrderItem, OrderCostItem, OrderFile, OrderPayment } from '@/types/order'
 import type { Expense } from '@/types/expense'
 
@@ -57,6 +58,9 @@ export default async function OrderDetailPage({
     listOrderExpenses(id),
   ])
 
+  // Deploy F (2026-04-22): quota de IA (SSR). Falha gracioso: null → card busca no client.
+  const aiQuota = await getAIQuota(supabase, member.workspace_id).catch(() => null)
+
   return (
     <>
       <OrderEditor
@@ -69,6 +73,7 @@ export default async function OrderDetailPage({
         itemsTableMissing={itemsRes.tableMissing}
         costsTableMissing={costsRes.tableMissing}
         filesTableMissing={filesRes.tableMissing}
+        initialAIQuota={aiQuota}
       />
       {/* Alinhado com max-w do order-editor (max-w-4xl) */}
       <div className="max-w-4xl mx-auto px-6 md:px-8 pb-10">

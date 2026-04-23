@@ -67,6 +67,9 @@ import { OrderStatusBadge } from '../pedidos-list'
 import { OrderFileUploadModal } from '@/components/orders/order-file-upload-modal'
 import { OrderComprovantesList } from '@/components/orders/order-comprovantes-list'
 import { OrderPaymentDueField } from '@/components/orders/order-payment-due-field'
+import { AIFieldsCard } from '@/components/ai/ai-fields-card'
+import { generateOrderFields } from '@/lib/ai/generate-order-fields'
+import type { AIQuota } from '@/lib/ai/quota'
 
 interface Props {
   order:       Order
@@ -78,6 +81,7 @@ interface Props {
   itemsTableMissing:     boolean
   costsTableMissing:     boolean
   filesTableMissing:     boolean
+  initialAIQuota?:       AIQuota | null
 }
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
@@ -151,6 +155,7 @@ export default function OrderEditor({
   itemsTableMissing,
   costsTableMissing,
   filesTableMissing,
+  initialAIQuota = null,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -343,6 +348,51 @@ export default function OrderEditor({
           </>
         )
       })()}
+
+      {/* ═══ ✨ Gerar com IA — só em rascunho ═══════════════════════════════
+          Deploy F (2026-04-22): mesmo padrão do budgets — acelera criação de
+          pedido (título/cliente/desc/entregas/segmento/lead/condição/datas).
+          Some quando o pedido sai de draft pra evitar reescrever dado real. */}
+      {form.status === 'draft' && (
+        <div className="mb-4">
+          <AIFieldsCard
+            initialQuota={initialAIQuota}
+            placeholder="Ex: pedido de edição de video para empresa XPTO, 3 cortes de 30s, entrega em 10 dias, pagamento 50/50"
+            subtitle="Descreva o pedido em poucas linhas. Vamos preencher os campos pra você revisar."
+            onGenerate={async brief => {
+              const res = await generateOrderFields(brief)
+              if (!res.success) {
+                return {
+                  success: false,
+                  message: res.message,
+                  reason:  res.reason,
+                  quota:   res.quota ?? null,
+                }
+              }
+              return {
+                success:   true,
+                fields:    res.fields,
+                quota:     res.quota,
+                rationale: res.fields.rationale,
+              }
+            }}
+            onApply={fields => {
+              setForm(f => ({
+                ...f,
+                title:               fields.title               ?? f.title,
+                client_name:         fields.client_name         ?? f.client_name,
+                project_description: fields.project_description ?? f.project_description,
+                deliverables:        fields.deliverables        ?? f.deliverables,
+                client_segment:      fields.client_segment      ?? f.client_segment,
+                lead_source:         fields.lead_source         ?? f.lead_source,
+                payment_condition:   fields.payment_condition   ?? f.payment_condition,
+                event_date:          fields.event_date_hint     ?? f.event_date,
+                delivery_date:       fields.delivery_date_hint  ?? f.delivery_date,
+              }))
+            }}
+          />
+        </div>
+      )}
 
       {/* ═══ Card Principal ═══════════════════════════════════════════════ */}
       <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6 space-y-5 mb-6">
