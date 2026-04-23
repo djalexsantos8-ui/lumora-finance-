@@ -12,16 +12,23 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props) {
-  const { id } = await params
-  const supabase = await createClient()
-  const { data } = await supabase
-    .from('jobs')
-    .select('title, client_name')
-    .eq('id', id)
-    .maybeSingle()
-  const title  = data?.title ?? 'Freelance'
-  const client = data?.client_name ? ` · ${data.client_name}` : ''
-  return { title: `${title}${client} — Lumora Finance` }
+  try {
+    const { id } = await params
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('jobs')
+      .select('title, client_name')
+      .eq('id', id)
+      .maybeSingle()
+    // Fallback defensivo: title vazio/whitespace/null → "Freelance sem título"
+    // (mesmo padrão da listagem e do h1 do editor, consistência visual).
+    const rawTitle = typeof data?.title === 'string' ? data.title.trim() : ''
+    const title    = rawTitle || 'Freelance sem título'
+    const client   = data?.client_name ? ` · ${data.client_name}` : ''
+    return { title: `${title}${client} — Lumora Finance` }
+  } catch {
+    return { title: 'Freelance — Lumora Finance' }
+  }
 }
 
 export default async function JobDetailPage({ params }: Props) {

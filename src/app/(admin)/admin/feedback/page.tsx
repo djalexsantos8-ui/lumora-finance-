@@ -44,7 +44,7 @@ export default async function AdminFeedbackPage() {
           </p>
           <h1 className="text-2xl font-bold">Inbox de feedback</h1>
           <p className="text-sm text-[#737373] mt-1">
-            {counts.total} mensagem{counts.total === 1 ? '' : 's'} · {counts.novo} novo{counts.novo === 1 ? '' : 's'}
+            {counts.total} {counts.total === 1 ? 'mensagem' : 'mensagens'} · {counts.novo} novo{counts.novo === 1 ? '' : 's'}
             {counts.critica > 0 && <span className="ml-2 text-red-400">· {counts.critica} crítica{counts.critica === 1 ? '' : 's'}</span>}
             {counts.pendente > 0 && <span className="ml-2 text-amber-400">· {counts.pendente} processando</span>}
           </p>

@@ -7,6 +7,8 @@ import type { FixedCost } from '@/types/expense'
 import { FIXED_COST_CATEGORY_LABELS } from '@/types/expense'
 import { ActionableAlertRow } from './actionable-alert-row'
 
+export const metadata = { title: 'Notificações — Lumora Finance' }
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FixedCostAlert {
