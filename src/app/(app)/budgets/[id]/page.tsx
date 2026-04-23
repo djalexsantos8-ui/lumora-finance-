@@ -3,7 +3,6 @@ import { redirect, notFound } from 'next/navigation'
 import BudgetEditor from './budget-editor'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
-import { getAIQuota } from '@/lib/ai/quota'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
@@ -76,17 +75,17 @@ export default async function BudgetPage({ params }: Props) {
   // segura que nunca derruba a página (retorna [] em qualquer erro).
   const linkedContracts = await listContractsByOriginQuery('budget', budget.id)
 
-  // Deploy E: quota de IA do workspace (SSR). Falha gracioso: se a query
-  // quebrar, passa null e o card busca via action no client.
-  const aiQuota = await getAIQuota(supabase, budget.workspace_id).catch(() => null)
-
+  // Deploy E → Hotfix 2026-04-22 23:30 (pós-hang em prod): getAIQuota
+  // movido PRA FORA do SSR. O AIFieldsCard busca a quota no cliente via
+  // getMyAIQuota() no mount (useEffect Deploy G). Remover do SSR elimina
+  // qualquer risco de timeout/hang no stream de Suspense.
   return (
     <>
       <BudgetEditor
         budget={budget as Budget}
         items={(items ?? []) as BudgetItem[]}
         freelancers={freelancers as Freelancer[]}
-        initialAIQuota={aiQuota}
+        initialAIQuota={null}
       />
       <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
         <ContractEntryPoint
