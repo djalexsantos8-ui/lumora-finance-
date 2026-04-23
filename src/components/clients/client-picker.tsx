@@ -117,13 +117,25 @@ export function ClientPicker({
       {hint && <p className="text-[10px] text-[#525252]">{hint}</p>}
 
       {/* Toggle em LINHA PRÓPRIA — nunca na mesma linha da ação principal.
-          O botão "Salvar/Cancelar" é renderizado pelo pai (depende da action). */}
+          O botão "Salvar/Cancelar" é renderizado pelo pai (depende da action).
+
+          BP2 (not-allowed vs wait, docs/lumora-aprendizados-…): o disabled
+          aqui é por ESTADO INVÁLIDO (nome vazio), não por operação pendente,
+          então not-allowed é semanticamente correto. Adicionamos `title` e
+          `aria-label` pra explicar o motivo — evita o antipadrão do "botão
+          cinza sem razão visível". */}
       <div>
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onExpandedChange(!expanded)}
           disabled={disabled || !canExpand}
+          title={!canExpand && !disabled ? 'Digite o nome do cliente primeiro' : undefined}
+          aria-label={
+            !canExpand && !disabled
+              ? '+ Adicionar detalhes — digite o nome do cliente primeiro'
+              : undefined
+          }
           className="text-[11px] font-medium text-[#a3a3a3] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {expanded ? '− Recolher' : '+ Adicionar detalhes'}
