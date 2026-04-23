@@ -524,3 +524,61 @@ validar:  ✓ tsc exit 0
           ✓ curl 13 rotas principais 100% (307|200) em <500ms
           ✓ Supabase API logs últimas 10min = 100% 200s
 ```
+
+### 2026-04-22 — fix do botão "Adicionar item" travado em /budgets/new (commit 882b6ad)
+
+```
+fato:     em /budgets/new, o budget é stub (id=''). Botão "+ Adicionar
+          item" tinha disabled={!budget.id} e ficava com cursor-proibido
+          até o usuário digitar algo e o debounce do auto-save (1.5s)
+          disparar o INSERT. Reportado por usuário logado, reproduzido
+          via Chrome MCP (getComputedStyle → cursor:not-allowed,
+          opacity:0.5, disabled:true).
+impacto:  fricção na ação primária. Usuário não sabe que precisa digitar
+          título antes de poder adicionar item. Bug perceptível toda vez
+          que entra pela rota /new.
+ação:     budget-editor.tsx: removido disabled={!budget.id}. openAddItem
+          virou async — se !budgetIdRef.current, faz flush do timer do
+          auto-save, chama createBudget(latestFields), atualiza state/URL
+          via history.replaceState, e só então abre o modal. Adicionado
+          creatingForItem state com spinner "Criando…" e cursor:wait
+          (não not-allowed). Proteção contra corrida: se creatingRef já
+          está true, aguarda em loop até 5s. Zero mudança em schema,
+          aggregators, narrativa, ou caminho feliz de digitação.
+gotcha:   cursor-not-allowed ≠ cursor-wait. Reserva "not-allowed" pra
+          bloqueios reais (permissão, estado inválido). Operação que VAI
+          completar usa "wait". disabled por state remoto (id que ainda
+          não existe) é cheiro de design — correto é ensureCreated()
+          dentro do handler.
+validar:  ✓ tsc/build verdes
+          ✓ Chrome MCP logado: click em /budgets/new → spinner breve →
+            URL troca pra /budgets/<novoId> via replaceState → modal abre
+            → item "Teste do fix" salvo com R$ 100,00 → excluir budget ok
+          ✓ Caminho feliz (digita título primeiro) segue inalterado
+```
+
+### 2026-04-22 — boas práticas de optimistic-insert UI (generalizáveis)
+
+```
+fato:     fix acima destilou 7 boas práticas que valem pra qualquer rota
+          com padrão "stub sem id + auto-save debounced":
+          BP1 nunca travar ação primária em disabled que depende de
+              side-effect assíncrono
+          BP2 cursor:not-allowed ≠ cursor:wait — semântica importa
+          BP3 expor ensureCreated() em vez de travar botões
+          BP4 proteger INSERT com creatingRef (evita duplo INSERT em
+              race debounce × click)
+          BP5 history.replaceState em vez de router.push após INSERT
+              sob demanda (preserva editor montado + scroll + state)
+          BP6 validar UX em navegador real — build verde e tsc verde
+              nunca provam UX, só provam que não quebrou compilação
+          BP7 disable={localLoading} OK. disable={!remoteId} NÃO.
+impacto:  aplicável imediatamente a outros editores do app que seguem
+          padrão isNew (orders/new, freelances/new, etc.)
+ação:     nota completa salva em cérebro:
+          Cérebro/Projetos/lumora-finance/lumora-fix-budgets-new-add-item-button-disabled.md
+          rg 'disabled=\{!\w+\.id\}' src/app → achar outros ofensores
+          pendentes
+validar:  toda nova rota de criação otimista → aplicar checklist BP1-BP7
+          antes de mergear
+```
