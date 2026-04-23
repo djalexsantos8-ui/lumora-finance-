@@ -16,7 +16,20 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { saveCompanyProfile, type CompanyProfilePayload } from '@/lib/actions/onboarding'
 import { submitWithOfflineGuard } from '@/lib/utils/offline-submit'
+import { maskCNPJ, maskCPF, maskPhoneBR, maskCEP, maskUF } from '@/lib/utils/masks'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
+
+// ─── Regimes tributários aceitos ────────────────────────────────────────────
+// Valores curtos que o usuário reconhece, sem jargão pesado. Armazenamos
+// o label como string em workspace_settings.company_tax_regime.
+const TAX_REGIMES = [
+  'MEI',
+  'Simples Nacional',
+  'Lucro Presumido',
+  'Lucro Real',
+  'Autônomo (RPA)',
+  'Outro',
+] as const
 
 interface Props {
   workspaceId: string
@@ -234,21 +247,13 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
               className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
             />
           </Field>
-          <Field label="CNPJ ou CPF" hint="O que fizer sentido pra você">
-            <div className="flex gap-2">
-              <input
-                value={cnpj}
-                onChange={(e) => setCnpj(e.target.value)}
-                placeholder="CNPJ"
-                className="flex-1 bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
-              />
-              <input
-                value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
-                placeholder="ou CPF"
-                className="flex-1 bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
-              />
-            </div>
+          <Field label="Documento" hint="CNPJ (PJ) ou CPF (PF) — escolha um">
+            <DocumentToggleField
+              cnpj={cnpj}
+              cpf={cpf}
+              onCNPJ={(v) => { setCnpj(v); if (v) setCpf('') }}
+              onCPF={(v)  => { setCpf(v);  if (v) setCnpj('') }}
+            />
           </Field>
         </div>
       </section>
@@ -271,8 +276,9 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
           <Field label="Telefone" hint="Com DDD">
             <input
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(maskPhoneBR(e.target.value))}
               placeholder="(11) 99999-9999"
+              inputMode="tel"
               className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
             />
           </Field>
@@ -313,7 +319,7 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
                 <input
                   value={addrLine}
                   onChange={(e) => setAddrLine(e.target.value)}
-                  placeholder="Rua Guadalajara, 1259"
+                  placeholder="Ex: Avenida Paulista, 1000"
                   className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
                 />
               </Field>
@@ -327,17 +333,18 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
               <Field label="UF">
                 <input
                   value={addrState}
-                  onChange={(e) => setAddrState(e.target.value)}
+                  onChange={(e) => setAddrState(maskUF(e.target.value))}
                   placeholder="SP"
                   maxLength={2}
-                  className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
+                  className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none uppercase"
                 />
               </Field>
               <Field label="CEP">
                 <input
                   value={addrZip}
-                  onChange={(e) => setAddrZip(e.target.value)}
+                  onChange={(e) => setAddrZip(maskCEP(e.target.value))}
                   placeholder="00000-000"
+                  inputMode="numeric"
                   className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
                 />
               </Field>
@@ -355,13 +362,17 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
                   className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
                 />
               </Field>
-              <Field label="Regime tributário" hint="Simples, MEI, Lucro…">
-                <input
+              <Field label="Regime tributário" hint="Como você emite nota">
+                <select
                   value={taxRegime}
                   onChange={(e) => setTaxRegime(e.target.value)}
-                  placeholder="Ex: Simples Nacional"
                   className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
-                />
+                >
+                  <option value="">Selecione…</option>
+                  {TAX_REGIMES.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="Notas de faturamento" hint="Banco, PIX, condições">
                 <input
@@ -421,5 +432,69 @@ function Field({
       </span>
       {children}
     </label>
+  )
+}
+
+// ─── Toggle CNPJ/CPF ─────────────────────────────────────────────────────────
+// Em telas estreitas, dois campos lado a lado quebram o layout. O toggle
+// mostra um input só e deixa explícito qual modo está ativo. Inicia em
+// CNPJ se já houver valor; caso contrário mostra CNPJ por padrão.
+
+function DocumentToggleField({
+  cnpj, cpf, onCNPJ, onCPF,
+}: {
+  cnpj: string
+  cpf:  string
+  onCNPJ: (v: string) => void
+  onCPF:  (v: string) => void
+}) {
+  const initial: 'cnpj' | 'cpf' = cpf && !cnpj ? 'cpf' : 'cnpj'
+  const [mode, setMode] = useState<'cnpj' | 'cpf'>(initial)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1 text-[10px] font-medium">
+        <button
+          type="button"
+          onClick={() => setMode('cnpj')}
+          className={`px-2.5 py-1 rounded-md transition-colors ${
+            mode === 'cnpj'
+              ? 'bg-[#D4A853]/15 text-[#E8C47A] border border-[#D4A853]/30'
+              : 'text-[#737373] hover:text-white border border-transparent'
+          }`}
+        >
+          CNPJ (PJ)
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('cpf')}
+          className={`px-2.5 py-1 rounded-md transition-colors ${
+            mode === 'cpf'
+              ? 'bg-[#D4A853]/15 text-[#E8C47A] border border-[#D4A853]/30'
+              : 'text-[#737373] hover:text-white border border-transparent'
+          }`}
+        >
+          CPF (PF)
+        </button>
+      </div>
+
+      {mode === 'cnpj' ? (
+        <input
+          value={cnpj}
+          onChange={(e) => onCNPJ(maskCNPJ(e.target.value))}
+          placeholder="00.000.000/0000-00"
+          inputMode="numeric"
+          className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
+        />
+      ) : (
+        <input
+          value={cpf}
+          onChange={(e) => onCPF(maskCPF(e.target.value))}
+          placeholder="000.000.000-00"
+          inputMode="numeric"
+          className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
+        />
+      )}
+    </div>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from 'reac
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { upsertWorkspaceSettings } from '@/lib/actions/workspace-settings'
+import { maskCNPJ, maskCPF, maskPhoneBR, maskCEP, maskUF } from '@/lib/utils/masks'
 import { getMyAIQuota, getMyAIBalance } from '@/lib/ai/actions'
 import type { AIQuota, AIBalance } from '@/lib/ai/quota'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
@@ -377,14 +378,14 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CNPJ</label>
                     <input type="text" name="company_cnpj" value={companyCnpj}
-                      onChange={e => setCompanyCnpj(e.target.value)}
-                      placeholder="00.000.000/0000-00" className={inputCls} />
+                      onChange={e => setCompanyCnpj(maskCNPJ(e.target.value))}
+                      placeholder="00.000.000/0000-00" inputMode="numeric" className={inputCls} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CPF (se MEI/autônomo)</label>
                     <input type="text" name="company_cpf" value={companyCpf}
-                      onChange={e => setCompanyCpf(e.target.value)}
-                      placeholder="000.000.000-00" className={inputCls} />
+                      onChange={e => setCompanyCpf(maskCPF(e.target.value))}
+                      placeholder="000.000.000-00" inputMode="numeric" className={inputCls} />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Endereço</label>
@@ -402,14 +403,14 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
                     <div>
                       <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">UF</label>
                       <input type="text" name="company_address_state" value={companyAddressState}
-                        onChange={e => setCompanyAddressState(e.target.value)}
-                        placeholder="SP" maxLength={2} className={inputCls} />
+                        onChange={e => setCompanyAddressState(maskUF(e.target.value))}
+                        placeholder="SP" maxLength={2} className={`${inputCls} uppercase`} />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">CEP</label>
                       <input type="text" name="company_address_zip" value={companyAddressZip}
-                        onChange={e => setCompanyAddressZip(e.target.value)}
-                        placeholder="00000-000" className={inputCls} />
+                        onChange={e => setCompanyAddressZip(maskCEP(e.target.value))}
+                        placeholder="00000-000" inputMode="numeric" className={inputCls} />
                     </div>
                   </div>
                   <div>
@@ -421,8 +422,8 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
                   <div>
                     <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Telefone</label>
                     <input type="text" name="company_phone" value={companyPhone}
-                      onChange={e => setCompanyPhone(e.target.value)}
-                      placeholder="(11) 99999-9999" className={inputCls} />
+                      onChange={e => setCompanyPhone(maskPhoneBR(e.target.value))}
+                      placeholder="(11) 99999-9999" inputMode="tel" className={inputCls} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">Aviso prévio (dias)</label>
