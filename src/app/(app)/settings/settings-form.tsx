@@ -1,9 +1,11 @@
 'use client'
 
-import { useRef, useState, useTransition, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { upsertWorkspaceSettings } from '@/lib/actions/workspace-settings'
+import { getMyAIQuota } from '@/lib/ai/actions'
+import type { AIQuota } from '@/lib/ai/quota'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 // ─── Settings — seções (pente fino 2026-04-21) ───────────────────────────────
@@ -12,7 +14,7 @@ import type { WorkspaceSettings } from '@/types/workspace-settings'
 //   · Empresa     (dados que saem nos documentos: assinatura, rodapé)
 //   · Notificações (placeholder V1 — só aviso do que vem aí)
 
-type SectionId = 'identity' | 'company' | 'notifications'
+type SectionId = 'identity' | 'company' | 'notifications' | 'credits'
 
 const SECTIONS: { id: SectionId; label: string; icon: ReactNode; description: string }[] = [
   {
@@ -45,6 +47,17 @@ const SECTIONS: { id: SectionId; label: string; icon: ReactNode; description: st
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
           d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+    ),
+  },
+  {
+    id: 'credits',
+    label: 'Créditos',
+    description: 'Quota mensal de IA (gerar orçamentos e pedidos automaticamente).',
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
   },
@@ -89,6 +102,37 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
   const [defaultPenaltyPct,  setDefaultPenaltyPct]  = useState(
     settings?.default_cancellation_penalty_pct?.toString() ?? '50'
   )
+
+  // ─── quota de IA (aba Créditos) ─────────────────────────────────────────────
+  // Fetch on demand quando o usuário abrir a aba — evita round-trip em abas
+  // que 99% dos usuários não visitam. Refetch manual via botão "Atualizar".
+  const [quota, setQuota]             = useState<AIQuota | null>(null)
+  const [loadingQuota, setLoadingQuota] = useState(false)
+  const [quotaError, setQuotaError]   = useState<string | null>(null)
+
+  async function fetchQuota() {
+    setLoadingQuota(true)
+    setQuotaError(null)
+    try {
+      const res = await getMyAIQuota()
+      if (res.success) {
+        setQuota(res.quota)
+      } else {
+        setQuotaError(res.message)
+      }
+    } catch {
+      setQuotaError('Não foi possível carregar a quota agora.')
+    } finally {
+      setLoadingQuota(false)
+    }
+  }
+
+  useEffect(() => {
+    if (section === 'credits' && !quota && !loadingQuota) {
+      void fetchQuota()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section])
 
   // ─── logo upload ───────────────────────────────────────────────────────────
 
@@ -433,6 +477,119 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
             </>
           )}
 
+          {/* ─── Créditos de IA (Deploy G 2026-04-22) ───────────────────── */}
+          {section === 'credits' && (
+            <div className="space-y-4">
+              {/* Card principal: quota atual */}
+              <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">
+                      Quota do mês atual
+                    </h3>
+                    <p className="text-xs text-[#525252] mt-0.5">
+                      {quota?.period
+                        ? `Período: ${quota.period}`
+                        : 'Carregando período…'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchQuota}
+                    disabled={loadingQuota}
+                    className="text-xs text-[#D4A853] hover:text-[#E8C47A] disabled:opacity-50 transition-colors"
+                  >
+                    {loadingQuota ? 'Atualizando…' : 'Atualizar'}
+                  </button>
+                </div>
+
+                {quotaError ? (
+                  <p className="text-xs text-red-400">{quotaError}</p>
+                ) : quota ? (
+                  <>
+                    <div className="flex items-baseline gap-2 mb-3">
+                      <span className="text-3xl font-bold text-[#D4A853]">
+                        {quota.remaining}
+                      </span>
+                      <span className="text-sm text-[#a3a3a3]">
+                        / {quota.limit} créditos restantes
+                      </span>
+                    </div>
+                    {/* Barra de progresso — o que já foi usado */}
+                    <div className="w-full h-2 bg-[#1c1c1c] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#D4A853] transition-all duration-300"
+                        style={{
+                          width:
+                            quota.limit > 0
+                              ? `${Math.min(100, (quota.used / quota.limit) * 100)}%`
+                              : '0%',
+                        }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-[#525252] mt-2">
+                      {quota.used} usados este mês · reseta no dia 1º do próximo mês
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-[#525252]">
+                    <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Carregando quota…
+                  </div>
+                )}
+              </div>
+
+              {/* Explicação do que conta como crédito */}
+              <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
+                <h3 className="text-xs font-semibold text-[#a3a3a3] tracking-wider uppercase mb-3">
+                  O que consome crédito
+                </h3>
+                <ul className="space-y-2 text-xs text-[#a3a3a3] leading-relaxed">
+                  {[
+                    '1 geração de orçamento via "✨ Gerar com IA" = 1 crédito',
+                    '1 geração de pedido via "✨ Gerar com IA" = 1 crédito',
+                    'Editar, salvar ou converter (orçamento → pedido/freelance) NÃO consome crédito',
+                    'Visualizar dashboard, relatórios e insights NÃO consome crédito',
+                  ].map((t, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="text-[#D4A853] mt-0.5">·</span>
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Plano atual + CTA "em breve" */}
+              <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[9px] font-semibold text-[#D4A853] bg-[#D4A853]/10 border border-[#D4A853]/20 px-2 py-0.5 rounded-full tracking-wider">
+                    PLANO BETA
+                  </span>
+                </div>
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  100 créditos gratuitos por mês
+                </h3>
+                <p className="text-xs text-[#a3a3a3] leading-relaxed mb-4">
+                  Durante o beta, todo workspace recebe 100 créditos mensais gratuitos —
+                  mais que suficiente pra gerar ~3 orçamentos por dia.
+                </p>
+                <div className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-xl p-4">
+                  <p className="text-xs font-semibold text-[#d4d4d4] mb-1">
+                    Em breve: pacotes extras
+                  </p>
+                  <p className="text-[11px] text-[#525252] leading-relaxed">
+                    Se 100 créditos não forem suficientes, você vai poder comprar
+                    pacotes de 50 / 200 / 500 créditos adicionais que não expiram
+                    no fim do mês. Nos próximos deploys.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ─── Notificações (placeholder V1) ───────────────────────────── */}
           {section === 'notifications' && (
             <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
@@ -482,7 +639,7 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
           )}
 
           {/* Submit — só aparece nas seções editáveis */}
-          {section !== 'notifications' && (
+          {section !== 'notifications' && section !== 'credits' && (
             <button
               type="submit"
               disabled={isPending || uploadingLogo}

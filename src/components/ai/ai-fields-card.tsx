@@ -18,8 +18,9 @@
  * mantém o componente agnóstico ao payload (budget vs order).
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { getMyAIQuota } from '@/lib/ai/actions'
 import type { AIQuota } from '@/lib/ai/quota'
 
 export type AIFieldsCardResult<F> =
@@ -67,6 +68,24 @@ export function AIFieldsCard<F>({
   const [loading, setLoading]   = useState(false)
   const [rationale, setRationale] = useState<string | null>(null)
   const [quota, setQuota]       = useState<AIQuota | null>(initialQuota ?? null)
+
+  // Se SSR não entregou quota (timeout ou null), busca no cliente uma vez.
+  // Deploy G (2026-04-22): garante que o contador apareça mesmo quando
+  // getAIQuota no SSR fizer fallback pro default silenciosamente.
+  useEffect(() => {
+    if (quota) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await getMyAIQuota()
+        if (!cancelled && res.success) setQuota(res.quota)
+      } catch {
+        // Silencioso — UI segue funcionando sem o contador.
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleGenerate() {
     const trimmed = brief.trim()
