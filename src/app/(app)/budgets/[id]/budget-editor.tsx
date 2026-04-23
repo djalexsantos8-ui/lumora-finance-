@@ -28,6 +28,9 @@ import {
   EMPTY_CLIENT_FULL_FORM,
   type ClientFullFormValue,
 } from '@/components/clients/client-full-form'
+import { TagCombobox } from '@/components/freelances/tag-combobox'
+import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
+import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import type {
   Budget,
   BudgetItem,
@@ -102,6 +105,12 @@ export default function BudgetEditor({
   const [intendedDest, setIntendedDest] = useState<BudgetIntendedDestination | ''>(
     budget.intended_destination ?? ''
   )
+  // ── Deploy B (2026-04-22): segmento + origem do lead alinhados ao canon ───
+  // Alimenta os mesmos canonicals usados em pedidos/freelances/recurring e
+  // propaga no payload do createBudget/updateBudgetInfo. Também vira hint
+  // pro ContractEntryPoint na página pai.
+  const [segment, setSegment]       = useState(budget.segment ?? '')
+  const [leadSource, setLeadSource] = useState(budget.lead_source ?? '')
 
   // ─── margem ─────────────────────────────────────────────────────────────────
   const [marginType,  setMarginType]  = useState<BudgetMarginType>(budget.margin_type)
@@ -125,11 +134,11 @@ export default function BudgetEditor({
   // Ref sempre sincronizado com o estado mais recente dos campos
   const latestFields = useRef({
     title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
-    paymentTerm, intendedDest,
+    paymentTerm, intendedDest, segment, leadSource,
   })
   latestFields.current = {
     title, client, desc, delivers, evtDate, validUntil, currency, notesInt,
-    paymentTerm, intendedDest,
+    paymentTerm, intendedDest, segment, leadSource,
   }
 
   // Refs paralelos pro modo expandido de cliente (usado pela auto-save).
@@ -165,6 +174,8 @@ export default function BudgetEditor({
           notes_internal:       f.notesInt,
           payment_term:         f.paymentTerm,
           intended_destination: f.intendedDest === '' ? null : f.intendedDest,
+          segment:              f.segment.trim() || null,
+          lead_source:          f.leadSource.trim() || null,
         })
         creatingRef.current = false
 
@@ -218,6 +229,8 @@ export default function BudgetEditor({
         notes_internal:       f.notesInt,
         payment_term:         f.paymentTerm,
         intended_destination: f.intendedDest === '' ? null : f.intendedDest,
+        segment:              f.segment.trim() || null,
+        lead_source:          f.leadSource.trim() || null,
       })
       if (result.success && result.data) {
         setBudget(result.data)
@@ -705,6 +718,40 @@ export default function BudgetEditor({
                   {clientSaveError}
                 </p>
               )}
+            </div>
+
+            {/* Segmento + Origem do lead — Deploy B (2026-04-22).
+                Alinhado ao canon usado em pedidos/freelances/recurring.
+                Propagado na conversão e como hint pro contrato gerado. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                  Segmento
+                  <span className="text-[#525252] font-normal ml-1">(opcional)</span>
+                </label>
+                <TagCombobox
+                  value={segment}
+                  options={CLIENT_SEGMENTS}
+                  onCommit={v => field(setSegment)(v)}
+                  placeholder="ex: Casamento, E-commerce…"
+                  className={inputCls}
+                  ariaLabel="Segmento do cliente"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
+                  Origem do lead
+                  <span className="text-[#525252] font-normal ml-1">(opcional)</span>
+                </label>
+                <TagCombobox
+                  value={leadSource}
+                  options={LEAD_SOURCES}
+                  onCommit={v => field(setLeadSource)(v)}
+                  placeholder="ex: Instagram, Indicação…"
+                  className={inputCls}
+                  ariaLabel="Origem do lead"
+                />
+              </div>
             </div>
 
             {/* Descrição */}

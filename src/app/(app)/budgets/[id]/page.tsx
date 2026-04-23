@@ -87,6 +87,10 @@ export default async function BudgetPage({ params }: Props) {
           originKind="budget"
           originId={budget.id}
           contracts={linkedContracts}
+          hints={{
+            segment:  (budget as Budget).segment ?? null,
+            category: null,
+          }}
         />
       </div>
     </>
