@@ -152,7 +152,7 @@ const navEntries: NavEntry[] = [
     },
   },
   { kind: 'item', item: { href: '/clientes',      label: 'Clientes',      icon: Icon.clients } },
-  { kind: 'item', item: { href: '/insights',      label: 'Insights',      icon: Icon.insights, badge: 'Em breve' } },
+  { kind: 'item', item: { href: '/insights',      label: 'Insights',      icon: Icon.insights } },
   { kind: 'item', item: { href: '/notifications', label: 'Notificações',  icon: Icon.notifications } },
 ]
 
