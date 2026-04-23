@@ -67,6 +67,9 @@ export async function createBudget(
   fields: {
     title?:                 string
     client_name?:           string
+    client_id?:             string | null
+    segment?:               string | null
+    lead_source?:           string | null
     project_description?:   string
     deliverables?:          string
     event_date?:            string
@@ -97,12 +100,18 @@ export async function createBudget(
     return { success: false, message: 'Workspace não encontrado.' }
   }
 
-  // Resolve cliente se nome foi passado
+  // Resolve cliente se nome foi passado. Deploy A (2026-04-22): agora também
+  // preenchemos `client_id` automaticamente — espelha jobs/orders/recurring.
   let resolvedClient: Awaited<ReturnType<typeof getOrCreateClient>> | undefined
   const clientName = fields.client_name?.trim() ?? ''
   if (clientName) {
     resolvedClient = await getOrCreateClient(member.workspace_id, clientName)
   }
+  // Prioridade: client_id explícito > resolvedClient.id > null
+  const resolvedClientId =
+    fields.client_id !== undefined
+      ? fields.client_id
+      : (resolvedClient && 'id' in resolvedClient ? (resolvedClient as { id: string }).id : null)
 
   const { data, error } = await supabase
     .from('budgets')
@@ -111,6 +120,9 @@ export async function createBudget(
       created_by:          user.id,
       title:               fields.title?.trim() || 'Orçamento sem título',
       client_name:         clientName,
+      client_id:           resolvedClientId,
+      segment:             fields.segment?.trim() || null,
+      lead_source:         fields.lead_source?.trim() || null,
       project_description: fields.project_description?.trim() || null,
       deliverables:        fields.deliverables?.trim() || null,
       event_date:          fields.event_date || null,
@@ -139,6 +151,9 @@ export async function updateBudgetInfo(
   fields: {
     title?:                 string
     client_name?:           string
+    client_id?:             string | null
+    segment?:               string | null
+    lead_source?:           string | null
     project_description?:   string
     deliverables?:          string
     event_date?:            string
@@ -163,10 +178,9 @@ export async function updateBudgetInfo(
     payload.title = fields.title.trim() || 'Orçamento sem título'
 
   // Cliente: sempre que `client_name` for tocado, resolve via getOrCreateClient.
-  // Orçamentos NÃO têm coluna `client_id` no schema atual — mantemos só o
-  // nome (compatível). A resolução serve pra garantir que o cliente existe
-  // na tabela `clients` (aparece em /clientes e pode ser enriquecido depois
-  // pelo modo expandido do ClientPicker via updateClient(id, extras)).
+  // Deploy A (2026-04-22): agora budgets tem `client_id` e preenchemos junto.
+  // Se `client_id` vier explícito (ClientPicker), ele tem prioridade — permite
+  // selecionar cliente existente sem digitar nome de novo.
   let resolvedClient: Awaited<ReturnType<typeof getOrCreateClient>> | undefined
   if (fields.client_name !== undefined) {
     const cleaned = fields.client_name.trim()
@@ -177,9 +191,23 @@ export async function updateBudgetInfo(
       if (workspaceId) {
         resolvedClient = await getOrCreateClient(workspaceId, cleaned)
       }
+    } else {
+      // Se nome foi limpado, limpa também o client_id
+      payload.client_id = null
     }
   }
 
+  // client_id explícito sobrepõe o resolvido (ClientPicker com ID real)
+  if (fields.client_id !== undefined) {
+    payload.client_id = fields.client_id
+  } else if (resolvedClient && 'id' in resolvedClient) {
+    payload.client_id = (resolvedClient as { id: string }).id
+  }
+
+  if (fields.segment !== undefined)
+    payload.segment = fields.segment?.trim() || null
+  if (fields.lead_source !== undefined)
+    payload.lead_source = fields.lead_source?.trim() || null
   if (fields.project_description !== undefined)
     payload.project_description = fields.project_description.trim() || null
   if (fields.deliverables !== undefined)

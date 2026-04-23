@@ -18,6 +18,16 @@ export interface Budget {
   created_by: string
   title: string
   client_name: string
+  // ─── DEPLOY A (2026-04-22): modelo canônico alinhado com orders/jobs/recurring ─
+  // client_id   : FK opcional para clients(id); getOrCreateClient preenche
+  //               automaticamente quando um nome é digitado. Permite contrato
+  //               gerado a partir do orçamento carregar client_id real e joins
+  //               com a aba /clientes.
+  // segment     : segmento canônico (CLIENT_SEGMENTS). Propagado na conversão.
+  // lead_source : origem do lead (LEAD_SOURCES). Propagado na conversão.
+  client_id: string | null
+  segment: string | null
+  lead_source: string | null
   project_description: string | null
   deliverables: string | null
   event_date: string | null

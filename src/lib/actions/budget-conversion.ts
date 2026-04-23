@@ -120,8 +120,12 @@ async function convertToOrder(
       workspace_id:        workspaceId,
       created_by:          userId,
       title:               budget.title || 'Pedido sem título',
-      client_id:           null,
+      // Deploy A (2026-04-22): budget agora tem client_id. Propagamos.
+      client_id:           budget.client_id ?? null,
       client_name:         budget.client_name ?? '',
+      // segment e lead_source espelham o orçamento (se existirem)
+      client_segment:      budget.segment ?? null,
+      lead_source:         budget.lead_source ?? null,
       project_description: budget.project_description ?? null,
       deliverables:        budget.deliverables ?? null,
       event_date:          budget.event_date ?? null,
@@ -192,7 +196,11 @@ async function convertToFreelance(
       workspace_id:      workspaceId,
       created_by:        userId,
       title:             budget.title || 'Rascunho',
+      // Deploy A: propaga client_id + segment + lead_source
+      client_id:         budget.client_id ?? null,
       client_name:       budget.client_name ?? '',
+      client_segment:    budget.segment ?? null,
+      lead_source:       budget.lead_source ?? null,
       status:            'in_progress',
       job_type:          'freelance',
       payment_condition: 'upfront',
@@ -249,7 +257,11 @@ async function convertToRecurring(
       workspace_id:        workspaceId,
       created_by:          userId,
       title:               budget.title || 'Receita sem título',
+      // Deploy A: propaga client_id + segment + lead_source
+      client_id:           budget.client_id ?? null,
       client_name:         budget.client_name ?? '',
+      segment:             budget.segment ?? null,
+      lead_source:         budget.lead_source ?? null,
       project_description: budget.project_description ?? null,
       scope_summary:       budget.deliverables ?? null,
       notes_internal:      `Convertido do orçamento "${budget.title}" em ${today}.`,

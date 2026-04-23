@@ -347,15 +347,12 @@ async function resolveClientIdFromOrigin(
   originKind: ContractOriginKind,
   originId: string
 ): Promise<string | null> {
-  // ATENÇÃO: budgets NÃO tem coluna client_id (só client_name text livre).
-  // Consultar client_id nessa tabela gera Postgres 42703 (column does not
-  // exist) — falha silenciosa via .maybeSingle() e produz contrato sem vínculo.
-  // Até existir migração budgets.client_id + backfill por name_normalized,
-  // retornamos null explicitamente e deixamos o Contract Builder pedir o
-  // cliente manualmente. Integridade > esperteza.
-  if (originKind === 'budget') return null
-
+  // Deploy A (2026-04-22): budgets.client_id existe e é populado por
+  // getOrCreateClient em createBudget/updateBudgetInfo. Budgets antigos sem
+  // client_id retornam null aqui — o Builder continua permitindo input manual
+  // de cliente. Integridade preservada.
   const tableMap: Partial<Record<ContractOriginKind, string>> = {
+    budget:    'budgets',
     freelance: 'jobs',
     order:     'orders',
     recurring: 'recurring_revenue',

@@ -44,6 +44,10 @@ export default async function NewBudgetPage() {
     created_by:          user.id,
     title:               '',
     client_name:         '',
+    // Deploy A: novos campos canônicos (nullable até o user preencher)
+    client_id:           null,
+    segment:             null,
+    lead_source:         null,
     project_description: null,
     deliverables:        null,
     event_date:          null,
