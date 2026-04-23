@@ -31,6 +31,9 @@ import {
 import { TagCombobox } from '@/components/freelances/tag-combobox'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
+import { AIFieldsCard } from '@/components/ai/ai-fields-card'
+import { generateBudgetFields } from '@/lib/ai/generate-budget-fields'
+import type { AIQuota } from '@/lib/ai/quota'
 import type {
   Budget,
   BudgetItem,
@@ -50,6 +53,10 @@ interface Props {
   // O primeiro auto-save chama createBudget() em vez de updateBudgetInfo(),
   // recebe o id real e faz history.replaceState pra trocar a URL sem navegar.
   isNew?:      boolean
+  // Deploy E (2026-04-22): quota de IA do workspace. Opcional — se não
+  // passado, o card busca com a primeira geração. SSR passa pra evitar
+  // flash "–/–".
+  initialAIQuota?: AIQuota | null
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -61,6 +68,7 @@ export default function BudgetEditor({
   items:  initialItems,
   freelancers,
   isNew = false,
+  initialAIQuota = null,
 }: Props) {
   const router = useRouter()
 
@@ -686,6 +694,51 @@ export default function BudgetEditor({
               intendedDest={intendedDest === '' ? null : intendedDest}
             />
           )}
+
+        {/* Deploy E (2026-04-22) — "✨ Gerar com IA" aparece só em draft pra
+            evitar que usuário sobrescreva um orçamento já aprovado/enviado
+            por acidente. Collapsable — fica fechado por default, não rouba
+            espaço visual. */}
+        {budget.status === 'draft' && (
+          <AIFieldsCard
+            initialQuota={initialAIQuota}
+            onGenerate={async brief => {
+              const res = await generateBudgetFields(brief)
+              if (!res.success) {
+                return {
+                  success: false,
+                  message: res.message,
+                  reason:  res.reason,
+                  quota:   res.quota ?? null,
+                }
+              }
+              return {
+                success:   true,
+                fields:    res.fields,
+                quota:     res.quota,
+                rationale: res.fields.rationale,
+              }
+            }}
+            onApply={fields => {
+              // Aplica nos setters. O scheduleAutoSave encadeado via `field()`
+              // persiste no próximo tick. Não sobrescreve se o usuário já
+              // tinha preenchido (só preenche se o campo local tá vazio) —
+              // mas pra revisão pós-IA, o UX mais claro é substituir tudo.
+              if (fields.title)               field(setTitle)(fields.title)
+              if (fields.client_name)         field(setClient)(fields.client_name)
+              if (fields.project_description) field(setDesc)(fields.project_description)
+              if (fields.deliverables)        field(setDelivers)(fields.deliverables)
+              if (fields.segment)             field(setSegment)(fields.segment)
+              if (fields.lead_source)         field(setLeadSource)(fields.lead_source)
+              if (fields.payment_term)        field(setPaymentTerm)(fields.payment_term)
+              if (fields.event_date_hint)     field(setEvtDate)(fields.event_date_hint)
+              if (fields.intended_destination) {
+                field(setIntendedDest)(fields.intended_destination as BudgetIntendedDestination)
+              }
+            }}
+            placeholder="Ex: casamento Joao e Maria em 10/05, 6h de cobertura, 1 teaser + filme longo, entrega em 45d"
+          />
+        )}
 
         {/* Grid: dados do projeto + resumo financeiro */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

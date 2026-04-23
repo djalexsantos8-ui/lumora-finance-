@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import BudgetEditor from '../[id]/budget-editor'
+import { getAIQuota } from '@/lib/ai/quota'
+import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { Budget } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
 
@@ -34,6 +36,13 @@ export default async function NewBudgetPage() {
     .order('name', { ascending: true })
 
   const freelancers = (freelancersData ?? []) as Freelancer[]
+
+  // Deploy E (2026-04-22): quota de IA do workspace — usada no card AIFieldsCard.
+  // Falha gracioso: se query quebrar ou workspace não achado, passa null.
+  const workspaceId = await getWorkspaceId(user.id)
+  const aiQuota = workspaceId
+    ? await getAIQuota(supabase, workspaceId).catch(() => null)
+    : null
 
   // Budget "stub" — usado apenas pra alimentar o estado inicial do editor.
   // O id vazio sinaliza "ainda não existe no banco" (modo isNew). No primeiro
@@ -75,6 +84,7 @@ export default async function NewBudgetPage() {
       items={[]}
       freelancers={freelancers}
       isNew
+      initialAIQuota={aiQuota}
     />
   )
 }
