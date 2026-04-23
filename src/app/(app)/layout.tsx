@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
 import AppFooter from '@/components/layout/app-footer'
 import FeedbackWidget from '@/components/feedback/feedback-widget'
+import OnboardingOverlay from '@/components/onboarding/onboarding-overlay'
+import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 export default async function AppLayout({
   children,
@@ -94,6 +96,55 @@ export default async function AppLayout({
   }
   // ───────────────────────────────────────────────────────────────────────────
 
+  // ── Onboarding gate ─────────────────────────────────────────────────────────
+  // Carrega profile + workspace_settings em paralelo. Se onboarding não foi
+  // completado, monta o overlay. Se profile falhar (por algum motivo), NÃO
+  // bloqueia o app — apenas não mostra onboarding (comportamento defensivo).
+  const [profileRes, settingsRes, workspaceMemberRes] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('onboarding_completed, full_name')
+      .eq('id', user.id)
+      .maybeSingle(),
+    // workspace_settings pode não existir ainda — tudo opcional.
+    (async () => {
+      const { data: m } = await supabase
+        .from('workspace_members')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle()
+      if (!m) return { data: null, workspaceId: null as string | null }
+      const { data } = await supabase
+        .from('workspace_settings')
+        .select('*')
+        .eq('workspace_id', m.workspace_id)
+        .maybeSingle()
+      return { data, workspaceId: m.workspace_id }
+    })(),
+    supabase
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle(),
+  ])
+
+  const onboardingCompleted = profileRes.data?.onboarding_completed === true
+  const fullName            = profileRes.data?.full_name ?? null
+  const firstName           = fullName ? fullName.split(' ')[0] : null
+  const workspaceId         = workspaceMemberRes.data?.workspace_id ?? settingsRes.workspaceId ?? null
+  const existingSettings    = settingsRes.data as WorkspaceSettings | null
+  // Se já tem dados da empresa configurados, começamos direto no tour.
+  const hasCompanyData = Boolean(
+    existingSettings?.company_name?.trim() || existingSettings?.company_logo_url
+  )
+  const startStep: 'welcome' | 'company' | 'tour' = hasCompanyData ? 'tour' : 'welcome'
+
+  const showOnboarding = !onboardingCompleted && Boolean(workspaceId)
+
   return (
     <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
       <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
@@ -103,6 +154,16 @@ export default async function AppLayout({
       </main>
       {/* Widget flutuante de feedback — disponível em toda área autenticada */}
       <FeedbackWidget />
+
+      {/* Onboarding overlay — primeiro acesso. Server layout decide se monta. */}
+      {showOnboarding && workspaceId && (
+        <OnboardingOverlay
+          workspaceId={workspaceId}
+          userFirstName={firstName}
+          initialSettings={existingSettings}
+          startStep={startStep}
+        />
+      )}
     </div>
   )
 }

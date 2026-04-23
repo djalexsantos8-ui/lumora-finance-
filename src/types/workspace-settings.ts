@@ -18,6 +18,17 @@ export interface WorkspaceSettings {
   company_address_zip:      string | null
   company_email:            string | null
   company_phone:            string | null
+  // ─── Onboarding extras (migration onboarding_foundation, 2026-04-22) ────
+  // Campos adicionais coletados no onboarding inicial. Opcionais — o produto
+  // não depende deles para operar, mas ajudam a montar propostas e faturamento
+  // profissional depois.
+  company_trade_name:             string | null
+  company_website:                string | null
+  company_instagram:              string | null
+  company_municipal_registration: string | null
+  company_state_registration:     string | null
+  company_tax_regime:             string | null
+  company_billing_notes:          string | null
   default_cancellation_notice_days: number | null
   default_cancellation_penalty_pct: number | null
   deleted_at: string | null

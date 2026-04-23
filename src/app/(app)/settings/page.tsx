@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SettingsForm from './settings-form'
+import { ReplayTourButton } from '@/components/onboarding/replay-tour-button'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 export const metadata = { title: 'Configurações — Lumora Finance' }
@@ -43,6 +44,18 @@ export default async function SettingsPage() {
         settings={settings as WorkspaceSettings | null}
         workspaceId={member.workspace_id}
       />
+
+      {/* Reabrir tour — discreto, fim de página. Pro usuário que pulou ou
+          quer rever o passo-a-passo depois. */}
+      <div className="mt-10 pt-6 border-t border-[#1f1f1f] flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-[#d4d4d4]">Ajuda</p>
+          <p className="text-[11px] text-[#525252] mt-0.5">
+            Reveja o tour visual das 10 abas quando quiser.
+          </p>
+        </div>
+        <ReplayTourButton />
+      </div>
     </div>
   )
 }
