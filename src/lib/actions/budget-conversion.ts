@@ -64,6 +64,71 @@ async function loadBudgetWithItems(
 }
 
 /**
+ * approveAndConvertBudget — Deploy C (2026-04-22).
+ *
+ * "Aprovar & Transformar" em um único clique:
+ *   1) Se o orçamento ainda não está "approved", seta status='approved' +
+ *      approved_at=now() (idempotente — se já está aprovado, vira no-op).
+ *   2) Delega para convertBudgetTo(target), que valida + cria o destino.
+ *
+ * Pra quê: remove a fricção de "aprovar → esperar painel → clicar converter".
+ * O UX agora é: 1 clique no botão primário quando o orçamento está "sent" (ou
+ * até "draft" se o usuário pular etapa) e ele já sai pra /pedidos/:id,
+ * /freelances/:id ou /receitas-recorrentes/:id.
+ *
+ * Segurança: não contorna a validação do convertBudgetTo (status check).
+ * Se a UPDATE de aprovar falhar (RLS/schema), o convert nem é chamado.
+ */
+export async function approveAndConvertBudget(
+  budgetId: string,
+  target: Target
+): Promise<ConversionResult> {
+  const auth = await requireAuth()
+  if (!auth.ok) return { success: false, message: auth.message }
+
+  const { data: current, error: loadErr } = await auth.supabase
+    .from('budgets')
+    .select('id, status, workspace_id')
+    .eq('id', budgetId)
+    .eq('workspace_id', auth.workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (loadErr || !current) {
+    return { success: false, message: 'Orçamento não encontrado.' }
+  }
+
+  // Não aprovar se o budget já foi rejeitado/expirado — força usuário reabrir.
+  if (current.status === 'rejected' || current.status === 'expired') {
+    return {
+      success: false,
+      message: 'Reabra o orçamento como rascunho antes de aprovar.',
+    }
+  }
+
+  if (current.status !== 'approved') {
+    const { error: updErr } = await auth.supabase
+      .from('budgets')
+      .update({
+        status:      'approved',
+        approved_at: new Date().toISOString(),
+      })
+      .eq('id', budgetId)
+      .eq('workspace_id', auth.workspaceId)
+
+    if (updErr) {
+      console.error('[budget-conversion/approve-and-convert]', updErr)
+      return { success: false, message: `Erro ao aprovar: ${updErr.message}` }
+    }
+    revalidatePath(`/budgets/${budgetId}`)
+    revalidatePath('/budgets')
+  }
+
+  // Com status agora 'approved', o convertBudgetTo passa nos seus próprios gates.
+  return await convertBudgetTo(budgetId, target)
+}
+
+/**
  * convertBudgetTo — cria novo registro derivado do orçamento.
  * Não apaga o budget. Adiciona no notes_internal do budget uma linha de audit.
  */

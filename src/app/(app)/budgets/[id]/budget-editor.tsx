@@ -12,7 +12,7 @@ import {
 } from '@/lib/actions/budgets'
 import { updateClient } from '@/lib/actions/clients'
 import { deleteBudgetItem } from '@/lib/actions/budget-items'
-import { convertBudgetTo } from '@/lib/actions/budget-conversion'
+import { convertBudgetTo, approveAndConvertBudget } from '@/lib/actions/budget-conversion'
 import { toast } from 'sonner'
 import {
   formatCurrency,
@@ -534,6 +534,8 @@ export default function BudgetEditor({
                       notes_internal:       f.notesInt,
                       payment_term:         f.paymentTerm,
                       intended_destination: f.intendedDest === '' ? null : f.intendedDest,
+                      segment:              f.segment.trim() || null,
+                      lead_source:          f.leadSource.trim() || null,
                     })
                     if (result.success && result.data) {
                       setBudget(result.data)
@@ -671,10 +673,19 @@ export default function BudgetEditor({
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 p-6 md:p-8 space-y-6">
 
-        {/* Painel de conversão — visível só quando aprovado */}
-        {budget.status === 'approved' && (
-          <ConversionPanel budgetId={budget.id} />
-        )}
+        {/* Painel Aprovar & Transformar — Deploy C (2026-04-22).
+            Visível em draft/sent/approved. Em draft/sent chama approveAndConvert
+            (1 clique). Em approved chama convertBudgetTo. Esconde em
+            rejected/expired porque não faz sentido converter um rejeitado. */}
+        {budget.id &&
+          budget.status !== 'rejected' &&
+          budget.status !== 'expired' && (
+            <ConversionPanel
+              budgetId={budget.id}
+              status={budget.status}
+              intendedDest={intendedDest === '' ? null : intendedDest}
+            />
+          )}
 
         {/* Grid: dados do projeto + resumo financeiro */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1218,67 +1229,136 @@ const inputCls =
   'placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 ' +
   'focus:ring-1 focus:ring-[#D4A853]/20 transition-colors'
 
-// ─── ConversionPanel — Fase 6 ────────────────────────────────────────────────
+// ─── ConversionPanel — Deploy C (2026-04-22) ─────────────────────────────────
+//
+// "Aprovar & Transformar" em 1 clique. Painel contextual:
+//   · status=draft/sent  → botões "Aprovar & Transformar em X"
+//     (usa approveAndConvertBudget — aprova + converte + redireciona)
+//   · status=approved    → botões "Transformar em X"
+//     (usa convertBudgetTo — só converte)
+//
+// Quando `intendedDest` está setado, o botão correspondente vira PRIMARY
+// (dourado, em destaque) e os outros ficam secundários. Isso materializa
+// a intenção que o usuário já declarou ao preencher o formulário —
+// elimina a fricção de "clicar de novo pra escolher o mesmo destino".
 
-function ConversionPanel({ budgetId }: { budgetId: string }) {
+type ConvTarget = 'order' | 'freelance' | 'recurring'
+
+const CONV_LABELS: Record<ConvTarget, string> = {
+  order:     'Pedido',
+  freelance: 'Freelance',
+  recurring: 'Receita Recorrente',
+}
+
+const CONV_ROUTES: Record<ConvTarget, string> = {
+  order:     '/pedidos',
+  freelance: '/freelances',
+  recurring: '/receitas-recorrentes',
+}
+
+function ConversionPanel({
+  budgetId,
+  status,
+  intendedDest,
+}: {
+  budgetId:     string
+  status:       BudgetStatus
+  intendedDest: BudgetIntendedDestination | null
+}) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [converting, setConverting] = useState<'order' | 'freelance' | 'recurring' | null>(null)
+  const [converting, setConverting] = useState<ConvTarget | null>(null)
 
-  function convert(target: 'order' | 'freelance' | 'recurring') {
-    const labels = { order: 'Pedido', freelance: 'Freelance', recurring: 'Receita Recorrente' }
-    if (!confirm(`Converter este orçamento em ${labels[target]}?`)) return
+  const preApproval = status !== 'approved'
+  const actionPrefix = preApproval ? 'Aprovar & Transformar em' : 'Transformar em'
+
+  function run(target: ConvTarget) {
+    // Copy do confirm consciente: pre-approval explicita que vai aprovar também.
+    const confirmMsg = preApproval
+      ? `Aprovar este orçamento e transformar em ${CONV_LABELS[target]}? Isso vai criar um novo registro e redirecionar.`
+      : `Transformar este orçamento em ${CONV_LABELS[target]}?`
+    if (!confirm(confirmMsg)) return
+
     setConverting(target)
     startTransition(async () => {
-      const res = await convertBudgetTo(budgetId, target)
+      const res = preApproval
+        ? await approveAndConvertBudget(budgetId, target)
+        : await convertBudgetTo(budgetId, target)
       setConverting(null)
+
       if (!res.success) {
         toast.error(res.message)
         return
       }
-      toast.success(`Convertido em ${labels[target]}.`)
-      const routes = {
-        order:     `/pedidos/${res.id}`,
-        freelance: `/freelances/${res.id}`,
-        recurring: `/receitas-recorrentes/${res.id}`,
-      }
-      router.push(routes[target])
+
+      toast.success(
+        preApproval
+          ? `Aprovado e transformado em ${CONV_LABELS[target]}.`
+          : `Transformado em ${CONV_LABELS[target]}.`
+      )
+      router.push(`${CONV_ROUTES[target]}/${res.id}`)
     })
   }
 
+  const targets: ConvTarget[] = ['freelance', 'order', 'recurring']
+
+  // Se intendedDest está setado, coloca-o na frente pra ficar visualmente em 1º.
+  const ordered = intendedDest
+    ? [intendedDest as ConvTarget, ...targets.filter(t => t !== intendedDest)]
+    : targets
+
+  const containerCls = preApproval
+    ? 'bg-[#D4A853]/5 border border-[#D4A853]/30 rounded-2xl p-5'
+    : 'bg-emerald-500/5 border border-emerald-500/30 rounded-2xl p-5'
+
+  const titleCls = preApproval ? 'text-[#E8C47A]' : 'text-emerald-400'
+  const titleText = preApproval
+    ? (intendedDest
+        ? '→ Pronto pra virar ' + CONV_LABELS[intendedDest as ConvTarget]
+        : '→ Aprovar e transformar')
+    : '✓ Orçamento aprovado'
+
+  const hintText = preApproval
+    ? (intendedDest
+        ? `Você marcou "${CONV_LABELS[intendedDest as ConvTarget]}" como destino. Um clique aprova o orçamento e cria o registro.`
+        : 'Escolha o destino: vamos aprovar o orçamento e criar o registro em um único clique.')
+    : 'Transforme em outro tipo de receita para continuar o fluxo.'
+
   return (
-    <div className="bg-emerald-500/5 border border-emerald-500/30 rounded-2xl p-5">
+    <div className={containerCls}>
       <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <div className="text-sm font-semibold text-emerald-400 mb-1">
-            ✓ Orçamento aprovado
+        <div className="min-w-0">
+          <div className={`text-sm font-semibold mb-1 ${titleCls}`}>
+            {titleText}
           </div>
           <div className="text-xs text-[#a3a3a3]">
-            Converta em outro tipo de receita para continuar o fluxo.
+            {hintText}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => convert('order')}
-            disabled={isPending}
-            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-          >
-            {converting === 'order' ? 'Convertendo…' : '→ Pedido'}
-          </button>
-          <button
-            onClick={() => convert('freelance')}
-            disabled={isPending}
-            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-          >
-            {converting === 'freelance' ? 'Convertendo…' : '→ Freelance'}
-          </button>
-          <button
-            onClick={() => convert('recurring')}
-            disabled={isPending}
-            className="text-xs font-medium bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-          >
-            {converting === 'recurring' ? 'Convertendo…' : '→ Receita Recorrente'}
-          </button>
+          {ordered.map((target, idx) => {
+            const isPrimary = intendedDest
+              ? target === intendedDest
+              : preApproval && idx === 0  // sem intent: nenhum primário explícito em approved
+            const loading = converting === target
+            const base = 'text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60'
+            const style = isPrimary
+              ? 'text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A]'
+              : 'text-white bg-[#1c1c1c] hover:bg-[#262626] border border-[#2a2a2a] hover:border-[#3a3a3a]'
+            return (
+              <button
+                key={target}
+                onClick={() => run(target)}
+                disabled={isPending}
+                className={`${base} ${style}`}
+                title={`${actionPrefix} ${CONV_LABELS[target]}`}
+              >
+                {loading
+                  ? (preApproval ? 'Aprovando…' : 'Transformando…')
+                  : `${actionPrefix} ${CONV_LABELS[target]}`}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
