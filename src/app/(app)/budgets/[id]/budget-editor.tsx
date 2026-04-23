@@ -37,6 +37,7 @@ import { generateBudgetFields } from '@/lib/ai/generate-budget-fields'
 import type { AIQuota } from '@/lib/ai/quota'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { SectionBoundary } from '@/components/common/section-boundary'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import type { Contract } from '@/types/contract'
 import type {
   Budget,
@@ -845,31 +846,33 @@ export default function BudgetEditor({
               </div>
             </div>
 
-            {/* Descrição */}
+            {/* Descrição — AutoGrowTextarea (padrão oficial 2026-04-23) */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                 Descrição do projeto
               </label>
-              <textarea
-                rows={2}
+              <AutoGrowTextarea
+                minRows={4}
+                maxRows={18}
                 value={desc}
                 onChange={e => field(setDesc)(e.target.value)}
                 placeholder="Casamento, cobertura de evento, vídeo institucional…"
-                className={`${inputCls} resize-none`}
+                className={inputCls}
               />
             </div>
 
-            {/* Entregas */}
+            {/* Entregas — AutoGrowTextarea */}
             <div>
               <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                 Entregas / Escopo
               </label>
-              <textarea
-                rows={2}
+              <AutoGrowTextarea
+                minRows={4}
+                maxRows={18}
                 value={delivers}
                 onChange={e => field(setDelivers)(e.target.value)}
                 placeholder="Ex: 1 vídeo de 5min, 200 fotos editadas, teaser de 60s…"
-                className={`${inputCls} resize-none`}
+                className={inputCls}
               />
             </div>
 
@@ -1006,18 +1009,32 @@ export default function BudgetEditor({
               </div>
             </div>
 
-            {/* Notas internas */}
+            {/* Notas internas — AutoGrowTextarea + badge "Só você vê".
+                O chip amarelado substituiu o antigo "(não aparece no PDF)" em
+                cinza quase invisível (feedback UX 2026-04-23). */}
             <div>
-              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
-                Notas internas
-                <span className="text-[#525252] font-normal ml-1">(não aparece no PDF)</span>
-              </label>
-              <textarea
-                rows={2}
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-[#a3a3a3]">
+                  Notas internas
+                </label>
+                <span
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D4A853] bg-[#D4A853]/10 border border-[#D4A853]/25 rounded-full px-2 py-0.5 tracking-wide"
+                  title="Este conteúdo fica apenas na plataforma. Nunca aparece no PDF enviado ao cliente."
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Só você vê · não entra no PDF
+                </span>
+              </div>
+              <AutoGrowTextarea
+                minRows={4}
+                maxRows={18}
                 value={notesInt}
                 onChange={e => field(setNotesInt)(e.target.value)}
                 placeholder="Observações privadas, condições acordadas, contato do cliente…"
-                className={`${inputCls} resize-none`}
+                className={inputCls}
               />
             </div>
           </div>
