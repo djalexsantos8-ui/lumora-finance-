@@ -40,27 +40,52 @@ export function getCurrentPeriod(now: Date = new Date()): string {
 /**
  * getAIQuota — busca o estado atual da quota do workspace no mês vigente.
  * Se a linha não existir (nunca usou), retorna used=0/limit=100 (default).
+ *
+ * HOTFIX 2026-04-22 21:00 (pós-hang Deploy E/F em prod):
+ *   Envolvido em Promise.race com timeout de 1.5s. Se a query demorar
+ *   mais que isso (prod estava pendurando indefinidamente em
+ *   workspace_ai_usage, possivelmente RLS + PostgREST + edge),
+ *   retorna fallback padrão (used=0/limit=100). UI não trava.
  */
 export async function getAIQuota(
   supabase: SupabaseClient,
   workspaceId: string,
   period: string = getCurrentPeriod()
 ): Promise<AIQuota> {
-  const { data } = await supabase
-    .from('workspace_ai_usage')
-    .select('used_count, monthly_limit')
-    .eq('workspace_id', workspaceId)
-    .eq('period', period)
-    .maybeSingle()
-
-  const used  = data?.used_count    ?? 0
-  const limit = data?.monthly_limit ?? 100
-  return {
+  const defaults: AIQuota = {
     period,
-    used,
-    limit,
-    remaining: Math.max(0, limit - used),
+    used:      0,
+    limit:     100,
+    remaining: 100,
   }
+
+  const query: Promise<AIQuota> = (async () => {
+    try {
+      const { data } = await supabase
+        .from('workspace_ai_usage')
+        .select('used_count, monthly_limit')
+        .eq('workspace_id', workspaceId)
+        .eq('period', period)
+        .maybeSingle()
+      const used  = data?.used_count    ?? 0
+      const limit = data?.monthly_limit ?? 100
+      return {
+        period,
+        used,
+        limit,
+        remaining: Math.max(0, limit - used),
+      }
+    } catch {
+      return defaults
+    }
+  })()
+
+  // Timeout curto pra não travar SSR caso a query pendure.
+  const timeout = new Promise<AIQuota>(resolve =>
+    setTimeout(() => resolve(defaults), 1500)
+  )
+
+  return Promise.race([query, timeout])
 }
 
 /**
