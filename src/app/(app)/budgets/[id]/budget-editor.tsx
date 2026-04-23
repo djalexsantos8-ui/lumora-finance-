@@ -7,6 +7,7 @@ import {
   createBudget,
   updateBudgetInfo,
   updateBudgetMargin,
+  updateBudgetDiscount,
   updateBudgetStatus,
   deleteBudget,
 } from '@/lib/actions/budgets'
@@ -143,6 +144,16 @@ export default function BudgetEditor({
     const n = toNumberSafe(budget.margin_input)
     return n > 0 ? String(n) : ''
   })
+
+  // ─── desconto ───────────────────────────────────────────────────────────────
+  // Valor em R$ subtraído do total. Opcional, default 0. Persistido em
+  // budgets.discount_amount. NÃO afeta aggregators (lêem revenue_total já
+  // com o desconto embutido). Debounce pra não spammar UPDATE.
+  const [discountInput, setDiscountInput] = useState(() => {
+    const n = toNumberSafe(budget.discount_amount)
+    return n > 0 ? String(n) : ''
+  })
+  const discountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ─── cliente (modo expandido — ClientPicker) ─────────────────────────────────
   // Budgets NÃO têm client_id no schema, então os extras SEMPRE começam vazios.
@@ -316,6 +327,19 @@ export default function BudgetEditor({
     const parsed = parseFloat(raw.replace(',', '.')) || 0
     const result = await updateBudgetMargin(currentId, type, parsed)
     if (result.success && result.data) setBudget(result.data)
+  }
+
+  // ─── desconto ────────────────────────────────────────────────────────────────
+  function handleDiscountChange(raw: string) {
+    setDiscountInput(raw)
+    const currentId = budgetIdRef.current
+    if (!currentId) return
+    if (discountTimerRef.current) clearTimeout(discountTimerRef.current)
+    discountTimerRef.current = setTimeout(async () => {
+      const parsed = parseFloat(raw.replace(/[^\d,.]/g, '').replace(',', '.')) || 0
+      const result = await updateBudgetDiscount(currentId, parsed)
+      if (result.success && result.data) setBudget(result.data)
+    }, 450)
   }
 
   // ─── status ──────────────────────────────────────────────────────────────────
@@ -1107,6 +1131,36 @@ export default function BudgetEditor({
                   </div>
                 )
               })()}
+            </div>
+
+            {/* Desconto — em R$, subtraído do total. Opcional. */}
+            <div className="py-3 border-b border-[#1a1a1a]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-[#a3a3a3]">Desconto</span>
+                <span className="text-[10px] text-[#525252] uppercase tracking-wider">opcional</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={discountInput}
+                  onChange={e => handleDiscountChange(e.target.value)}
+                  placeholder="0,00"
+                  className={`${inputCls} text-right pr-10`}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#525252] font-semibold pointer-events-none">
+                  R$
+                </span>
+              </div>
+              {toNumberSafe(budget.discount_amount) > 0 && toNumberSafe(budget.subtotal) + toNumberSafe(budget.margin_amount) > 0 && (
+                <div className="mt-2 text-[11px] text-[#737373] text-right">
+                  ≈ {(
+                    (toNumberSafe(budget.discount_amount) /
+                      (toNumberSafe(budget.subtotal) + toNumberSafe(budget.margin_amount))) *
+                      100
+                  ).toFixed(1).replace('.', ',')}% do subtotal + margem
+                </div>
+              )}
             </div>
 
             {/* Total */}

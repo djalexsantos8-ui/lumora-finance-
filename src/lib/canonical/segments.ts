@@ -55,6 +55,7 @@ export const CLIENT_SEGMENTS = [
   'Produtora',
   'Startup',
   'SaaS / tech',
+  'Mercado Financeiro',
   'Industrial',
   'Automotivo',
 

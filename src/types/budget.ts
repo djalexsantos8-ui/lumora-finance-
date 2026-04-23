@@ -46,6 +46,7 @@ export interface Budget {
   margin_type: BudgetMarginType
   margin_input: number
   margin_amount: number
+  discount_amount: number
   total: number
   notes_internal: string | null
   // ─── Pente fino 2026-04-21: prazo + destino pretendido ──────────────────

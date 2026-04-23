@@ -17,7 +17,7 @@ function parseDecimal(raw: string): number {
 async function recalculateAndReturn(supabase: Awaited<ReturnType<typeof createClient>>, budgetId: string) {
   const { data: budget } = await supabase
     .from('budgets')
-    .select('margin_type, margin_input')
+    .select('margin_type, margin_input, discount_amount')
     .eq('id', budgetId)
     .single()
 
@@ -39,7 +39,8 @@ async function recalculateAndReturn(supabase: Awaited<ReturnType<typeof createCl
       ? (subtotal * Number(budget.margin_input)) / 100
       : Number(budget.margin_input)
 
-  const total = subtotal + marginAmount
+  const discount = Number(budget.discount_amount ?? 0)
+  const total = Math.max(0, subtotal + marginAmount - discount)
 
   const { data: updated } = await supabase
     .from('budgets')

@@ -65,6 +65,7 @@ export default async function NewBudgetPage() {
     margin_type:         'percentage',
     margin_input:        0,
     margin_amount:       0,
+    discount_amount:     0,
     total:               0,
     notes_internal:      null,
     payment_term:        null,

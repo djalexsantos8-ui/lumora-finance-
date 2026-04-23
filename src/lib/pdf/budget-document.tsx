@@ -208,6 +208,33 @@ const S = StyleSheet.create({
     color:       GRAY,
     marginTop:   6,
   },
+  // ── breakdown subtotal/desconto quando há desconto ──────────────────────────
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+    marginBottom:   6,
+  },
+  breakdownLabel: {
+    fontSize: 10,
+    color:    GRAY,
+  },
+  breakdownValue: {
+    fontSize:   10,
+    color:      DARK,
+    fontFamily: 'Helvetica-Bold',
+  },
+  breakdownDiscount: {
+    fontSize:   10,
+    color:      '#9b7116',
+    fontFamily: 'Helvetica-Bold',
+  },
+  breakdownDivider: {
+    height:          1,
+    backgroundColor: '#e8e8e8',
+    marginTop:       6,
+    marginBottom:    10,
+  },
 
   // ── assinatura ───────────────────────────────────────────────────────────────
   signatureBlock: {
@@ -402,6 +429,26 @@ export default function BudgetDocument({
 
         {/* Total em destaque */}
         <View style={S.totalBlock}>
+          {Number(budget.discount_amount ?? 0) > 0 && (
+            <>
+              <View style={S.breakdownRow}>
+                <Text style={S.breakdownLabel}>Subtotal</Text>
+                <Text style={S.breakdownValue}>
+                  {formatMoney(
+                    Number(budget.subtotal ?? 0) + Number(budget.margin_amount ?? 0),
+                    budget.currency
+                  )}
+                </Text>
+              </View>
+              <View style={S.breakdownRow}>
+                <Text style={S.breakdownLabel}>Desconto</Text>
+                <Text style={S.breakdownDiscount}>
+                  - {formatMoney(Number(budget.discount_amount), budget.currency)}
+                </Text>
+              </View>
+              <View style={S.breakdownDivider} />
+            </>
+          )}
           <Text style={S.totalLabel}>INVESTIMENTO TOTAL</Text>
           <Text style={S.totalValue}>
             {formatMoney(budget.total, budget.currency)}

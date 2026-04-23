@@ -17,7 +17,7 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
 
   const { data: budget } = await supabase
     .from('budgets')
-    .select('margin_type, margin_input')
+    .select('margin_type, margin_input, discount_amount')
     .eq('id', budgetId)
     .single()
 
@@ -39,7 +39,8 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
       ? (subtotal * Number(budget.margin_input)) / 100
       : Number(budget.margin_input)
 
-  const total = subtotal + marginAmount
+  const discount = Number(budget.discount_amount ?? 0)
+  const total = Math.max(0, subtotal + marginAmount - discount)
 
   await supabase
     .from('budgets')
@@ -49,6 +50,37 @@ export async function recalculateBudgetTotals(budgetId: string): Promise<void> {
       total:         Math.round(total * 100) / 100,
     })
     .eq('id', budgetId)
+}
+
+// ─── UPDATE DISCOUNT ─────────────────────────────────────────────────────────
+// Atualiza discount_amount e recalcula o total. Chamado pelo BudgetEditor.
+export async function updateBudgetDiscount(
+  id: string,
+  amount: number
+): Promise<BudgetActionResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, message: 'Não autorizado.' }
+
+  const clean = Math.max(0, Math.round((Number(amount) || 0) * 100) / 100)
+
+  const { error } = await supabase
+    .from('budgets')
+    .update({ discount_amount: clean })
+    .eq('id', id)
+    .is('deleted_at', null)
+
+  if (error) return { success: false, message: 'Erro ao atualizar desconto.' }
+
+  await recalculateBudgetTotals(id)
+
+  const { data } = await supabase
+    .from('budgets')
+    .select()
+    .eq('id', id)
+    .single()
+
+  return { success: true, data }
 }
 
 // ─── CREATE — INSERT do primeiro save de um orçamento novo ───────────────────
@@ -312,7 +344,7 @@ export async function updateBudgetMargin(
 
   const { data: current } = await supabase
     .from('budgets')
-    .select('subtotal')
+    .select('subtotal, discount_amount')
     .eq('id', id)
     .single()
 
@@ -323,7 +355,8 @@ export async function updateBudgetMargin(
     marginType === 'percentage'
       ? (subtotal * marginInput) / 100
       : marginInput
-  const total = subtotal + marginAmount
+  const discount = Number(current.discount_amount ?? 0)
+  const total = Math.max(0, subtotal + marginAmount - discount)
 
   const { data, error } = await supabase
     .from('budgets')
