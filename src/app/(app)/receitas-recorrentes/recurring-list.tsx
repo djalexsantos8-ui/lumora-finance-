@@ -5,12 +5,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { bulkDeleteRecurringRevenue } from '@/lib/actions/recurring-revenue'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
+import { isDraftRecurring } from '@/lib/utils/is-draft-recurring'
 import type {
   RecurringRevenue,
   RecurringStatus,
   RecurringFrequency,
 } from '@/types/recurring-revenue'
 import { NewRecurringButton } from './new-recurring-button'
+import { DraftBadge } from '@/components/freelances/draft-badge'
 
 interface Props {
   items: RecurringRevenue[]
@@ -194,6 +196,7 @@ export default function RecurringList({ items: initial }: Props) {
       <div className="space-y-2">
         {items.map(r => {
           const isChecked = selected.has(r.id)
+          const isDraft   = isDraftRecurring(r)
           return (
             <div
               key={r.id}
@@ -214,11 +217,11 @@ export default function RecurringList({ items: initial }: Props) {
               <Link href={`/receitas-recorrentes/${r.id}`} className="flex items-center justify-between flex-1 min-w-0 gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <p className="text-sm font-semibold text-white truncate">
-                      {r.title || 'Receita sem título'}
+                    <p className={`text-sm font-semibold truncate ${isDraft ? 'text-[#a3a3a3] italic' : 'text-white'}`}>
+                      {isDraft ? 'Receita sem título' : (r.title || 'Receita sem título')}
                     </p>
-                    <RecurringStatusBadge status={r.status} />
-                    {r.segment && (
+                    {isDraft ? <DraftBadge /> : <RecurringStatusBadge status={r.status} />}
+                    {!isDraft && r.segment && (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#262626] text-[#a3a3a3]">
                         {r.segment}
                       </span>

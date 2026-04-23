@@ -5,8 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { bulkDeleteOrders } from '@/lib/actions/orders'
 import { formatCurrency, formatDate } from '@/lib/utils/format'
+import { isDraftOrder } from '@/lib/utils/is-draft-order'
 import type { Order, OrderStatus } from '@/types/order'
 import { NewOrderButton } from './new-order-button'
+import { DraftBadge } from '@/components/freelances/draft-badge'
 
 interface Props {
   orders: Order[]
@@ -165,6 +167,7 @@ export default function PedidosList({ orders: initial }: Props) {
       <div className="space-y-2">
         {orders.map(order => {
           const isChecked = selected.has(order.id)
+          const isDraft   = isDraftOrder(order)
           return (
             <div
               key={order.id}
@@ -192,10 +195,10 @@ export default function PedidosList({ orders: initial }: Props) {
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <p className="text-sm font-semibold text-white truncate">
-                      {order.title || 'Pedido sem título'}
+                    <p className={`text-sm font-semibold truncate ${isDraft ? 'text-[#a3a3a3] italic' : 'text-white'}`}>
+                      {isDraft ? 'Pedido sem título' : (order.title || 'Pedido sem título')}
                     </p>
-                    <OrderStatusBadge status={order.status} />
+                    {isDraft ? <DraftBadge /> : <OrderStatusBadge status={order.status} />}
                   </div>
                   <p className="text-xs text-[#525252] truncate">
                     {order.client_name || 'Cliente não informado'}
