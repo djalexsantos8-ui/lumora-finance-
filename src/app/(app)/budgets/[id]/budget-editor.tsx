@@ -731,6 +731,7 @@ export default function BudgetEditor({
               if (fields.client_name)         field(setClient)(fields.client_name)
               if (fields.project_description) field(setDesc)(fields.project_description)
               if (fields.deliverables)        field(setDelivers)(fields.deliverables)
+              if (fields.internal_notes)      field(setNotesInt)(fields.internal_notes)
               if (fields.segment)             field(setSegment)(fields.segment)
               if (fields.lead_source)         field(setLeadSource)(fields.lead_source)
               if (fields.payment_term)        field(setPaymentTerm)(fields.payment_term)
