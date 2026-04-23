@@ -15,6 +15,7 @@ const NAV = [
   { href: '/admin/users',       label: 'Usuários' },
   { href: '/admin/ai-credits',  label: 'Créditos de IA' },
   { href: '/admin/feedback',    label: 'Feedback' },
+  { href: '/admin/insights',    label: 'Insights' },
   { href: '/admin/coupons',     label: 'Cupons' },
   { href: '/admin/grants',      label: 'Grants de acesso' },
 ] as const
