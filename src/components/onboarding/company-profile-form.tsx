@@ -15,6 +15,7 @@ import { useRef, useState, useTransition } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { saveCompanyProfile, type CompanyProfilePayload } from '@/lib/actions/onboarding'
+import { submitWithOfflineGuard } from '@/lib/utils/offline-submit'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 interface Props {
@@ -137,9 +138,16 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
     }
 
     startTransition(async () => {
-      const res = await saveCompanyProfile(payload)
-      if (res.success) onSaved()
-      else setToast(res.message)
+      const guard = await submitWithOfflineGuard(
+        () => saveCompanyProfile(payload),
+        { timeoutMs: 8000 },
+      )
+      if (!guard.ok) {
+        setToast(guard.message)
+        return
+      }
+      if (guard.data.success) onSaved()
+      else setToast(guard.data.message)
     })
   }
 

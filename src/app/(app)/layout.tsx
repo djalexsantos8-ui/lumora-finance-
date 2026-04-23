@@ -4,6 +4,7 @@ import Sidebar from '@/components/sidebar'
 import AppFooter from '@/components/layout/app-footer'
 import FeedbackWidget from '@/components/feedback/feedback-widget'
 import OnboardingOverlay from '@/components/onboarding/onboarding-overlay'
+import OfflineBanner from '@/components/common/offline-banner'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 export default async function AppLayout({
@@ -149,6 +150,7 @@ export default async function AppLayout({
     <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
       <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
       <main className="flex-1 overflow-y-auto flex flex-col">
+        <OfflineBanner />
         <div className="flex-1">{children}</div>
         <AppFooter />
       </main>

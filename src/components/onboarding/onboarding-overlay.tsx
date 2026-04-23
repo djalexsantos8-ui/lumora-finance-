@@ -27,6 +27,7 @@ import {
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 import CompanyProfileForm from './company-profile-form'
 import ProductTour from './product-tour'
+import { submitWithOfflineGuard } from '@/lib/utils/offline-submit'
 
 type Step = 'welcome' | 'company' | 'tour'
 
@@ -64,17 +65,35 @@ export default function OnboardingOverlay({
     return () => { document.body.style.overflow = prev }
   }, [])
 
+  // UX rule: nunca deixar o botão girando mais que ~5s. Se a ação estourar
+  // o timeout (offline, rede podre, etc), voltamos ao estado normal e mostramos
+  // um alert simples. O usuário reabre em Settings se quiser.
   function handleSkip() {
     if (isSkipping || isFinishing) return
     startSkip(async () => {
-      await markOnboardingSkipped()
+      const res = await submitWithOfflineGuard(
+        () => markOnboardingSkipped(),
+        { timeoutMs: 5000 },
+      )
+      if (!res.ok) {
+        alert(res.message)
+        return
+      }
       router.refresh()
     })
   }
 
   function handleFinish() {
+    if (isSkipping || isFinishing) return
     startFinish(async () => {
-      await markOnboardingCompleted()
+      const res = await submitWithOfflineGuard(
+        () => markOnboardingCompleted(),
+        { timeoutMs: 5000 },
+      )
+      if (!res.ok) {
+        alert(res.message)
+        return
+      }
       router.refresh()
     })
   }
