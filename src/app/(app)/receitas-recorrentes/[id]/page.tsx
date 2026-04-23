@@ -2,7 +2,6 @@ import { redirect, notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import RecurringEditor from './recurring-editor'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
-import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { listInvoicesByRecurring } from '@/lib/actions/recurring-invoices'
 import type { RecurringRevenue } from '@/types/recurring-revenue'
 
@@ -45,20 +44,13 @@ export default async function RecurringDetailPage({
     listInvoicesByRecurring(id),
   ])
 
+  // Pente fino 2026-04-23: ContractEntryPoint agora é renderizado DENTRO
+  // do RecurringEditor (herda max-w-3xl e fica alinhado com o editor).
   return (
-    <>
-      <RecurringEditor
-        item={data as RecurringRevenue}
-        initialInvoices={invoices}
-      />
-      {/* Alinhado com max-w do recurring-editor (max-w-3xl) */}
-      <div className="max-w-3xl mx-auto px-6 md:px-8 pb-10">
-        <ContractEntryPoint
-          originKind="recurring"
-          originId={id}
-          contracts={linkedContracts}
-        />
-      </div>
-    </>
+    <RecurringEditor
+      item={data as RecurringRevenue}
+      initialInvoices={invoices}
+      linkedContracts={linkedContracts}
+    />
   )
 }

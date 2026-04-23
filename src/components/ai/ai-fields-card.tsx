@@ -120,8 +120,23 @@ export function AIFieldsCard<F>({
     }
   }
 
+  // Microcopy natural em pt-BR (pente fino 2026-04-23).
+  // Antes: "100/100 gerações restantes em 2026-04" (parecia data americana
+  // crua, visual técnico). Agora mostra o mês por extenso e fala humano.
+  const MESES_PT = [
+    'janeiro',   'fevereiro', 'março',     'abril',
+    'maio',      'junho',     'julho',     'agosto',
+    'setembro',  'outubro',   'novembro',  'dezembro',
+  ]
+  const periodoHumano = (() => {
+    if (!quota?.period) return ''
+    const [ano, mes] = quota.period.split('-')
+    const i = parseInt(mes, 10) - 1
+    if (!ano || Number.isNaN(i) || i < 0 || i > 11) return ''
+    return `${MESES_PT[i]} de ${ano}`
+  })()
   const remainingTxt = quota
-    ? `${quota.remaining}/${quota.limit} gerações restantes em ${quota.period}`
+    ? `${quota.remaining} de ${quota.limit} gerações restantes este mês`
     : null
 
   return (
@@ -142,9 +157,9 @@ export function AIFieldsCard<F>({
           {remainingTxt && (
             <span
               className="text-[10px] font-medium text-[#a3a3a3] bg-[#0a0a0a] border border-[#2a2a2a] rounded-full px-2 py-0.5"
-              title={`Período ${quota?.period}`}
+              title={periodoHumano ? `Referente a ${periodoHumano}` : undefined}
             >
-              {quota && quota.remaining === 0 ? 'Sem créditos' : remainingTxt}
+              {quota && quota.remaining === 0 ? 'Sem créditos este mês' : remainingTxt}
             </span>
           )}
           <svg

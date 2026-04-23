@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import JobDetail from './job-detail'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
-import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import type { Job, JobRevenueItem, JobCostItem, JobPayment } from '@/types/job'
 import type { Expense } from '@/types/expense'
 import type { JobFile } from '@/types/job-file'
@@ -95,24 +94,17 @@ export default async function JobDetailPage({ params }: Props) {
 
   const linkedContracts = await listContractsByOriginQuery('freelance', id)
 
+  // Pente fino 2026-04-23: ContractEntryPoint agora é renderizado DENTRO
+  // do JobDetail (herda max-w-3xl e fica alinhado com o resto do editor).
   return (
-    <>
-      <JobDetail
-        job={job as Job}
-        initialRevenueItems={(revenueItems ?? []) as JobRevenueItem[]}
-        initialCostItems={(costItems    ?? []) as JobCostItem[]}
-        initialPayments={(payments      ?? []) as JobPayment[]}
-        initialJobExpenses={(jobExpenses ?? []) as Expense[]}
-        initialJobFiles={(jobFiles      ?? []) as JobFile[]}
-      />
-      {/* Alinhado com max-w do job-detail (max-w-3xl) para margem/padding consistente */}
-      <div className="max-w-3xl mx-auto px-6 md:px-8 pb-10">
-        <ContractEntryPoint
-          originKind="freelance"
-          originId={id}
-          contracts={linkedContracts}
-        />
-      </div>
-    </>
+    <JobDetail
+      job={job as Job}
+      initialRevenueItems={(revenueItems ?? []) as JobRevenueItem[]}
+      initialCostItems={(costItems    ?? []) as JobCostItem[]}
+      initialPayments={(payments      ?? []) as JobPayment[]}
+      initialJobExpenses={(jobExpenses ?? []) as Expense[]}
+      initialJobFiles={(jobFiles      ?? []) as JobFile[]}
+      linkedContracts={linkedContracts}
+    />
   )
 }

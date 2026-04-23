@@ -70,6 +70,8 @@ import { OrderPaymentDueField } from '@/components/orders/order-payment-due-fiel
 import { AIFieldsCard } from '@/components/ai/ai-fields-card'
 import { generateOrderFields } from '@/lib/ai/generate-order-fields'
 import type { AIQuota } from '@/lib/ai/quota'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import type { Contract } from '@/types/contract'
 
 interface Props {
   order:       Order
@@ -82,6 +84,8 @@ interface Props {
   costsTableMissing:     boolean
   filesTableMissing:     boolean
   initialAIQuota?:       AIQuota | null
+  /** Contratos já vinculados a este pedido (Deploy pente-fino 2026-04-23) */
+  linkedContracts?:      Contract[]
 }
 
 const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
@@ -156,6 +160,7 @@ export default function OrderEditor({
   costsTableMissing,
   filesTableMissing,
   initialAIQuota = null,
+  linkedContracts = [],
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -716,6 +721,20 @@ export default function OrderEditor({
             setForm(f => ({ ...f, amount_paid: Number(updatedOrder.amount_paid ?? 0) }))
           }
           router.refresh()
+        }}
+      />
+
+      {/* Contratos vinculados — pente fino 2026-04-23
+          Antes ficava fora do editor em page.tsx, causando desalinhamento
+          com max-w-4xl do editor. Agora é embutido aqui pra herdar o mesmo
+          container e ficar visualmente nativo. */}
+      <ContractEntryPoint
+        originKind="order"
+        originId={order.id}
+        contracts={linkedContracts}
+        hints={{
+          segment: form.client_segment || null,
+          category: null,
         }}
       />
 

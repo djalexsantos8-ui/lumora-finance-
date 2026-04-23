@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import BudgetEditor from './budget-editor'
-import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
@@ -79,25 +78,17 @@ export default async function BudgetPage({ params }: Props) {
   // movido PRA FORA do SSR. O AIFieldsCard busca a quota no cliente via
   // getMyAIQuota() no mount (useEffect Deploy G). Remover do SSR elimina
   // qualquer risco de timeout/hang no stream de Suspense.
+  //
+  // Pente fino 2026-04-23: ContractEntryPoint agora é renderizado DENTRO
+  // do BudgetEditor (pra alinhar com os cards de cima — antes vivia solto
+  // no page.tsx com max-w-5xl enquanto o editor não tinha max-w nenhum).
   return (
-    <>
-      <BudgetEditor
-        budget={budget as Budget}
-        items={(items ?? []) as BudgetItem[]}
-        freelancers={freelancers as Freelancer[]}
-        initialAIQuota={null}
-      />
-      <div className="max-w-5xl mx-auto px-6 md:px-8 pb-10">
-        <ContractEntryPoint
-          originKind="budget"
-          originId={budget.id}
-          contracts={linkedContracts}
-          hints={{
-            segment:  (budget as Budget).segment ?? null,
-            category: null,
-          }}
-        />
-      </div>
-    </>
+    <BudgetEditor
+      budget={budget as Budget}
+      items={(items ?? []) as BudgetItem[]}
+      freelancers={freelancers as Freelancer[]}
+      initialAIQuota={null}
+      linkedContracts={linkedContracts}
+    />
   )
 }

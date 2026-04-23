@@ -7,7 +7,6 @@ import {
   listOrderFilesQuery,
 } from '@/lib/queries/orders'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
-import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { listPaymentsByOrder } from '@/lib/actions/order-payments'
 import { listOrderExpenses } from '@/lib/actions/expenses'
 import type { Order, OrderItem, OrderCostItem, OrderFile, OrderPayment } from '@/types/order'
@@ -59,29 +58,23 @@ export default async function OrderDetailPage({
 
   // Deploy F → Hotfix 2026-04-23: getAIQuota removido do SSR (hang em prod).
   // AIFieldsCard busca a quota no cliente via getMyAIQuota() no mount.
+  //
+  // Pente fino 2026-04-23: ContractEntryPoint agora é renderizado DENTRO
+  // do OrderEditor (herda max-w-4xl e fica alinhado com o resto do editor).
 
   return (
-    <>
-      <OrderEditor
-        order={order as Order}
-        items={itemsRes.items as OrderItem[]}
-        costItems={costsRes.items as OrderCostItem[]}
-        files={filesRes.files as OrderFile[]}
-        initialPayments={payments as OrderPayment[]}
-        initialOrderExpenses={(expensesRes.data ?? []) as Expense[]}
-        itemsTableMissing={itemsRes.tableMissing}
-        costsTableMissing={costsRes.tableMissing}
-        filesTableMissing={filesRes.tableMissing}
-        initialAIQuota={null}
-      />
-      {/* Alinhado com max-w do order-editor (max-w-4xl) */}
-      <div className="max-w-4xl mx-auto px-6 md:px-8 pb-10">
-        <ContractEntryPoint
-          originKind="order"
-          originId={id}
-          contracts={linkedContracts}
-        />
-      </div>
-    </>
+    <OrderEditor
+      order={order as Order}
+      items={itemsRes.items as OrderItem[]}
+      costItems={costsRes.items as OrderCostItem[]}
+      files={filesRes.files as OrderFile[]}
+      initialPayments={payments as OrderPayment[]}
+      initialOrderExpenses={(expensesRes.data ?? []) as Expense[]}
+      itemsTableMissing={itemsRes.tableMissing}
+      costsTableMissing={costsRes.tableMissing}
+      filesTableMissing={filesRes.tableMissing}
+      initialAIQuota={null}
+      linkedContracts={linkedContracts}
+    />
   )
 }

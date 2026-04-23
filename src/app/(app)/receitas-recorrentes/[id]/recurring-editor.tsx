@@ -27,10 +27,14 @@ import type {
 } from '@/types/recurring-revenue'
 import { RecurringStatusBadge } from '../recurring-list'
 import { toast } from 'sonner'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import type { Contract } from '@/types/contract'
 
 interface Props {
   item: RecurringRevenue
   initialInvoices?: RecurringRevenueInvoice[]
+  /** Contratos já vinculados (Deploy pente-fino 2026-04-23) */
+  linkedContracts?: Contract[]
 }
 
 const FREQUENCY_OPTIONS: { value: RecurringFrequency; label: string }[] = [
@@ -46,7 +50,7 @@ const STATUS_OPTIONS: { value: RecurringStatus; label: string }[] = [
   { value: 'cancelled', label: 'Cancelado' },
 ]
 
-export default function RecurringEditor({ item, initialInvoices = [] }: Props) {
+export default function RecurringEditor({ item, initialInvoices = [], linkedContracts = [] }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -461,6 +465,15 @@ export default function RecurringEditor({ item, initialInvoices = [] }: Props) {
         invoices={invoices}
         onChange={setInvoices}
         disabled={form.status === 'cancelled'}
+      />
+
+      {/* Contratos vinculados — pente fino 2026-04-23
+          Embutido aqui pra herdar max-w-3xl do editor. Antes vivia fora em
+          page.tsx num wrapper duplicado. */}
+      <ContractEntryPoint
+        originKind="recurring"
+        originId={item.id}
+        contracts={linkedContracts}
       />
 
       {confirmingDelete && (

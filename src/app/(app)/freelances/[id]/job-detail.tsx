@@ -33,6 +33,8 @@ import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { createExpense, deleteExpense } from '@/lib/actions/expenses'
 import type { Expense } from '@/types/expense'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import type { Contract } from '@/types/contract'
 
 // ─── Helper: deriva ClientRef a partir do job carregado ──────────────────────
 // Source of truth: se existe client_id + client (join), usa esses.
@@ -107,6 +109,8 @@ interface Props {
   initialPayments:     JobPayment[]
   initialJobExpenses:  Expense[]
   initialJobFiles:     JobFile[]
+  /** Contratos já vinculados a este freelance (Deploy pente-fino 2026-04-23) */
+  linkedContracts?:    Contract[]
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -118,6 +122,7 @@ export default function JobDetail({
   initialPayments,
   initialJobExpenses,
   initialJobFiles,
+  linkedContracts = [],
 }: Props) {
   const router = useRouter()
 
@@ -1059,6 +1064,20 @@ export default function JobDetail({
           {toast.message}
         </div>
       )}
+
+      {/* Contratos vinculados — pente fino 2026-04-23
+          Antes vivia fora do editor em page.tsx com max-w-3xl duplicado.
+          Agora é embutido pra herdar o mesmo container do editor e ficar
+          visualmente nativo, alinhado com o resto dos cards acima. */}
+      <ContractEntryPoint
+        originKind="freelance"
+        originId={job.id}
+        contracts={linkedContracts}
+        hints={{
+          segment: job.client_segment ?? null,
+          category: null,
+        }}
+      />
 
       {/* ── Modal de upload compartilhado ────────────────────────────────────
           Único modal pra toda a página. Acionado pelo botão "Comprovante"

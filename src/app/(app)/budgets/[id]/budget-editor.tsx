@@ -34,6 +34,8 @@ import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { AIFieldsCard } from '@/components/ai/ai-fields-card'
 import { generateBudgetFields } from '@/lib/ai/generate-budget-fields'
 import type { AIQuota } from '@/lib/ai/quota'
+import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import type { Contract } from '@/types/contract'
 import type {
   Budget,
   BudgetItem,
@@ -57,6 +59,10 @@ interface Props {
   // passado, o card busca com a primeira geração. SSR passa pra evitar
   // flash "–/–".
   initialAIQuota?: AIQuota | null
+  // Pente fino 2026-04-23: contratos já vinculados. Embutidos DENTRO do
+  // editor (eram um bloco solto no page.tsx com largura diferente, criava
+  // visual torto). Opcional — quando ausente, o bloco de Contratos some.
+  linkedContracts?: Contract[]
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -69,6 +75,7 @@ export default function BudgetEditor({
   freelancers,
   isNew = false,
   initialAIQuota = null,
+  linkedContracts = [],
 }: Props) {
   const router = useRouter()
 
@@ -678,22 +685,17 @@ export default function BudgetEditor({
         </div>
       )}
 
-      {/* ── Body ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 p-6 md:p-8 space-y-6">
-
-        {/* Painel Aprovar & Transformar — Deploy C (2026-04-22).
-            Visível em draft/sent/approved. Em draft/sent chama approveAndConvert
-            (1 clique). Em approved chama convertBudgetTo. Esconde em
-            rejected/expired porque não faz sentido converter um rejeitado. */}
-        {budget.id &&
-          budget.status !== 'rejected' &&
-          budget.status !== 'expired' && (
-            <ConversionPanel
-              budgetId={budget.id}
-              status={budget.status}
-              intendedDest={intendedDest === '' ? null : intendedDest}
-            />
-          )}
+      {/* ── Body ─────────────────────────────────────────────────────────────
+          Pente fino 2026-04-23: ordem visual agora reflete o fluxo mental:
+            1) ✨ Gerar com IA (atalho pra pré-preencher o form)
+            2) Dados do Projeto + Resumo Financeiro (grid)
+            3) Itens do Orçamento
+            4) Aprovar & Transformar (só faz sentido DEPOIS do orçamento montado)
+            5) Contratos (passo posterior à aprovação)
+          max-w-5xl garante alinhamento uniforme de todos os cards — antes
+          o body não tinha max-w e o bloco de contratos (no page.tsx, com
+          max-w-5xl) ficava visivelmente desalinhado dos cards de cima. */}
+      <div className="flex-1 p-6 md:p-8 space-y-6 max-w-5xl w-full mx-auto">
 
         {/* Deploy E (2026-04-22) — "✨ Gerar com IA" aparece só em draft pra
             evitar que usuário sobrescreva um orçamento já aprovado/enviado
@@ -1144,6 +1146,37 @@ export default function BudgetEditor({
             </>
           )}
         </div>
+
+        {/* ── Aprovar & Transformar ───────────────────────────────────────────
+            Pente fino 2026-04-23: desceu de cima pra baixo pro fluxo ficar
+            natural (monta → vê itens → aprova → contrato). Deploy C mantém
+            o comportamento: draft/sent → approveAndConvert em 1 clique;
+            approved → só converter. Escondido em rejected/expired. */}
+        {budget.id &&
+          budget.status !== 'rejected' &&
+          budget.status !== 'expired' && (
+            <ConversionPanel
+              budgetId={budget.id}
+              status={budget.status}
+              intendedDest={intendedDest === '' ? null : intendedDest}
+            />
+          )}
+
+        {/* ── Contratos ───────────────────────────────────────────────────────
+            Embutido DENTRO do body (antes vivia solto no page.tsx com largura
+            diferente, ficava desalinhado). Só aparece quando o budget existe
+            no banco (id != '') — evita piscar em rota /new antes do 1º save. */}
+        {budget.id && (
+          <ContractEntryPoint
+            originKind="budget"
+            originId={budget.id}
+            contracts={linkedContracts}
+            hints={{
+              segment:  segment || null,
+              category: null,
+            }}
+          />
+        )}
       </div>
 
       {/* ── Modal de item ──────────────────────────────────────────────────── */}
