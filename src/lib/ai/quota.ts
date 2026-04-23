@@ -27,6 +27,31 @@ export type AIQuota = {
   remaining: number
 }
 
+/**
+ * AIBalance — breakdown por origem de crédito (Deploy H 2026-04-23).
+ *
+ * Composição do saldo de IA do workspace em um período:
+ *   · included  — plano mensal (workspace_ai_usage). Reseta todo mês.
+ *   · granted   — cortesia do admin (ai_credit_events, origin=granted).
+ *                 Não reseta. Pode ter expires_at (null = perpétuo).
+ *   · purchased — comprado via Stripe (origin=purchased). Não reseta.
+ *
+ * Ordem de consumo: granted → purchased → included (favorece o usuário).
+ *
+ * Fallback: se migração do ledger (20260423010000_ai_credit_ledger.sql) ainda
+ * não rodou, getAIBalance retorna 0 em granted/purchased e usa o quota
+ * antigo para os incluídos.
+ */
+export type AIBalance = {
+  period:             string
+  granted:            number
+  purchased:          number
+  included_used:      number
+  included_limit:     number
+  included_remaining: number
+  total_remaining:    number
+}
+
 export type ConsumeResult =
   | { ok: true;  quota: AIQuota }
   | { ok: false; reason: 'limit_exceeded' | 'unknown'; quota: AIQuota | null }
@@ -89,14 +114,126 @@ export async function getAIQuota(
 }
 
 /**
+ * getAIBalance — breakdown completo de créditos (included + granted + purchased).
+ *
+ * Usa a RPC `get_ai_balance` (Deploy H). Se ela não existir ainda (migration
+ * não aplicada), cai de volta em getAIQuota() — retornando granted/purchased=0.
+ * Isso garante que a UI não quebre antes da migration rodar em prod.
+ */
+export async function getAIBalance(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  period: string = getCurrentPeriod()
+): Promise<AIBalance> {
+  try {
+    const { data, error } = await supabase.rpc('get_ai_balance', {
+      p_workspace_id: workspaceId,
+      p_period:       period,
+    })
+
+    if (!error && data && typeof data === 'object') {
+      const b = data as {
+        granted?:            number
+        purchased?:          number
+        included_used?:      number
+        included_limit?:     number
+        included_remaining?: number
+        total_remaining?:    number
+      }
+      const granted   = Number(b.granted ?? 0)
+      const purchased = Number(b.purchased ?? 0)
+      const iUsed     = Number(b.included_used ?? 0)
+      const iLimit    = Number(b.included_limit ?? 100)
+      const iRem      = Number(b.included_remaining ?? Math.max(0, iLimit - iUsed))
+      const total     = Number(b.total_remaining ?? (granted + purchased + iRem))
+      return {
+        period,
+        granted,
+        purchased,
+        included_used:      iUsed,
+        included_limit:     iLimit,
+        included_remaining: iRem,
+        total_remaining:    total,
+      }
+    }
+  } catch {
+    // RPC ainda não existe — cai no fallback
+  }
+
+  // ── Fallback (pré-migration) ───────────────────────────────────────────────
+  const quota = await getAIQuota(supabase, workspaceId, period)
+  return {
+    period,
+    granted:            0,
+    purchased:          0,
+    included_used:      quota.used,
+    included_limit:     quota.limit,
+    included_remaining: quota.remaining,
+    total_remaining:    quota.remaining,
+  }
+}
+
+/**
  * consumeAICredit — tenta consumir 1 crédito atomicamente via RPC.
- * Retorna ok=false se o limite foi atingido (a RPC retorna NULL).
+ *
+ * Deploy H (2026-04-23): tenta consume_ai_credit_v2 primeiro (usa ledger —
+ * granted → purchased → included). Se a RPC v2 não existir (migration pendente),
+ * faz fallback para increment_ai_usage (só incluídos).
+ *
+ * Retorna ok=false se TODAS as origens estão esgotadas.
  */
 export async function consumeAICredit(
   supabase: SupabaseClient,
   workspaceId: string
 ): Promise<ConsumeResult> {
   const period = getCurrentPeriod()
+
+  // ── tentativa 1: ledger v2 ──────────────────────────────────────────────
+  try {
+    const { data: v2Data, error: v2Err } = await supabase.rpc(
+      'consume_ai_credit_v2',
+      { p_workspace_id: workspaceId, p_period: period }
+    )
+    if (!v2Err) {
+      if (v2Data === null) {
+        // Tudo esgotado
+        const quota = await getAIQuota(supabase, workspaceId, period)
+        return { ok: false, reason: 'limit_exceeded', quota }
+      }
+      // v2Data é jsonb { consumed_from, granted_remaining, purchased_remaining,
+      //                 included_used, included_limit }
+      const b = v2Data as {
+        consumed_from?:       string
+        granted_remaining?:   number
+        purchased_remaining?: number
+        included_used?:       number
+        included_limit?:      number
+      }
+      const iUsed  = Number(b.included_used  ?? 0)
+      const iLimit = Number(b.included_limit ?? 100)
+      const gRem   = Number(b.granted_remaining ?? 0)
+      const pRem   = Number(b.purchased_remaining ?? 0)
+      const totalRemaining =
+        gRem + pRem + Math.max(0, iLimit - iUsed)
+
+      return {
+        ok: true,
+        quota: {
+          period,
+          // Mantemos o shape de AIQuota pra UI antiga (limit/used/remaining).
+          // A UI nova (Deploy H) consome getAIBalance pra ver breakdown.
+          used:      iUsed,
+          limit:     iLimit,
+          remaining: totalRemaining,
+        },
+      }
+    }
+    // v2Err !== null — cai no legacy
+  } catch {
+    // RPC v2 indisponível — cai no legacy
+  }
+
+  // ── tentativa 2 (legacy, pré-migration): increment_ai_usage ────────────
   const { data, error } = await supabase.rpc('increment_ai_usage', {
     p_workspace_id: workspaceId,
     p_period:       period,

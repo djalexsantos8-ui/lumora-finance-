@@ -11,11 +11,12 @@ interface Props {
 }
 
 const NAV = [
-  { href: '/admin',          label: 'Visão geral' },
-  { href: '/admin/users',    label: 'Usuários' },
-  { href: '/admin/feedback', label: 'Feedback' },
-  { href: '/admin/coupons',  label: 'Cupons' },
-  { href: '/admin/grants',   label: 'Grants de acesso' },
+  { href: '/admin',             label: 'Visão geral' },
+  { href: '/admin/users',       label: 'Usuários' },
+  { href: '/admin/ai-credits',  label: 'Créditos de IA' },
+  { href: '/admin/feedback',    label: 'Feedback' },
+  { href: '/admin/coupons',     label: 'Cupons' },
+  { href: '/admin/grants',      label: 'Grants de acesso' },
 ] as const
 
 export default function AdminShell({ email, grantType, children }: Props) {

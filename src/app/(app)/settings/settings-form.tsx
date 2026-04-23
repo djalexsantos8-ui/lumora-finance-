@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useTransition, type ReactNode } from 'reac
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { upsertWorkspaceSettings } from '@/lib/actions/workspace-settings'
-import { getMyAIQuota } from '@/lib/ai/actions'
-import type { AIQuota } from '@/lib/ai/quota'
+import { getMyAIQuota, getMyAIBalance } from '@/lib/ai/actions'
+import type { AIQuota, AIBalance } from '@/lib/ai/quota'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
 // ─── Settings — seções (pente fino 2026-04-21) ───────────────────────────────
@@ -107,6 +107,7 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
   // Fetch on demand quando o usuário abrir a aba — evita round-trip em abas
   // que 99% dos usuários não visitam. Refetch manual via botão "Atualizar".
   const [quota, setQuota]             = useState<AIQuota | null>(null)
+  const [balance, setBalance]         = useState<AIBalance | null>(null)
   const [loadingQuota, setLoadingQuota] = useState(false)
   const [quotaError, setQuotaError]   = useState<string | null>(null)
 
@@ -114,11 +115,24 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
     setLoadingQuota(true)
     setQuotaError(null)
     try {
-      const res = await getMyAIQuota()
-      if (res.success) {
-        setQuota(res.quota)
+      // Deploy H (2026-04-23): buscamos o breakdown (granted/purchased/included).
+      // Se a migration ainda não rodou em prod, getMyAIBalance retorna
+      // granted=0/purchased=0 e o included vira o quota antigo (fallback).
+      const balRes = await getMyAIBalance()
+      if (balRes.success) {
+        const b = balRes.balance
+        setBalance(b)
+        setQuota({
+          period:    b.period,
+          used:      b.included_used,
+          limit:     b.included_limit,
+          remaining: b.included_remaining,
+        })
       } else {
-        setQuotaError(res.message)
+        // Fallback extra: tenta o quota antigo (caso admin-actions indisponível)
+        const res = await getMyAIQuota()
+        if (res.success) setQuota(res.quota)
+        else setQuotaError(balRes.message)
       }
     } catch {
       setQuotaError('Não foi possível carregar a quota agora.')
@@ -541,6 +555,55 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
                   </div>
                 )}
               </div>
+
+              {/* ─ Créditos extras (Deploy H 2026-04-23) ────────────────────
+                  Só aparece quando admin concedeu cortesia OU usuário comprou
+                  pacote extra. Usa o breakdown de getMyAIBalance. */}
+              {balance && (balance.granted + balance.purchased) > 0 && (
+                <div className="bg-gradient-to-br from-[#D4A853]/10 to-[#141414] border border-[#D4A853]/30 rounded-2xl p-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[9px] font-semibold text-[#D4A853] bg-[#D4A853]/10 border border-[#D4A853]/20 px-2 py-0.5 rounded-full tracking-wider">
+                      EXTRAS
+                    </span>
+                    <h3 className="text-sm font-semibold text-white">
+                      Créditos que não expiram no fim do mês
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    {balance.granted > 0 && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">
+                          Cortesia
+                        </div>
+                        <div className="text-2xl font-bold text-[#D4A853] tabular-nums">
+                          +{balance.granted}
+                        </div>
+                        <div className="text-[10px] text-[#525252] mt-0.5">
+                          concedidos pelo time Lumora
+                        </div>
+                      </div>
+                    )}
+                    {balance.purchased > 0 && (
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider text-[#737373] mb-1">
+                          Comprados
+                        </div>
+                        <div className="text-2xl font-bold text-[#D4A853] tabular-nums">
+                          +{balance.purchased}
+                        </div>
+                        <div className="text-[10px] text-[#525252] mt-0.5">
+                          pacotes extras via Stripe
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#a3a3a3] mt-4 leading-relaxed">
+                    <strong className="text-white">Saldo total disponível: {balance.total_remaining} crédito{balance.total_remaining === 1 ? '' : 's'}.</strong>{' '}
+                    Usamos primeiro os extras (cortesia + comprados), depois o seu
+                    plano mensal. Extras não expiram no fim do mês.
+                  </p>
+                </div>
+              )}
 
               {/* Explicação do que conta como crédito */}
               <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
