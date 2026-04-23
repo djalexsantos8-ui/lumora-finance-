@@ -1521,7 +1521,7 @@ function RepassTable({
           <p className="text-[10px] text-[#525252] mt-0.5">
             {items.length > 0
               ? `${items.length} item${items.length !== 1 ? 's' : ''} · ${formatCurrency(total, currency)}`
-              : 'aluguel de gear, viagem cobrada, diária de assistente...'}
+              : 'aluguel de equipamento, deslocamento cobrado, diária de assistente...'}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -1632,7 +1632,7 @@ function RepassTable({
               <input
                 ref={addDescRef}
                 autoFocus
-                placeholder="Ex: Aluguel drone, viagem..."
+                placeholder="Ex: Aluguel de drone, deslocamento..."
                 value={newDesc}
                 onChange={e => setNewDesc(e.target.value)}
                 onKeyDown={handleAddKeyDown}

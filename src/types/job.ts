@@ -28,7 +28,7 @@ export type JobCostCategory =
   | 'other'
 
 export const JOB_COST_CATEGORY_LABELS: Record<JobCostCategory, string> = {
-  equipment_rental: 'Aluguel de gear',
+  equipment_rental: 'Aluguel de equipamento',
   team:             'Equipe',
   travel:           'Deslocamento',
   accommodation:    'Hospedagem',

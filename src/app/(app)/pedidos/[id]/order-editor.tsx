@@ -34,6 +34,7 @@ import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
 import { MoneyInput } from '@/components/ui/money-input'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import { updateOrder, deleteOrder } from '@/lib/actions/orders'
 import {
   addOrderItem,
@@ -108,7 +109,7 @@ const ITEM_CATEGORIES: { value: OrderItemCategory; label: string }[] = [
 const COST_CATEGORIES: { value: OrderCostCategory; label: string }[] = [
   { value: 'equipment_rental', label: 'Aluguel de equipamento' },
   { value: 'team',             label: 'Equipe'                 },
-  { value: 'travel',           label: 'Viagem'                 },
+  { value: 'travel',           label: 'Deslocamento'           },
   { value: 'accommodation',    label: 'Hospedagem'             },
   { value: 'food',             label: 'Alimentação'            },
   { value: 'software',         label: 'Software'               },
@@ -469,44 +470,39 @@ export default function OrderEditor({
           </div>
         </div>
 
-        {/* Datas */}
+        {/* Datas do evento */}
         <div>
-          <label className="block text-xs text-[#a3a3a3] mb-1.5">Datas do pedido</label>
+          <label className="block text-xs text-[#a3a3a3] mb-1.5">Datas do evento</label>
           <FreelanceDateRange
             startDate={form.order_date_start}
             endDate={form.order_date_end}
             onCommit={handleDateCommit}
           />
+          <p className="text-[10px] text-[#525252] mt-1">
+            Quando o trabalho acontece. Para eventos de um único dia, preencha só o início.
+          </p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Data do evento (opcional)</label>
-            <input
-              type="date"
-              value={form.event_date}
-              onChange={e => setForm(f => ({ ...f, event_date: e.target.value }))}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Entrega (opcional)</label>
-            <input
-              type="date"
-              value={form.delivery_date}
-              onChange={e => setForm(f => ({ ...f, delivery_date: e.target.value }))}
-              className={inputCls}
-            />
-          </div>
+        <div>
+          <label className="block text-xs text-[#a3a3a3] mb-1.5">Entrega (opcional)</label>
+          <input
+            type="date"
+            value={form.delivery_date}
+            onChange={e => setForm(f => ({ ...f, delivery_date: e.target.value }))}
+            className={inputCls}
+          />
+          <p className="text-[10px] text-[#525252] mt-1">
+            Data prevista para entregar o material final ao cliente.
+          </p>
         </div>
 
         {/* Descrição do projeto */}
         <div>
           <label className="block text-xs text-[#a3a3a3] mb-1.5">Descrição do projeto</label>
-          <textarea
+          <AutoGrowTextarea
             value={form.project_description}
             onChange={e => setForm(f => ({ ...f, project_description: e.target.value }))}
-            rows={2}
-            className={`${inputCls} resize-none`}
+            minRows={3}
+            className={`${inputCls}`}
             placeholder="Contexto do projeto, objetivo, estilo…"
           />
         </div>
@@ -514,11 +510,11 @@ export default function OrderEditor({
         {/* Entregáveis */}
         <div>
           <label className="block text-xs text-[#a3a3a3] mb-1.5">Entregáveis</label>
-          <textarea
+          <AutoGrowTextarea
             value={form.deliverables}
             onChange={e => setForm(f => ({ ...f, deliverables: e.target.value }))}
-            rows={3}
-            className={`${inputCls} resize-none`}
+            minRows={4}
+            className={`${inputCls}`}
             placeholder="O que será entregue? Quantas peças? Em qual formato?"
           />
         </div>
@@ -581,23 +577,33 @@ export default function OrderEditor({
         {/* Notas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Observações públicas</label>
-            <textarea
+            <label className="flex items-center gap-2 text-xs text-[#a3a3a3] mb-1.5">
+              <span>Observações do contrato</span>
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Aparece no PDF
+              </span>
+            </label>
+            <AutoGrowTextarea
               value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              rows={3}
-              className={`${inputCls} resize-none`}
-              placeholder="Observações visíveis no PDF…"
+              minRows={3}
+              className={`${inputCls}`}
+              placeholder="Condições, prazos, escopo extra… Esse texto vai no PDF do pedido."
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Notas internas</label>
-            <textarea
+            <label className="flex items-center gap-2 text-xs text-[#a3a3a3] mb-1.5">
+              <span>Notas internas</span>
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#a3a3a3] border border-[#2a2a2a]">
+                Só você vê
+              </span>
+            </label>
+            <AutoGrowTextarea
               value={form.notes_internal}
               onChange={e => setForm(f => ({ ...f, notes_internal: e.target.value }))}
-              rows={3}
-              className={`${inputCls} resize-none`}
-              placeholder="Só você vê estas notas."
+              minRows={3}
+              className={`${inputCls}`}
+              placeholder="Lembretes, contexto do cliente, combinados informais…"
             />
           </div>
         </div>
@@ -1243,7 +1249,7 @@ function CostItemsSection({
           <p className="text-[10px] text-[#525252] mt-0.5">
             {items.length > 0
               ? `${items.length} ${items.length === 1 ? 'repasse' : 'repasses'} · ${formatCurrency(total, currency)}`
-              : 'aluguel de gear, viagem cobrada, diária de assistente...'}
+              : 'aluguel de equipamento, deslocamento cobrado, diária de assistente...'}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -1355,7 +1361,7 @@ function CostItemsSection({
               <input
                 ref={addDescRef}
                 autoFocus
-                placeholder="Ex: Aluguel drone, viagem..."
+                placeholder="Ex: Aluguel de drone, deslocamento..."
                 value={newDesc}
                 onChange={e => setNewDesc(e.target.value)}
                 onKeyDown={handleAddKeyDown}

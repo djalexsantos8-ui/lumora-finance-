@@ -204,6 +204,7 @@ async function convertToOrder(
       delivery_date:       budget.event_date_end ?? budget.event_date ?? null,
       currency:            budget.currency,
       amount:              budget.total,
+      discount_amount:     Number(budget.discount_amount ?? 0),
       status:              'in_progress',
     })
     .select('id')
@@ -276,6 +277,7 @@ async function convertToFreelance(
       payment_condition: 'upfront',
       currency:          budget.currency,
       total_value:       budget.total,
+      discount_amount:   Number(budget.discount_amount ?? 0),
       // Multi-datas 2026-04-23: propaga padrão pra jobs (que já suporta as 4
       // colunas). Se o budget é single, job fica single também. Se multi,
       // job nasce com período correto (igual ao FreelanceDateRange manual).
