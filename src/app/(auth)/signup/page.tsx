@@ -77,6 +77,22 @@ export default function SignupPage() {
         <p className="text-[#525252] text-xs mt-4">
           Não recebeu? Verifique a pasta de spam.
         </p>
+
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0a0a0a] bg-[#D4A853] hover:bg-[#E8C47A] px-4 py-2 rounded-xl transition-colors"
+          >
+            Já confirmei, voltar ao login
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSuccess(false)}
+            className="text-xs font-medium text-[#737373] hover:text-white px-3 py-2 transition-colors"
+          >
+            Usar outro e-mail
+          </button>
+        </div>
       </div>
     )
   }
