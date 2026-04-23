@@ -9,6 +9,7 @@ import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
 import { MoneyInput } from '@/components/ui/money-input'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import {
   updateRecurringRevenue,
   deleteRecurringRevenue,
@@ -211,22 +212,22 @@ export default function RecurringEditor({ item, initialInvoices = [], linkedCont
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-[#a3a3a3] mb-1.5">Descrição do projeto</label>
-            <textarea
+            <AutoGrowTextarea
               value={form.project_description}
               onChange={e => setForm(f => ({ ...f, project_description: e.target.value }))}
-              rows={3}
+              minRows={3}
               placeholder="Contexto, objetivo, estilo…"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
             />
           </div>
           <div>
             <label className="block text-xs text-[#a3a3a3] mb-1.5">Resumo do escopo</label>
-            <textarea
+            <AutoGrowTextarea
               value={form.scope_summary}
               onChange={e => setForm(f => ({ ...f, scope_summary: e.target.value }))}
-              rows={3}
+              minRows={3}
               placeholder="Entregáveis fixos do contrato…"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
             />
           </div>
         </div>
@@ -400,23 +401,33 @@ export default function RecurringEditor({ item, initialInvoices = [], linkedCont
         {/* Notas públicas + Notas internas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Observações</label>
-            <textarea
+            <label className="flex items-center gap-2 text-xs text-[#a3a3a3] mb-1.5">
+              <span>Observações</span>
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Aparece no PDF
+              </span>
+            </label>
+            <AutoGrowTextarea
               value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              rows={3}
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
+              minRows={3}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
               placeholder="Condições especiais, escopo, etc."
             />
           </div>
           <div>
-            <label className="block text-xs text-[#a3a3a3] mb-1.5">Notas internas</label>
-            <textarea
+            <label className="flex items-center gap-2 text-xs text-[#a3a3a3] mb-1.5">
+              <span>Notas internas</span>
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#a3a3a3] border border-[#2a2a2a]">
+                Só você vê
+              </span>
+            </label>
+            <AutoGrowTextarea
               value={form.notes_internal}
               onChange={e => setForm(f => ({ ...f, notes_internal: e.target.value }))}
-              rows={3}
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors resize-none"
-              placeholder="Só você vê."
+              minRows={3}
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg px-3 py-2.5 transition-colors"
+              placeholder="Lembretes internos, contexto do cliente…"
             />
           </div>
         </div>

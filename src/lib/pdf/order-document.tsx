@@ -229,19 +229,15 @@ export default function OrderDocument({ order, items, settings }: Props) {
             <Text style={S.metaValue}>{order.client_name || '—'}</Text>
           </View>
           <View style={S.metaCol}>
-            <Text style={S.metaLabel}>Data do pedido</Text>
+            <Text style={S.metaLabel}>
+              {order.order_date_end && order.is_multi_day ? 'Datas do evento' : 'Data do evento'}
+            </Text>
             <Text style={S.metaValue}>
               {order.order_date_end && order.is_multi_day
                 ? `${formatDate(order.order_date_start || order.order_date)} → ${formatDate(order.order_date_end)}`
                 : formatDate(order.order_date)}
             </Text>
           </View>
-          {order.event_date && (
-            <View style={S.metaCol}>
-              <Text style={S.metaLabel}>Data do evento</Text>
-              <Text style={S.metaValue}>{formatDate(order.event_date)}</Text>
-            </View>
-          )}
           {order.delivery_date && (
             <View style={S.metaCol}>
               <Text style={S.metaLabel}>Entrega</Text>
@@ -302,6 +298,24 @@ export default function OrderDocument({ order, items, settings }: Props) {
           <View style={S.section}>
             <Text style={S.sectionTitle}>Observações</Text>
             <Text style={S.paragraph}>{order.notes}</Text>
+          </View>
+        )}
+
+        {/* desconto (se houver) */}
+        {Number(order.discount_amount ?? 0) > 0 && (
+          <View style={{ marginTop: 12, paddingHorizontal: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 10, color: GRAY }}>Subtotal</Text>
+              <Text style={{ fontSize: 10, color: DARK, fontFamily: 'Helvetica-Bold' }}>
+                {formatMoney(Number(order.amount) + Number(order.discount_amount), currency)}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 10, color: GRAY }}>Desconto</Text>
+              <Text style={{ fontSize: 10, color: '#9b7116', fontFamily: 'Helvetica-Bold' }}>
+                - {formatMoney(Number(order.discount_amount), currency)}
+              </Text>
+            </View>
           </View>
         )}
 

@@ -45,6 +45,7 @@ export interface Order {
   currency:            string
   amount:              number
   amount_paid:         number
+  discount_amount:     number
   revenue_total:       number
   cost_total:          number
   status:              OrderStatus

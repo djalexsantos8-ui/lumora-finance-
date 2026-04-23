@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { updateContract, deleteContract } from '@/lib/actions/contracts'
+import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import type { Contract, ContractStatus, ContractTypeMeta } from '@/types/contract'
 
 // ─── Contract Builder ───────────────────────────────────────────────────────
@@ -369,12 +370,12 @@ export default function ContractBuilder({ contract: initial, meta }: Props) {
             <h3 className="text-xs font-semibold text-[#a3a3a3] uppercase tracking-wider mb-3">
               Observações internas
             </h3>
-            <textarea
+            <AutoGrowTextarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              rows={3}
+              minRows={3}
               placeholder="Notas que não aparecem no contrato final…"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[#525252] outline-none focus:border-[#D4A853]/60 resize-none"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder:text-[#525252] outline-none focus:border-[#D4A853]/60"
             />
           </section>
 
