@@ -34,6 +34,7 @@ import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { createExpense, deleteExpense } from '@/lib/actions/expenses'
 import type { Expense } from '@/types/expense'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { SectionBoundary } from '@/components/common/section-boundary'
 import type { Contract } from '@/types/contract'
 
 // ─── Helper: deriva ClientRef a partir do job carregado ──────────────────────
@@ -1068,16 +1069,20 @@ export default function JobDetail({
       {/* Contratos vinculados — pente fino 2026-04-23
           Antes vivia fora do editor em page.tsx com max-w-3xl duplicado.
           Agora é embutido pra herdar o mesmo container do editor e ficar
-          visualmente nativo, alinhado com o resto dos cards acima. */}
-      <ContractEntryPoint
-        originKind="freelance"
-        originId={job.id}
-        contracts={linkedContracts}
-        hints={{
-          segment: job.client_segment ?? null,
-          category: null,
-        }}
-      />
+          visualmente nativo, alinhado com o resto dos cards acima.
+          Hardening 2026-04-23: SectionBoundary evita sumiço silencioso. */}
+      <SectionBoundary label="JobContractEntryPoint">
+        <ContractEntryPoint
+          key={job.id}
+          originKind="freelance"
+          originId={job.id}
+          contracts={linkedContracts}
+          hints={{
+            segment: job.client_segment ?? null,
+            category: null,
+          }}
+        />
+      </SectionBoundary>
 
       {/* ── Modal de upload compartilhado ────────────────────────────────────
           Único modal pra toda a página. Acionado pelo botão "Comprovante"

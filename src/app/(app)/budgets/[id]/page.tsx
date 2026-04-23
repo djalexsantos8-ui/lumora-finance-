@@ -9,6 +9,13 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+// Hardening 2026-04-23 — sumiço temporário do bloco "Aprovar & Transformar"
+// pós-deploy: RSC payload em cache na edge + chunks novos no browser causavam
+// render inconsistente em hard refresh. `force-dynamic` garante RSC fresco em
+// toda navegação — elimina race entre deploy e cache estático.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function generateMetadata({ params }: Props) {
   try {
     const { id } = await params

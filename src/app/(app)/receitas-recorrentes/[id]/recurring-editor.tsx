@@ -28,6 +28,7 @@ import type {
 import { RecurringStatusBadge } from '../recurring-list'
 import { toast } from 'sonner'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { SectionBoundary } from '@/components/common/section-boundary'
 import type { Contract } from '@/types/contract'
 
 interface Props {
@@ -469,12 +470,16 @@ export default function RecurringEditor({ item, initialInvoices = [], linkedCont
 
       {/* Contratos vinculados — pente fino 2026-04-23
           Embutido aqui pra herdar max-w-3xl do editor. Antes vivia fora em
-          page.tsx num wrapper duplicado. */}
-      <ContractEntryPoint
-        originKind="recurring"
-        originId={item.id}
-        contracts={linkedContracts}
-      />
+          page.tsx num wrapper duplicado.
+          Hardening 2026-04-23: SectionBoundary evita sumiço silencioso. */}
+      <SectionBoundary label="RecurringContractEntryPoint">
+        <ContractEntryPoint
+          key={item.id}
+          originKind="recurring"
+          originId={item.id}
+          contracts={linkedContracts}
+        />
+      </SectionBoundary>
 
       {confirmingDelete && (
         <div

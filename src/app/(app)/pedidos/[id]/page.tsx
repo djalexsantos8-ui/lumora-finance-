@@ -12,6 +12,11 @@ import { listOrderExpenses } from '@/lib/actions/expenses'
 import type { Order, OrderItem, OrderCostItem, OrderFile, OrderPayment } from '@/types/order'
 import type { Expense } from '@/types/expense'
 
+// Hardening 2026-04-23 — mesmo motivo do /budgets/[id]: evita RSC em cache
+// na edge causar sumiço temporário do ContractEntryPoint pós-deploy.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export const metadata = { title: 'Pedido — Lumora Finance' }
 
 export default async function OrderDetailPage({

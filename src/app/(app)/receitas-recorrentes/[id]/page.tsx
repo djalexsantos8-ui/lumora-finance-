@@ -5,6 +5,11 @@ import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { listInvoicesByRecurring } from '@/lib/actions/recurring-invoices'
 import type { RecurringRevenue } from '@/types/recurring-revenue'
 
+// Hardening 2026-04-23 — evita RSC stale em cache na edge causar sumiço
+// temporário do ContractEntryPoint pós-deploy.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export const metadata = { title: 'Receita Recorrente — Lumora Finance' }
 
 export default async function RecurringDetailPage({

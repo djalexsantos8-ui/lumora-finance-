@@ -35,6 +35,7 @@ import { AIFieldsCard } from '@/components/ai/ai-fields-card'
 import { generateBudgetFields } from '@/lib/ai/generate-budget-fields'
 import type { AIQuota } from '@/lib/ai/quota'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { SectionBoundary } from '@/components/common/section-boundary'
 import type { Contract } from '@/types/contract'
 import type {
   Budget,
@@ -1151,31 +1152,41 @@ export default function BudgetEditor({
             Pente fino 2026-04-23: desceu de cima pra baixo pro fluxo ficar
             natural (monta → vê itens → aprova → contrato). Deploy C mantém
             o comportamento: draft/sent → approveAndConvert em 1 clique;
-            approved → só converter. Escondido em rejected/expired. */}
+            approved → só converter. Escondido em rejected/expired.
+            Hardening 2026-04-23: envolto em SectionBoundary pra nunca mais
+            sumir silencioso se der erro de chunk/hydration pós-deploy. */}
         {budget.id &&
           budget.status !== 'rejected' &&
           budget.status !== 'expired' && (
-            <ConversionPanel
-              budgetId={budget.id}
-              status={budget.status}
-              intendedDest={intendedDest === '' ? null : intendedDest}
-            />
+            <SectionBoundary label="BudgetConversionPanel">
+              <ConversionPanel
+                key={budget.id}
+                budgetId={budget.id}
+                status={budget.status}
+                intendedDest={intendedDest === '' ? null : intendedDest}
+              />
+            </SectionBoundary>
           )}
 
         {/* ── Contratos ───────────────────────────────────────────────────────
             Embutido DENTRO do body (antes vivia solto no page.tsx com largura
             diferente, ficava desalinhado). Só aparece quando o budget existe
-            no banco (id != '') — evita piscar em rota /new antes do 1º save. */}
+            no banco (id != '') — evita piscar em rota /new antes do 1º save.
+            Hardening 2026-04-23: SectionBoundary garante fallback visível
+            em caso de erro intermitente pós-deploy. */}
         {budget.id && (
-          <ContractEntryPoint
-            originKind="budget"
-            originId={budget.id}
-            contracts={linkedContracts}
-            hints={{
-              segment:  segment || null,
-              category: null,
-            }}
-          />
+          <SectionBoundary label="BudgetContractEntryPoint">
+            <ContractEntryPoint
+              key={budget.id}
+              originKind="budget"
+              originId={budget.id}
+              contracts={linkedContracts}
+              hints={{
+                segment:  segment || null,
+                category: null,
+              }}
+            />
+          </SectionBoundary>
         )}
       </div>
 

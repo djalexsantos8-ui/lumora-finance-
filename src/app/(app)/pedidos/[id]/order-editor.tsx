@@ -71,6 +71,7 @@ import { AIFieldsCard } from '@/components/ai/ai-fields-card'
 import { generateOrderFields } from '@/lib/ai/generate-order-fields'
 import type { AIQuota } from '@/lib/ai/quota'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
+import { SectionBoundary } from '@/components/common/section-boundary'
 import type { Contract } from '@/types/contract'
 
 interface Props {
@@ -727,16 +728,20 @@ export default function OrderEditor({
       {/* Contratos vinculados — pente fino 2026-04-23
           Antes ficava fora do editor em page.tsx, causando desalinhamento
           com max-w-4xl do editor. Agora é embutido aqui pra herdar o mesmo
-          container e ficar visualmente nativo. */}
-      <ContractEntryPoint
-        originKind="order"
-        originId={order.id}
-        contracts={linkedContracts}
-        hints={{
-          segment: form.client_segment || null,
-          category: null,
-        }}
-      />
+          container e ficar visualmente nativo.
+          Hardening 2026-04-23: SectionBoundary evita sumiço silencioso. */}
+      <SectionBoundary label="OrderContractEntryPoint">
+        <ContractEntryPoint
+          key={order.id}
+          originKind="order"
+          originId={order.id}
+          contracts={linkedContracts}
+          hints={{
+            segment: form.client_segment || null,
+            category: null,
+          }}
+        />
+      </SectionBoundary>
 
       {/* Modal compartilhado de upload de comprovante (disparado pelo bloco Repasses) */}
       {!filesTableMissing && (

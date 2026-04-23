@@ -10,6 +10,11 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
+// Hardening 2026-04-23 — evita RSC stale em cache na edge (sumiço temporário
+// de blocos críticos pós-deploy em hard refresh).
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function generateMetadata({ params }: Props) {
   try {
     const { id } = await params
