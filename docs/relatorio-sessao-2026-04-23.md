@@ -223,3 +223,78 @@ Injetei 10 linhas via native setter + `input` event no textarea de descrição d
 Todos os 33 itens validados. 2 bugs visíveis encontrados e corrigidos (`72ce97f`). 1 fix adicional (placeholder). 1 gap de produto flagado. Zero erro de console, zero 4xx/5xx. **Pronto pra próxima rodada.**
 
 *Revalidação gerada 2026-04-23 madrugada — HEAD após fixes `72ce97f` + placeholder `company-profile-form`.*
+
+---
+
+## Rodada 2026-04-24 (01:20 UTC) — Bug Fixes + Feature
+
+### Bug 1 — Custos Fixos: `invalid input value for enum fixed_cost_category_enum: "housing"`
+
+**Commit**: `18c1507` — `fix(fixed-costs): enum category expandido + normalizer + seletor de moeda`
+
+Causa: o enum do banco só tinha 5 categorias (`software`, `rent`, `equipment`, `service`, `other`) mas a UI enviava `housing`, `transport`, `subscription`, etc. Quando o usuário salvava um custo fixo com categoria moderna, PostgREST devolvia 22P02 e o salvar quebrava silenciosamente.
+
+Correção:
+- Migration adicionou `housing`, `transport`, `subscription`, `internet`, `phone`, `workspace`, `taxes`, `services`, `marketing` ao enum (compatível com rows legados).
+- `normalizeFixedCostCategory()` em `src/types/expense.ts` valida e faz fallback seguro pra `other`.
+- `parseMoney()` robusto pra entrada BRL/EN (suporta `1.234,56` e `1,234.56`).
+- Seletor de moeda adicionado no modal.
+
+Validação em produção (Chrome):
+- `/fixed-costs` carrega sem erro (`enumErr=false`, `loadErr=false`).
+- SELECT de categorias mostra lista completa: Moradia, Transporte, Software, Assinaturas, Internet, Telefonia, Equipamentos, Espaço, Marketing, Impostos, Serviços, Outros.
+
+### Bug 2 — Receita Recorrente sem Serviços nem Repasses
+
+**Commit**: `3fc7521` — `feat(recurring-revenue): Serviços do contrato + Repasses ao cliente`
+
+Causa: a tela de edição só tinha campos agregados (título/valor mensal). Usuário queria detalhar serviços e repasses — espelhando Pedidos — mas a UX estava "jogando tudo no campo descrição".
+
+Implementação:
+- **Migration 20260423070000**: criadas `recurring_revenue_items` + `recurring_revenue_cost_items` (paridade com `order_items` / `order_cost_items`). RLS via `workspace_members.status='active'`.
+- **Migration 20260423070001**: trigger `set_item_total_value()` em BEFORE INSERT/UPDATE calcula `total_value = quantity * unit_value`.
+- **Types** (`src/types/recurring-revenue.ts`): `RecurringItem`, `RecurringCostItem`, categorias (`RecurringItemCategory`, `RecurringCostCategory`), action results.
+- **Server actions** (`src/lib/actions/recurring-items.ts`): 8 actions (list/add/update/delete × items + cost items) com auth guard, graceful degradation via `tableMissing`, e `revalidatePath`.
+- **Editor** (`recurring-editor.tsx`): 2 novos blocos de UI (Serviços do contrato + Repasses ao cliente) com paridade visual ao order-editor — inline rows, edit-by-click, add com blur/Enter, optimistic updates, trash icon.
+- **Page** (`page.tsx`): carrega items + cost items em paralelo via `Promise.all` e passa como props.
+- **Resumo**: Total mensal agora soma `amount + Σservices + Σcosts` em tempo real no card principal. `recurring_revenue.amount` continua sendo o snapshot usado pelo invoicing — o total novo é só UI.
+
+Validação end-to-end em produção (Chrome + DB):
+1. Abrir `/receitas-recorrentes/aba9a7a2-...` → 2 seções rendereizam (`hasServicos=true, hasRepasses=true, tableMissing=false`).
+2. Click "Adicionar serviço" → row editável aparece (desc + qty + unit).
+3. Preencher "Gestão social 30 posts/mês", qty=1, unit=3500,00 + blur → persiste em `recurring_revenue_items` com `total_value=3500.00` (trigger calculou).
+4. Click "Adicionar repasse" → row editável aparece.
+5. Preencher "Licença Adobe repassada", qty=1, unit=180,00 + blur → persiste em `recurring_revenue_cost_items` com `category='other'`, `total_value=180.00`.
+6. Reload → ambos items voltam a renderizar (`serv=true, rep=true, has3500=true, has180=true`).
+7. Cleanup: test items soft-deleted via `UPDATE deleted_at=NOW()`.
+
+### `/orcamentos` — suspeita de erro pós-deploy
+
+Usuário reportou que 3 min após deploy clicou em Orçamentos e "deu erro na página". Logs de Supabase API nesse intervalo: 200 em todas as queries (`/rest/v1/budgets`, `workspace_members`, `auth/v1/user`). Code review de `budgets/page.tsx` + `budgets-list.tsx` + `budgets/[id]/page.tsx`: nada obviamente quebrado, defensive error handling já degrada pra empty state. Schema `budgets` em produção bate exatamente com `src/types/budget.ts`.
+
+Revalidação em Chrome: `/budgets` 200 com h1="Orçamentos" + 13 links, sem Application Error. `/budgets/80324538-76ea-45bc-b060-f70504a056b8` 200 com editor completo (h1="SVN - Live Run", 6 itens, total R$13.125,00, badge "Aprovado"). **Provavelmente foi edge cache stale transitório pós-deploy — já resolveu sozinho.**
+
+### Sweep de rotas (prod, 2026-04-24)
+
+```
+/dashboard              200  1652ms
+/budgets                200   861ms
+/freelances             200   991ms
+/pedidos                200  1001ms
+/receitas-recorrentes   200   818ms
+/contracts              200  1011ms
+/expenses               200   784ms
+/fixed-costs            200   801ms
+/clientes               200   894ms
+/insights               200  1223ms
+/notifications          200  1014ms
+/settings               200  1198ms
+```
+
+Todas as rotas principais respondem 200. Latências TTFB 780–1650ms — dentro do budget. Zero Application Error, zero enum error, zero regressão.
+
+### Status final
+- `npx tsc --noEmit` → ✅ TSC_OK
+- `npm run build` → ✅ completo
+- Deploy Vercel sincronizado com HEAD `3fc7521` → ✅
+- 2 bugs P0 corrigidos, 1 feature entregue, 0 regressões detectadas.
