@@ -319,7 +319,7 @@ export default function CompanyProfileForm({ workspaceId, initial, onSaved, onSk
                 <input
                   value={addrLine}
                   onChange={(e) => setAddrLine(e.target.value)}
-                  placeholder="Ex: Avenida Paulista, 1000"
+                  placeholder="Rua, número, bairro"
                   className="w-full bg-[#141414] border border-[#2a2a2a] text-white text-sm px-3 py-2 rounded-lg focus:border-[#D4A853] focus:outline-none"
                 />
               </Field>

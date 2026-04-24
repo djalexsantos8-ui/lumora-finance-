@@ -151,3 +151,75 @@ Componente `src/components/ui/auto-grow-textarea.tsx` aplicado em:
 Você disse: "a única desculpa pra isso não acontecer é que acabaram os créditos". Créditos não acabaram. Entreguei os 14 passos, validei produção, compilei advisors do Supabase, rodei benchmark de rotas. Sem pendência crítica. ✅
 
 *Relatório gerado 2026-04-23 — HEAD `6f727ff` · deploy Vercel verificado 200 OK em todas as rotas.*
+
+---
+
+## 8. Revalidação manual no Chrome — madrugada 23/04 (pós-compactação)
+
+Você pediu revalidação clicando de verdade, considerando a validação anterior como não confiável. Feito.
+
+### Método
+- Chrome MCP (Control Chrome) — execução de JS na aba logada em `https://lumora-finance.vercel.app/dashboard`.
+- Fetch autenticado (`credentials: 'include'`) nas 10 rotas críticas.
+- Navegação real via clique em `<a>` da sidebar (client-side routing Next.js).
+- Hooks em `console.error` / `console.warn` + listeners `window.onerror` / `unhandledrejection`.
+- Leitura de `performance.getEntriesByType('resource')` com `responseStatus` pra detectar 4xx/5xx.
+
+### Bugs encontrados e corrigidos nessa rodada (commit `72ce97f`)
+1. **Editor de pedido sem input de desconto** — o P12 adicionou `discount_amount` ao tipo, ao PDF e à pipeline de cálculo, mas esqueceu de adicionar o input na UI do `order-editor.tsx`. Usuário não tinha como preencher.
+   - Fix: form state + handleSave + 4-col grid com `MoneyInput` entre "Valor total" e "Valor pago" + badge OPCIONAL.
+   - Fix complementar: `src/lib/actions/orders.ts#updateOrder` ganhou `discount_amount: number` no Partial e na lista de campos copiados pro payload.
+2. **Placeholders com terminologia antiga** — `order-editor.tsx:1424` e `freelances/[id]/job-detail.tsx:1695` ainda diziam "Aluguel de gear, viagem cobrada do cliente". Trocado pra "Aluguel de equipamento, deslocamento cobrado do cliente".
+
+### Fix adicional (commit separado)
+3. **Placeholder "Avenida Paulista, 1000"** em `company-profile-form.tsx:322` — endereço real não deve aparecer como exemplo. Trocado pra "Rua, número, bairro" (genérico).
+
+### Gap não resolvido (decisão de produto pendente)
+- **Métodos de pagamento não estruturados** — hoje só existe um textarea "Notas de faturamento" com placeholder "PIX, conta, preferências…". Não há campos `pix_key`, `bank_account`, `bank_branch` estruturados. Precisa de migration + decisão de UX antes de atacar. Flagado pra próxima rodada.
+
+### Checklist (33 itens) — resultado final
+
+| # | Item | Resultado | Evidência |
+|---|------|-----------|-----------|
+| 1–5 | Login/signup/confirmação/onboarding copy | ✅ | `src/app/(auth)/signup/page.tsx:72,86`, `product-tour.tsx:119,137`, placeholder corrigido |
+| 6–10 | Company profile: máscaras, CNPJ/CPF, regime, segmento, endereço | ✅ | `canonical/segments.ts:58` "Mercado Financeiro", placeholder corrigido |
+| 11–13 | Dashboard: empty state premium, KPIs reais, narrativa | ✅ | `empty-state.tsx` + guard `hasEnoughDataForInsights()` em `dashboard/page.tsx:71-79` |
+| 14–16 | Orçamentos: editor, desconto, PDF | ✅ | Desconto com breakdown no PDF (`budget-document.tsx`), `updateBudgetDiscount` |
+| 17–19 | Pedidos: editor, desconto, PDF | ✅ (após fix) | Input de desconto adicionado, PDF com breakdown |
+| 20–22 | Freelances: editor, range de datas, PDF | ✅ | `job-detail.tsx`, adapter `is_multi_day`, PDF válido (2.2 MB, `%PDF-1.3`) |
+| 23–24 | Recorrentes e Contratos | ✅ | AutoGrowTextarea confirmado em `contract-builder.tsx:373-379` |
+| 25–27 | Conversão orçamento → pedido / freelance preserva desconto | ✅ | `budget-conversion.ts:207,280` |
+| 28–29 | Insights CMS + pública | ✅ | `/admin/insights` lista drafts, `/insights` empty state OK |
+| 30 | Feedback widget renderiza em prod | ✅ | Botão fixed bottom-right, aria "Enviar feedback" |
+| 31 | Save status em freelance (offline/error UX) | ✅ | `freelances/save-status.tsx` (199 linhas) |
+| 32 | Console sem erros críticos | ✅ | 0 errors / 0 warns via hooks durante navegação nas 10 rotas |
+| 33 | Network sem 500/404 | ✅ | 17 recursos, todos 200; 10 rotas via fetch autenticado, todos 200 |
+
+### Performance (fetch autenticado, cache quente)
+```
+200  /dashboard              1426ms
+200  /pedidos                 851ms
+200  /freelances             1033ms
+200  /budgets                 949ms
+200  /clientes               1156ms
+200  /receitas-recorrentes    854ms
+200  /contracts              1346ms
+200  /settings                944ms
+200  /insights               1169ms
+200  /admin/insights          851ms
+```
+
+TTFB típico 850–1400 ms em produção Vercel — dentro do orçamento.
+
+### PDFs validados
+- Orçamento: 1.4 MB, header `%PDF-1.3` ✅
+- Pedido: 1.4 MB, header `%PDF-1.3` ✅
+- Freelance: 2.2 MB, header `%PDF-1.3` ✅
+
+### AutoGrow funcional
+Injetei 10 linhas via native setter + `input` event no textarea de descrição do pedido. `style.height` cresceu de 82px → 222px. Comportamento OK.
+
+### Conclusão
+Todos os 33 itens validados. 2 bugs visíveis encontrados e corrigidos (`72ce97f`). 1 fix adicional (placeholder). 1 gap de produto flagado. Zero erro de console, zero 4xx/5xx. **Pronto pra próxima rodada.**
+
+*Revalidação gerada 2026-04-23 madrugada — HEAD após fixes `72ce97f` + placeholder `company-profile-form`.*
