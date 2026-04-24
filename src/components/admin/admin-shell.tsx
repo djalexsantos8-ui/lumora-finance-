@@ -12,6 +12,7 @@ interface Props {
 
 const NAV = [
   { href: '/admin',             label: 'Visão geral' },
+  { href: '/admin/saas',        label: 'SaaS (MRR/Churn)' },
   { href: '/admin/users',       label: 'Usuários' },
   { href: '/admin/ai-credits',  label: 'Créditos de IA' },
   { href: '/admin/feedback',    label: 'Feedback' },
