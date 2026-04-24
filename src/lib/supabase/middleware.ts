@@ -31,6 +31,24 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // ─── Auth callback bypass (Deploy H.4 2026-04-24) ──────────────────────────
+  // A rota `/api/auth/*` (OAuth callback, password recovery) TEM que passar
+  // direto sem qualquer redirect de auth/subscription. Caso contrário:
+  //
+  //   1. Usuário clica "Login com Google"
+  //   2. Google redireciona para /api/auth/callback?code=xxx
+  //   3. Middleware chama auth.getUser() → null (code ainda não foi trocado)
+  //   4. Middleware faz redirect 307 para /login
+  //   5. O ?code= é descartado → exchangeCodeForSession nunca roda
+  //   6. Usuário volta pro login → redirect loop
+  //
+  // Idem para recovery: se o usuário já tiver sessão antiga, sem bypass o
+  // middleware manda pro /dashboard ANTES do handler trocar o código pela
+  // nova sessão (da recuperação). Bypass total resolve ambos.
+  if (pathname.startsWith('/api/auth')) {
+    return supabaseResponse
+  }
+
   // Rotas públicas (não exigem login)
   const publicRoutes = ['/login', '/signup', '/forgot-password']
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
