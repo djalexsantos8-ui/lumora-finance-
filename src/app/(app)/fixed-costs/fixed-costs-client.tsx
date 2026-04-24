@@ -111,6 +111,12 @@ export function FixedCostsClient({ initialItems }: Props) {
   const [payingId,  setPayingId]  = useState<string | null>(null)
   const [undoingId, setUndoingId] = useState<string | null>(null)
 
+  // Colapso por grupo de parcelas (migration 2026-04-24 UX)
+  // null = default (mostra 3 preview); true = expandido; false = explicitamente colapsado
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const toggleGroupExpanded = (parentId: string) =>
+    setExpandedGroups(prev => ({ ...prev, [parentId]: !prev[parentId] }))
+
   // Edit modal
   const [editItem,     setEditItem]     = useState<FixedCost | null>(null)
   const [editSaving,   setEditSaving]   = useState(false)
@@ -899,33 +905,64 @@ export function FixedCostsClient({ initialItems }: Props) {
                         </button>
                       </div>
 
-                      {/* Linhas de parcelas */}
+                      {/* Linhas de parcelas — colapsável se mais de 3 */}
                       <div className="border-t border-[#1c1c1c]">
-                        {group.map((item, idx) => (
-                          <div key={item.id}
-                            className={`flex items-center gap-3 px-4 py-2 text-[11px] ${
-                              idx !== group.length - 1 ? 'border-b border-[#1c1c1c]' : ''
-                            } ${item.is_paid ? 'opacity-50' : ''}`}>
-                            <span className="text-[#525252] w-8 shrink-0">{item.installment_index}/{item.installments_total}</span>
-                            <span className="text-[#525252] shrink-0">{formatDate(item.start_date)}</span>
-                            <div className="flex-1" />
-                            {item.discount_amount && item.discount_amount > 0 && (
-                              <span className="text-amber-400 shrink-0">-{formatCurrency(item.discount_amount, item.currency)}</span>
-                            )}
-                            <span className={`font-semibold shrink-0 tabular-nums ${item.is_paid ? 'text-[#525252]' : 'text-white'}`}>
-                              {formatCurrency(Number(item.paid_amount ?? item.amount), item.currency)}
-                            </span>
-                            {item.is_paid && (
-                              <button
-                                onClick={() => handleUndoInstallment(item.id)}
-                                disabled={undoingId === item.id}
-                                title="Desfazer pagamento"
-                                className="flex items-center gap-0.5 text-[10px] text-emerald-400 hover:text-amber-400 disabled:opacity-50 transition-colors shrink-0">
-                                {undoingId === item.id ? <Spinner /> : <><UndoIcon /> Desfazer</>}
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                        {(() => {
+                          const isExpanded = !!expandedGroups[parentId]
+                          const shouldCollapse = group.length > 3 && !isExpanded
+                          // Quando colapsado: mostra as 3 parcelas mais relevantes.
+                          // Prioriza NÃO PAGAS (próximas a vencer). Se todas pagas, mostra últimas 3.
+                          let visible = group
+                          if (shouldCollapse) {
+                            const unpaid = group.filter(i => !i.is_paid).slice(0, 3)
+                            visible = unpaid.length >= 3
+                              ? unpaid
+                              : [...unpaid, ...group.filter(i => i.is_paid).slice(-1 * (3 - unpaid.length))]
+                            // Preserva ordem original (installment_index)
+                            const visibleIds = new Set(visible.map(v => v.id))
+                            visible = group.filter(i => visibleIds.has(i.id))
+                          }
+                          const hiddenCount = group.length - visible.length
+
+                          return (
+                            <>
+                              {visible.map((item, idx) => (
+                                <div key={item.id}
+                                  className={`flex items-center gap-3 px-4 py-2 text-[11px] ${
+                                    idx !== visible.length - 1 || hiddenCount > 0 ? 'border-b border-[#1c1c1c]' : ''
+                                  } ${item.is_paid ? 'opacity-50' : ''}`}>
+                                  <span className="text-[#525252] w-8 shrink-0">{item.installment_index}/{item.installments_total}</span>
+                                  <span className="text-[#525252] shrink-0">{formatDate(item.start_date)}</span>
+                                  <div className="flex-1" />
+                                  {item.discount_amount && item.discount_amount > 0 && (
+                                    <span className="text-amber-400 shrink-0">-{formatCurrency(item.discount_amount, item.currency)}</span>
+                                  )}
+                                  <span className={`font-semibold shrink-0 tabular-nums ${item.is_paid ? 'text-[#525252]' : 'text-white'}`}>
+                                    {formatCurrency(Number(item.paid_amount ?? item.amount), item.currency)}
+                                  </span>
+                                  {item.is_paid && (
+                                    <button
+                                      onClick={() => handleUndoInstallment(item.id)}
+                                      disabled={undoingId === item.id}
+                                      title="Desfazer pagamento"
+                                      className="flex items-center gap-0.5 text-[10px] text-emerald-400 hover:text-amber-400 disabled:opacity-50 transition-colors shrink-0">
+                                      {undoingId === item.id ? <Spinner /> : <><UndoIcon /> Desfazer</>}
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                              {group.length > 3 && (
+                                <button
+                                  onClick={() => toggleGroupExpanded(parentId)}
+                                  className="w-full text-center text-[10px] font-semibold text-[#D4A853] hover:bg-[#1c1c1c] transition-colors py-2 border-t border-[#1c1c1c]">
+                                  {isExpanded
+                                    ? `Ver menos ↑`
+                                    : `Ver todas as ${group.length} parcelas (${hiddenCount} ocultas) ↓`}
+                                </button>
+                              )}
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
                   )
