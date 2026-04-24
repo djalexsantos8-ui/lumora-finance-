@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { createFreelancer, updateFreelancer } from '@/lib/actions/freelancers'
 import { useActionToast } from '@/hooks/use-action-toast'
 import {
@@ -8,6 +8,7 @@ import {
   SUPPORTED_CURRENCIES,
 } from '@/lib/utils/format'
 import type { Freelancer } from '@/types/freelancer'
+import { MoneyInput } from '@/components/ui/money-input'
 
 interface FreelancerModalProps {
   open: boolean
@@ -26,8 +27,17 @@ export default function FreelancerModal({
 
   const isEdit = Boolean(freelancer)
 
+  const [dailyRate, setDailyRate] = useState<number>(
+    freelancer?.daily_rate ? Number(freelancer.daily_rate) : 0
+  )
+  const [currency, setCurrency]   = useState<string>(freelancer?.currency ?? 'BRL')
+
   useEffect(() => {
-    if (open) formRef.current?.reset()
+    if (open) {
+      formRef.current?.reset()
+      setDailyRate(freelancer?.daily_rate ? Number(freelancer.daily_rate) : 0)
+      setCurrency(freelancer?.currency ?? 'BRL')
+    }
   }, [open, freelancer])
 
   useEffect(() => {
@@ -128,14 +138,14 @@ export default function FreelancerModal({
                 <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                   Valor da diária
                 </label>
-                <input
-                  name="daily_rate"
-                  type="text"
-                  inputMode="decimal"
-                  defaultValue={freelancer?.daily_rate ?? ''}
-                  placeholder="0,00"
-                  className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder-[#525252] focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors"
+                <MoneyInput
+                  value={dailyRate}
+                  currency={currency}
+                  onChange={setDailyRate}
+                  ariaLabel="Valor da diária"
                 />
+                {/* Shadow field para FormData */}
+                <input type="hidden" name="daily_rate" value={dailyRate} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
@@ -143,7 +153,8 @@ export default function FreelancerModal({
                 </label>
                 <select
                   name="currency"
-                  defaultValue={freelancer?.currency ?? 'BRL'}
+                  value={currency}
+                  onChange={e => setCurrency(e.target.value)}
                   className="w-full bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#D4A853]/50 focus:ring-1 focus:ring-[#D4A853]/20 transition-colors appearance-none cursor-pointer"
                 >
                   {SUPPORTED_CURRENCIES.map((c) => (

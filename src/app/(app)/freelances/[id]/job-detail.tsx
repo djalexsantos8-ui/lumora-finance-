@@ -36,6 +36,7 @@ import type { Expense } from '@/types/expense'
 import { ContractEntryPoint } from '@/components/contracts/contract-entry-point'
 import { SectionBoundary } from '@/components/common/section-boundary'
 import type { Contract } from '@/types/contract'
+import { MoneyInput } from '@/components/ui/money-input'
 
 // ─── Helper: deriva ClientRef a partir do job carregado ──────────────────────
 // Source of truth: se existe client_id + client (join), usa esses.
@@ -1008,8 +1009,13 @@ export default function JobDetail({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>VALOR</label>
-                <input autoFocus type="text" inputMode="decimal" placeholder="0,00"
-                  value={payAmount} onChange={e => setPayAmount(e.target.value)} required className={inputCls} />
+                <MoneyInput
+                  autoFocus
+                  value={parseFloat(payAmount.replace(',', '.')) || 0}
+                  currency={job.currency}
+                  onChange={v => setPayAmount(v > 0 ? String(v) : '')}
+                  ariaLabel="Valor do pagamento"
+                />
               </div>
               <div>
                 <label className={labelCls}>DATA</label>
@@ -1939,16 +1945,16 @@ function JobExpensesSection({
               disabled={submitting}
               className={`${inputSm} flex-1`}
             />
-            <input
-              type="text"
-              inputMode="decimal"
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
-              onKeyDown={handleAddKeyDown}
-              placeholder="0,00"
-              disabled={submitting}
-              className={`${inputSm} sm:w-32`}
-            />
+            <div className="sm:w-40">
+              <MoneyInput
+                value={parseFloat(amountStr.replace(',', '.')) || 0}
+                currency={currency}
+                onChange={v => setAmountStr(v > 0 ? String(v) : '')}
+                onCommit={() => submitAdd()}
+                disabled={submitting}
+                ariaLabel="Valor da despesa"
+              />
+            </div>
           </div>
           <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
             {submitting && <Spinner />}

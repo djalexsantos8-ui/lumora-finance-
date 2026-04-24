@@ -5,6 +5,7 @@ import { createBudgetItem, updateBudgetItem } from '@/lib/actions/budget-items'
 import { BUDGET_ITEM_CATEGORIES, formatCurrency, FREELANCER_ROLE_LABELS } from '@/lib/utils/format'
 import type { Budget, BudgetItem } from '@/types/budget'
 import type { Freelancer } from '@/types/freelancer'
+import { MoneyInput } from '@/components/ui/money-input'
 
 interface Props {
   open:        boolean
@@ -244,15 +245,14 @@ export default function AddItemModal({
                 <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5">
                   Valor unit.
                 </label>
-                <input
-                  name="unit_value"
-                  type="text"
-                  inputMode="decimal"
-                  value={unitValue}
-                  onChange={e => setUnitValue(e.target.value)}
-                  placeholder="0,00"
-                  className={`${inputCls} text-right`}
+                <MoneyInput
+                  value={parsedUnit}
+                  currency={currency}
+                  onChange={v => setUnitValue(v > 0 ? String(v) : '')}
+                  ariaLabel="Valor unitário"
                 />
+                {/* Hidden shadow field — action usa FormData, precisa do campo */}
+                <input type="hidden" name="unit_value" value={unitValue} />
               </div>
             </div>
 

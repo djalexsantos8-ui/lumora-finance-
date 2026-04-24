@@ -2,28 +2,32 @@
 
 // ─── MoneyInput ──────────────────────────────────────────────────────────────
 //
-// Input profissional para valores monetários.
+// Input profissional para valores monetários com digitação em modo CENTAVOS.
 //
-// Substitui `<input type="number" step="0.01">`, cujo UX é ruim em BR:
-//   · stepper (as setinhas) são clicadas por acidente e mudam R$ por 0,01
-//   · separador decimal inconsistente (., vs ,)
-//   · selecionar tudo + digitar quebra estado (NaN)
-//   · placeholder fica "0" e some quando foca
+// Spec definida pelo usuário (2026-04-24):
+//   1     → R$ 0,01
+//   10    → R$ 0,10
+//   100   → R$ 1,00
+//   1000  → R$ 10,00
+//   150000 → R$ 1.500,00
 //
-// MoneyInput oferece:
-//   · prefixo visual da moeda (R$ / US$ / EUR)
-//   · aceita tanto "," quanto "." como decimal (normaliza internamente)
-//   · formata na blur com locale pt-BR (1.234,56)
-//   · o pai recebe SEMPRE um number (nunca string)
-//   · aceita Enter para commit imediato
+// Cada dígito digitado desloca a vírgula (estilo caixa registradora). Letras e
+// símbolos são ignorados; só dígitos contam.
+//
+// API MANTIDA retrocompatível — ainda recebe `value: number | string | null` e
+// emite para o pai `onChange: (value: number) => void`. Call sites existentes
+// (recurring-editor, order-editor) ganham a UX nova sem refactor.
+//
+// Diferenças vs versão anterior:
+//   · Formatação com 2 casas SEMPRE visível (nunca mais string vazia).
+//   · Placeholder substituído por "0,00" sempre; display mostra o valor.
+//   · Não reformata no blur (já está formatado continuamente).
+//   · Backspace remove só o último dígito (volta pro estado anterior).
 //
 // Uso:
 //   <MoneyInput value={amount} currency="BRL" onChange={setAmount} />
-//
-// ⚠️ `onChange` dispara a cada tecla com o NÚMERO parseado. Se quiser commit
-//    só na blur/Enter, use `onCommit` em vez de (ou em adição a) `onChange`.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getCurrencyDecimals, getCurrencySymbol, toNumberSafe } from '@/lib/utils/format'
 
 interface Props {
@@ -39,7 +43,7 @@ interface Props {
   disabled?: boolean
   /** Auto-focus inicial. */
   autoFocus?: boolean
-  /** Placeholder (já inclui "0,00" por padrão). */
+  /** Placeholder (ignorado — display sempre mostra "0,00" quando zero). */
   placeholder?: string
   /** Classe extra (sobrepõe estilos padrão se necessário). */
   className?: string
@@ -48,47 +52,29 @@ interface Props {
 }
 
 /**
- * Formata número para pt-BR (1234.56 → "1.234,56") usando o número de
- * casas decimais correto para a moeda (JPY = 0, BRL/USD/EUR = 2). Quando
- * valor é 0, retorna string vazia para deixar placeholder visível.
+ * Formata `minorUnits` (inteiro de menor unidade: centavos para BRL/USD/EUR,
+ * unidade inteira para JPY) para string pt-BR com o número correto de casas.
+ * Ex (decimais=2): 150000 → "1.500,00"  ·  1 → "0,01"  ·  0 → "0,00".
  */
-function formatLocal(value: number, digits: number): string {
-  if (!isFinite(value) || value === 0) return ''
+function formatMinor(minorUnits: number, decimals: number): string {
+  const safe = Number.isFinite(minorUnits) ? Math.max(0, Math.floor(minorUnits)) : 0
+  const divisor = Math.pow(10, decimals)
+  const value = safe / divisor
   return value.toLocaleString('pt-BR', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   })
 }
 
 /**
- * Parse robusto: "1.234,56" → 1234.56 · "1234.56" → 1234.56 ·
- * "R$ 1.234,56" → 1234.56 · "abc" → 0 · "" → 0.
+ * Extrai só os dígitos da string e converte para inteiro na menor unidade.
+ * Limita a 15 dígitos para evitar overflow de Number.
  */
-function parseLocal(raw: string): number {
-  // Remove símbolos, espaços, letras
-  const cleaned = raw.replace(/[^\d.,-]/g, '')
-  // Detecta formato: se tem vírgula e ponto, assume ponto=milhar, vírgula=decimal
-  // Se tem só vírgula, trata como decimal.
-  // Se tem só ponto e parece decimal (1-2 casas após), trata como decimal.
-  let normalized = cleaned
-  const hasComma = cleaned.includes(',')
-  const hasDot   = cleaned.includes('.')
-  if (hasComma && hasDot) {
-    // pt-BR clássico: "1.234,56"
-    normalized = cleaned.replace(/\./g, '').replace(',', '.')
-  } else if (hasComma) {
-    // Só vírgula: decimal
-    normalized = cleaned.replace(',', '.')
-  }
-  // Só ponto: já está em formato US (1234.56). Se tiver múltiplos pontos
-  // (ex: "1.234.56"), remove todos menos o último — ambíguo mas melhor que NaN.
-  else if (hasDot && (cleaned.match(/\./g) || []).length > 1) {
-    const parts = cleaned.split('.')
-    const last  = parts.pop() ?? ''
-    normalized  = parts.join('') + '.' + last
-  }
-  const parsed = parseFloat(normalized)
-  return isFinite(parsed) ? parsed : 0
+function digitsToMinor(raw: string): number {
+  const digits = (raw.match(/\d/g) ?? []).join('').slice(0, 15)
+  if (!digits) return 0
+  const n = parseInt(digits, 10)
+  return Number.isFinite(n) ? n : 0
 }
 
 export function MoneyInput({
@@ -98,70 +84,83 @@ export function MoneyInput({
   onCommit,
   disabled,
   autoFocus,
-  placeholder,
   className,
   ariaLabel,
 }: Props) {
   const decimals = getCurrencyDecimals(currency)
+  const divisor = useMemo(() => Math.pow(10, decimals), [decimals])
+
   // PostgREST retorna numeric como string — normaliza na entrada.
-  const numericValue = toNumberSafe(value)
+  const externalMinor = Math.max(0, Math.round(toNumberSafe(value) * divisor))
 
-  // display = string mostrada no input. Diverge de value durante digitação.
-  const [display, setDisplay] = useState<string>(() => formatLocal(numericValue, decimals))
-  const [focused, setFocused] = useState(false)
+  const [minor, setMinor] = useState<number>(externalMinor)
 
-  // Sincroniza display quando value muda por fora (reset / reload / etc).
-  // Só aplica quando NÃO está focado — senão derrapa o cursor do usuário.
+  // Sincroniza quando value muda por fora (ex: reset / reload).
   useEffect(() => {
-    if (!focused) setDisplay(formatLocal(numericValue, decimals))
-  }, [numericValue, focused, decimals])
+    setMinor(prev => (prev === externalMinor ? prev : externalMinor))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalMinor])
 
   const symbol = getCurrencySymbol(currency)
+  const display = useMemo(() => formatMinor(minor, decimals), [minor, decimals])
+
+  function commit(next: number) {
+    setMinor(next)
+    onChange?.(next / divisor)
+  }
 
   return (
     <div className={`relative ${className ?? ''}`}>
       <span
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-[#737373] text-sm font-medium pointer-events-none select-none"
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D4A853] text-sm font-semibold pointer-events-none select-none"
         aria-hidden
       >
         {symbol}
       </span>
       <input
         type="text"
-        inputMode="decimal"
+        inputMode="numeric"
+        autoComplete="off"
+        spellCheck={false}
         disabled={disabled}
         autoFocus={autoFocus}
         aria-label={ariaLabel}
         value={display}
-        onFocus={() => {
-          setFocused(true)
-          // Ao focar, mostra número "cru" (sem separador de milhar) para facilitar edição.
-          if (numericValue > 0) setDisplay(String(numericValue).replace('.', ','))
-          else setDisplay('')
+        onChange={e => commit(digitsToMinor(e.target.value))}
+        onFocus={e => {
+          const el = e.currentTarget
+          requestAnimationFrame(() => {
+            try {
+              const len = el.value.length
+              el.setSelectionRange(len, len)
+            } catch {
+              /* noop */
+            }
+          })
         }}
-        onChange={e => {
-          const raw = e.target.value
-          setDisplay(raw)
-          if (onChange) onChange(parseLocal(raw))
+        onClick={e => {
+          const el = e.currentTarget
+          try {
+            const len = el.value.length
+            el.setSelectionRange(len, len)
+          } catch {
+            /* noop */
+          }
         }}
-        onBlur={() => {
-          setFocused(false)
-          const parsed = parseLocal(display)
-          setDisplay(formatLocal(parsed, decimals))
-          if (onCommit) onCommit(parsed)
-        }}
+        onBlur={() => onCommit?.(minor / divisor)}
         onKeyDown={e => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            const parsed = parseLocal(display)
-            setDisplay(formatLocal(parsed, decimals))
-            if (onCommit) onCommit(parsed)
-            // Força blur para indicar commit visualmente
+            onCommit?.(minor / divisor)
             ;(e.target as HTMLInputElement).blur()
           }
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Backspace') {
+            e.preventDefault()
+            commit(0)
+          }
         }}
-        placeholder={placeholder ?? (decimals === 0 ? '0' : '0,00')}
-        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none text-white text-sm rounded-lg pl-10 pr-3 py-2.5 transition-colors tabular-nums disabled:opacity-60 disabled:cursor-not-allowed"
+        placeholder="0,00"
+        className="w-full bg-[#0a0a0a] border border-[#3a3a3a] focus:border-[#D4A853] focus:ring-1 focus:ring-[#D4A853]/30 focus:outline-none text-white text-sm rounded-lg pl-12 pr-3 py-2.5 transition-colors tabular-nums text-right font-medium disabled:opacity-60 disabled:cursor-not-allowed"
       />
     </div>
   )

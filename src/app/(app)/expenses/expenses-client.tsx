@@ -9,6 +9,7 @@ import {
   EXPENSE_CATEGORY_LABELS,
 } from '@/types/expense'
 import type { Expense, ExpenseCategory } from '@/types/expense'
+import { MoneyInput } from '@/components/ui/money-input'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -557,9 +558,14 @@ export function ExpensesClient({ initialExpenses, monthParam, monthLabel }: Prop
                   ? (fAmtMode === 'total' ? `Valor total (${fCurrency})` : `Valor por parcela (${fCurrency})`)
                   : `Valor (${fCurrency})`}
               </label>
-              <input type="text" placeholder="0,00" value={fAmt} onChange={e => setFAmt(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-                disabled={isPending} className={`${inputCls} text-right`} />
+              <MoneyInput
+                value={parseFloat(fAmt.replace(',', '.')) || 0}
+                currency={fCurrency === 'OTHER' ? 'BRL' : fCurrency}
+                onChange={v => setFAmt(v > 0 ? String(v) : '')}
+                onCommit={() => { /* Enter handled via onEnter-ish */ }}
+                disabled={isPending}
+                ariaLabel="Valor"
+              />
             </div>
 
             {/* Cotação automática (moedas com API de cotação ao vivo) */}
