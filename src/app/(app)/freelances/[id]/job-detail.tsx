@@ -1692,7 +1692,7 @@ function RepassTable({
 
       {items.length === 0 && !adding && (
         <p className="text-xs text-[#525252] text-center py-6">
-          Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
+          Nenhum repasse registrado. Aluguel de equipamento, deslocamento cobrado do cliente, diária de assistente...
         </p>
       )}
 

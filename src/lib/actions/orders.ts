@@ -102,6 +102,7 @@ export async function updateOrder(
     currency:            string
     amount:              number
     amount_paid:         number
+    discount_amount:     number
     status:              OrderStatus
     notes:               string | null
   }>
@@ -152,6 +153,7 @@ export async function updateOrder(
     'currency',
     'amount',
     'amount_paid',
+    'discount_amount',
     'status',
     'notes',
   ] as const) {

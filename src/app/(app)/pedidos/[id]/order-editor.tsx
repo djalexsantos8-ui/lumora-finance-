@@ -181,6 +181,7 @@ export default function OrderEditor({
     currency:            order.currency,
     amount:              order.amount,
     amount_paid:         order.amount_paid,
+    discount_amount:     Number(order.discount_amount ?? 0),
     status:              order.status,
     notes:               order.notes ?? '',
     project_description: order.project_description ?? '',
@@ -223,6 +224,7 @@ export default function OrderEditor({
         currency:            form.currency,
         amount:              Number(form.amount) || 0,
         amount_paid:         Number(form.amount_paid) || 0,
+        discount_amount:     Math.max(0, Number(form.discount_amount) || 0),
         status:              form.status,
         notes:               form.notes || null,
         project_description: form.project_description || null,
@@ -520,7 +522,7 @@ export default function OrderEditor({
         </div>
 
         {/* Financeiro */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs text-[#a3a3a3] mb-1.5">Moeda</label>
             <select
@@ -540,6 +542,20 @@ export default function OrderEditor({
               currency={form.currency}
               onChange={v => setForm(f => ({ ...f, amount: v }))}
               ariaLabel="Valor total"
+            />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-xs text-[#a3a3a3] mb-1.5">
+              <span>Desconto</span>
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[#1a1a1a] text-[#a3a3a3] border border-[#2a2a2a]">
+                OPCIONAL
+              </span>
+            </label>
+            <MoneyInput
+              value={form.discount_amount}
+              currency={form.currency}
+              onChange={v => setForm(f => ({ ...f, discount_amount: Math.max(0, Number(v) || 0) }))}
+              ariaLabel="Desconto"
             />
           </div>
           <div>
@@ -1421,7 +1437,7 @@ function CostItemsSection({
 
       {items.length === 0 && !adding && (
         <p className="text-xs text-[#525252] text-center py-6">
-          Nenhum repasse registrado. Aluguel de gear, viagem cobrada do cliente, diária de assistente...
+          Nenhum repasse registrado. Aluguel de equipamento, deslocamento cobrado do cliente, diária de assistente...
         </p>
       )}
 
