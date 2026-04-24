@@ -9,6 +9,7 @@ import { LEAD_SOURCES } from '@/lib/canonical/lead-sources'
 import { CLIENT_SEGMENTS } from '@/lib/canonical/segments'
 import { SUPPORTED_CURRENCIES, formatCurrency } from '@/lib/utils/format'
 import { MoneyInput } from '@/components/ui/money-input'
+import { MoneyInputInline } from '@/components/ui/money-input-inline'
 import { AutoGrowTextarea } from '@/components/ui/auto-grow-textarea'
 import {
   updateRecurringRevenue,
@@ -921,19 +922,19 @@ function RecurringItemsSection({
   const [newDesc,      setNewDesc]      = useState('')
   const [newCat,       setNewCat]       = useState<RecurringItemCategory | ''>('')
   const [newQty,       setNewQty]       = useState('1')
-  const [newUnit,      setNewUnit]      = useState('')
+  const [newUnit,      setNewUnit]      = useState<number>(0)
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
   const [editingId,    setEditingId]    = useState<string | null>(null)
   const [editDesc,     setEditDesc]     = useState('')
   const [editCat,      setEditCat]      = useState<RecurringItemCategory | ''>('')
   const [editQty,      setEditQty]      = useState('')
-  const [editUnit,     setEditUnit]     = useState('')
+  const [editUnit,     setEditUnit]     = useState<number>(0)
   const addRowRef  = useRef<HTMLDivElement>(null)
   const addDescRef = useRef<HTMLInputElement>(null)
   const [, startTransitionDelete] = useTransition()
 
   function cancelAdd() {
-    setAdding(false); setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
+    setAdding(false); setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit(0)
   }
 
   async function submitAdd(): Promise<boolean> {
@@ -953,7 +954,7 @@ function RecurringItemsSection({
       setNewlyAddedId(res.data.id)
       setTimeout(() => setNewlyAddedId(null), 1200)
     }
-    setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
+    setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit(0)
     setAdding(false)
     return true
   }
@@ -980,7 +981,7 @@ function RecurringItemsSection({
     setEditDesc(it.description)
     setEditCat((it.category ?? '') as RecurringItemCategory | '')
     setEditQty(String(it.quantity))
-    setEditUnit(String(it.unit_value))
+    setEditUnit(Number(it.unit_value) || 0)
   }
 
   async function submitEdit(id: string) {
@@ -1067,12 +1068,17 @@ function RecurringItemsSection({
                     onBlur={() => submitEdit(it.id)}
                     onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
                     className={`${inputSm} text-right`} />
-                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
+                  <MoneyInputInline
+                    value={editUnit}
+                    currency={currency}
+                    onChange={setEditUnit}
                     onBlur={() => submitEdit(it.id)}
                     onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
-                    className={`${inputSm} text-right`} />
+                    ariaLabel="Valor unitário"
+                    className={`${inputSm} text-right`}
+                  />
                   <span className="text-xs text-right text-[#525252]">
-                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                    {formatCurrency((parseFloat(editQty) || 1) * editUnit, currency)}
                   </span>
                   <span />
                 </div>
@@ -1138,16 +1144,17 @@ function RecurringItemsSection({
                 disabled={isSubmitting}
                 className={`${inputSm} text-right`}
               />
-              <input
-                placeholder="0,00"
+              <MoneyInputInline
                 value={newUnit}
-                onChange={e => setNewUnit(e.target.value)}
+                currency={currency}
+                onChange={setNewUnit}
                 onKeyDown={handleAddKeyDown}
                 disabled={isSubmitting}
+                ariaLabel="Valor unitário"
                 className={`${inputSm} text-right`}
               />
               <span className="text-xs text-right text-[#525252]">
-                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+                {formatCurrency((parseFloat(newQty) || 1) * newUnit, currency)}
               </span>
               <span />
             </div>
@@ -1214,19 +1221,19 @@ function RecurringCostItemsSection({
   const [newDesc,      setNewDesc]      = useState('')
   const [newCat,       setNewCat]       = useState<RecurringCostCategory>('other')
   const [newQty,       setNewQty]       = useState('1')
-  const [newUnit,      setNewUnit]      = useState('')
+  const [newUnit,      setNewUnit]      = useState<number>(0)
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
   const [editingId,    setEditingId]    = useState<string | null>(null)
   const [editDesc,     setEditDesc]     = useState('')
   const [editCat,      setEditCat]      = useState<RecurringCostCategory>('other')
   const [editQty,      setEditQty]      = useState('')
-  const [editUnit,     setEditUnit]     = useState('')
+  const [editUnit,     setEditUnit]     = useState<number>(0)
   const addRowRef  = useRef<HTMLDivElement>(null)
   const addDescRef = useRef<HTMLInputElement>(null)
   const [, startTransitionDelete] = useTransition()
 
   function cancelAdd() {
-    setAdding(false); setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
+    setAdding(false); setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit(0)
   }
 
   async function submitAdd(): Promise<boolean> {
@@ -1246,7 +1253,7 @@ function RecurringCostItemsSection({
       setNewlyAddedId(res.data.id)
       setTimeout(() => setNewlyAddedId(null), 1200)
     }
-    setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
+    setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit(0)
     setAdding(false)
     return true
   }
@@ -1273,7 +1280,7 @@ function RecurringCostItemsSection({
     setEditDesc(it.description)
     setEditCat((it.category ?? 'other') as RecurringCostCategory)
     setEditQty(String(it.quantity))
-    setEditUnit(String(it.unit_value))
+    setEditUnit(Number(it.unit_value) || 0)
   }
 
   async function submitEdit(id: string) {
@@ -1360,11 +1367,17 @@ function RecurringCostItemsSection({
                   <input value={editQty} onChange={e => setEditQty(e.target.value)}
                     onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
                     className={`${inputSm} text-right`} />
-                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
-                    onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
-                    className={`${inputSm} text-right`} />
+                  <MoneyInputInline
+                    value={editUnit}
+                    currency={currency}
+                    onChange={setEditUnit}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
+                    ariaLabel="Valor unitário do repasse"
+                    className={`${inputSm} text-right`}
+                  />
                   <span className="text-xs text-right text-[#525252]">
-                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                    {formatCurrency((parseFloat(editQty) || 1) * editUnit, currency)}
                   </span>
                   <span />
                 </div>
@@ -1434,16 +1447,17 @@ function RecurringCostItemsSection({
                 disabled={isSubmitting}
                 className={`${inputSm} text-right`}
               />
-              <input
-                placeholder="0,00"
+              <MoneyInputInline
                 value={newUnit}
-                onChange={e => setNewUnit(e.target.value)}
+                currency={currency}
+                onChange={setNewUnit}
                 onKeyDown={handleAddKeyDown}
                 disabled={isSubmitting}
+                ariaLabel="Valor unitário do repasse"
                 className={`${inputSm} text-right`}
               />
               <span className="text-xs text-right text-[#525252]">
-                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+                {formatCurrency((parseFloat(newQty) || 1) * newUnit, currency)}
               </span>
               <span />
             </div>
