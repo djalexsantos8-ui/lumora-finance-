@@ -23,6 +23,8 @@ import {
   FIXED_COST_CATEGORY_LABELS,
 } from '@/types/expense'
 import type { FixedCost, FixedCostCategory } from '@/types/expense'
+import { MoneyField } from '@/components/ui/money-field'
+import type { MoneyCurrency } from '@/components/ui/money-field'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -575,21 +577,16 @@ export function FixedCostsClient({ initialItems }: Props) {
               /* ── Recorrente: valor simples ──────────────────────────────── */
               <div>
                 <label className={labelCls}>Valor mensal</label>
-                <div className="flex gap-2">
-                  <select
-                    value={fCurr}
-                    onChange={e => setFCurr(e.target.value as CurrencyCode)}
-                    disabled={isPending}
-                    aria-label="Moeda"
-                    className={`${inputCls} w-[88px] shrink-0`}
-                  >
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <input type="text" inputMode="decimal" placeholder="0,00"
-                    value={fAmt} onChange={e => setFAmt(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-                    disabled={isPending} className={`${inputCls} text-right flex-1`} />
-                </div>
+                <MoneyField
+                  value={parseMoney(fAmt)}
+                  currency={fCurr}
+                  onValueChange={v => setFAmt(v > 0 ? String(v) : '')}
+                  onCurrencyChange={c => setFCurr(c as CurrencyCode)}
+                  allowedCurrencies={[...CURRENCIES] as MoneyCurrency[]}
+                  disabled={isPending}
+                  onEnter={handleSubmit}
+                  ariaLabel="Valor mensal"
+                />
               </div>
             ) : (
               /* ── Parcelado: valor + N + preview ─────────────────────────── */
@@ -610,20 +607,15 @@ export function FixedCostsClient({ initialItems }: Props) {
                       Usar {fAmtMode === 'per' ? 'total' : 'por parcela'}
                     </button>
                   </div>
-                  <div className="flex gap-2">
-                    <select
-                      value={fCurr}
-                      onChange={e => setFCurr(e.target.value as CurrencyCode)}
-                      disabled={isPending}
-                      aria-label="Moeda"
-                      className={`${inputCls} w-[88px] shrink-0`}
-                    >
-                      {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <input type="text" inputMode="decimal" placeholder="0,00"
-                      value={fAmt} onChange={e => setFAmt(e.target.value)}
-                      disabled={isPending} className={`${inputCls} text-right flex-1`} />
-                  </div>
+                  <MoneyField
+                    value={parseMoney(fAmt)}
+                    currency={fCurr}
+                    onValueChange={v => setFAmt(v > 0 ? String(v) : '')}
+                    onCurrencyChange={c => setFCurr(c as CurrencyCode)}
+                    allowedCurrencies={[...CURRENCIES] as MoneyCurrency[]}
+                    disabled={isPending}
+                    ariaLabel={fAmtMode === 'per' ? 'Valor por parcela' : 'Valor total'}
+                  />
                 </div>
 
                 {/* Preview */}
@@ -991,9 +983,14 @@ export function FixedCostsClient({ initialItems }: Props) {
                 {/* Valor */}
                 <div>
                   <label className={labelCls}>Valor mensal</label>
-                  <input type="text" inputMode="decimal" placeholder="0,00"
-                    value={editAmt} onChange={e => setEditAmt(e.target.value)}
-                    disabled={editSaving} className={`${inputCls} text-right`} />
+                  <MoneyField
+                    value={parseMoney(editAmt)}
+                    currency={(editItem?.currency as MoneyCurrency) || 'BRL'}
+                    onValueChange={v => setEditAmt(v > 0 ? String(v) : '')}
+                    hideCurrency
+                    disabled={editSaving}
+                    ariaLabel="Valor mensal"
+                  />
                 </div>
 
                 {/* Dia de vencimento */}
