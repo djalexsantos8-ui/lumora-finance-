@@ -112,13 +112,16 @@ export function FixedCostsClient({ initialItems }: Props) {
   const [undoingId, setUndoingId] = useState<string | null>(null)
 
   // Edit modal
-  const [editItem,    setEditItem]    = useState<FixedCost | null>(null)
-  const [editSaving,  setEditSaving]  = useState(false)
-  const [editDesc,    setEditDesc]    = useState('')
-  const [editCat,     setEditCat]     = useState<FixedCostCategory>('software')
-  const [editAmt,     setEditAmt]     = useState('')
-  const [editDay,     setEditDay]     = useState('')
-  const [editStart,   setEditStart]   = useState('')
+  const [editItem,     setEditItem]     = useState<FixedCost | null>(null)
+  const [editSaving,   setEditSaving]   = useState(false)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editCat,      setEditCat]      = useState<FixedCostCategory>('software')
+  const [editAmt,      setEditAmt]      = useState('')
+  const [editDay,      setEditDay]      = useState('')
+  const [editStart,    setEditStart]    = useState('')
+  // Migration 2026-04-24 — lembrete X dias antes. '' = sem lembrete.
+  const [editReminder, setEditReminder] = useState<string>('')
+  const [editNote,     setEditNote]     = useState<string>('')
 
   // Settle modal
   const [settleModal, setSettleModal] = useState<{
@@ -341,17 +344,27 @@ export function FixedCostsClient({ initialItems }: Props) {
     setEditAmt(String(item.amount))
     setEditDay(String(item.billing_day ?? ''))
     setEditStart(item.start_date ?? '')
+    // Migration 2026-04-24 — `reminder_days_before` e `installment_note` podem
+    // não existir em rows antigas (retornam null pelo PostgREST, mas também
+    // retornam undefined se a coluna ainda não estiver no select — defensivo).
+    const rem = (item as { reminder_days_before?: number | null }).reminder_days_before
+    setEditReminder(rem == null ? '' : String(rem))
+    const note = (item as { installment_note?: string | null }).installment_note
+    setEditNote(note ?? '')
   }
 
   async function handleEditSave() {
     if (!editItem) return
     setEditSaving(true)
+    const remParsed = editReminder.trim() === '' ? null : parseInt(editReminder, 10)
     const res = await updateFixedCost(editItem.id, {
-      description: editDesc,
-      category:    editCat,
-      amount:      parseMoney(editAmt) || editItem.amount,
-      billing_day: (parseInt(editDay, 10) || editItem.billing_day) ?? undefined,
-      start_date:  editStart || null,
+      description:          editDesc,
+      category:             editCat,
+      amount:               parseMoney(editAmt) || editItem.amount,
+      billing_day:          (parseInt(editDay, 10) || editItem.billing_day) ?? undefined,
+      start_date:           editStart || null,
+      reminder_days_before: remParsed == null || Number.isNaN(remParsed) ? null : remParsed,
+      installment_note:     editItem.is_installment ? (editNote.trim() || null) : undefined,
     })
     setEditSaving(false)
     if (res.success && res.data) {
@@ -1008,6 +1021,44 @@ export function FixedCostsClient({ initialItems }: Props) {
                 <input type="date" value={editStart} onChange={e => setEditStart(e.target.value)}
                   disabled={editSaving} className={inputCls} />
               </div>
+
+              {/* Lembrete X dias antes (migration 2026-04-24) */}
+              <div>
+                <label className={labelCls}>Lembrete</label>
+                <select
+                  value={editReminder}
+                  onChange={e => setEditReminder(e.target.value)}
+                  disabled={editSaving}
+                  className={inputCls}
+                  aria-label="Lembrete antes do vencimento"
+                >
+                  <option value="" className="bg-[#141414]">Sem lembrete</option>
+                  <option value="0" className="bg-[#141414]">No dia do vencimento</option>
+                  <option value="1" className="bg-[#141414]">1 dia antes</option>
+                  <option value="2" className="bg-[#141414]">2 dias antes</option>
+                  <option value="3" className="bg-[#141414]">3 dias antes</option>
+                  <option value="5" className="bg-[#141414]">5 dias antes</option>
+                  <option value="7" className="bg-[#141414]">7 dias antes</option>
+                  <option value="14" className="bg-[#141414]">14 dias antes</option>
+                  <option value="30" className="bg-[#141414]">30 dias antes</option>
+                </select>
+              </div>
+
+              {/* Nota por parcela — só aparece em custos parcelados (migration 2026-04-24) */}
+              {editItem?.is_installment && (
+                <div>
+                  <label className={labelCls}>Nota desta parcela (opcional)</label>
+                  <input
+                    type="text"
+                    value={editNote}
+                    onChange={e => setEditNote(e.target.value)}
+                    placeholder="Ex: aumento temporário, reajuste, etc."
+                    disabled={editSaving}
+                    className={inputCls}
+                    aria-label="Nota da parcela"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -1155,6 +1206,7 @@ const FIXED_CATEGORY_COLORS: Record<FixedCostCategory, string> = {
   taxes:        'bg-red-500/10 text-red-400',
   services:     'bg-emerald-500/10 text-emerald-400',
   marketing:    'bg-pink-500/10 text-pink-400',
+  loan:         'bg-rose-500/10 text-rose-400',
   // Legados (aliases do DB enum antigo)
   rent:         'bg-orange-500/10 text-orange-400',   // mesma cor de housing
   service:      'bg-emerald-500/10 text-emerald-400', // mesma cor de services

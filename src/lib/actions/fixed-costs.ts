@@ -481,11 +481,13 @@ export async function payNextInstallment(
 export async function updateFixedCost(
   id: string,
   fields: {
-    description?: string
-    category?:    FixedCostCategory
-    amount?:      number
-    billing_day?: number
-    start_date?:  string | null
+    description?:           string
+    category?:              FixedCostCategory
+    amount?:                number
+    billing_day?:           number
+    start_date?:            string | null
+    reminder_days_before?:  number | null
+    installment_note?:      string | null
   }
 ): Promise<FixedCostActionResult> {
   const supabase = await createClient()
@@ -513,6 +515,16 @@ export async function updateFixedCost(
   if (fields.amount      !== undefined) payload.amount      = Math.round(fields.amount * 100) / 100
   if (fields.billing_day !== undefined) payload.billing_day = Math.max(1, Math.min(31, fields.billing_day))
   if (fields.start_date  !== undefined) payload.start_date  = fields.start_date
+  if (fields.reminder_days_before !== undefined) {
+    // Migration aplicada 2026-04-24: CHECK 0..60 ou NULL. Clampa defensivo.
+    const n = fields.reminder_days_before
+    payload.reminder_days_before =
+      n === null ? null : Math.max(0, Math.min(60, Math.round(Number(n) || 0)))
+  }
+  if (fields.installment_note !== undefined) {
+    const t = fields.installment_note
+    payload.installment_note = t === null ? null : (String(t).trim() || null)
+  }
 
   const { data, error } = await supabase
     .from('fixed_costs')

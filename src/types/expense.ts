@@ -39,6 +39,7 @@ export type FixedCostCategory =
   | 'taxes'
   | 'services'
   | 'marketing'
+  | 'loan'       // Empréstimo / financiamento (migration 2026-04-24)
   | 'rent'       // legado (DB enum) — UI mostra como "Moradia"
   | 'service'    // legado (DB enum) — UI mostra como "Serviços"
   | 'other'
@@ -47,7 +48,7 @@ export type FixedCostCategory =
 export const FIXED_COST_DB_ENUM_VALUES: readonly FixedCostCategory[] = [
   'software','rent','equipment','service','other',
   'housing','transport','subscription','internet','phone',
-  'workspace','taxes','services','marketing',
+  'workspace','taxes','services','marketing','loan',
 ] as const
 
 // Categorias expostas no SELECT (ordem UX). `rent`/`service` ficam fora
@@ -64,6 +65,7 @@ export const FIXED_COST_CATEGORY_LABELS: Record<FixedCostCategory, string> = {
   marketing:    'Marketing',
   taxes:        'Impostos',
   services:     'Serviços',
+  loan:         'Empréstimo',
   other:        'Outros',
   // Legados — não aparecem no select, só renderizam corretamente se vierem do banco.
   rent:         'Moradia',
@@ -125,6 +127,8 @@ export interface Expense {
   iof_amount:          number | null   // valor do IOF em BRL
   // Quitação (migration 013)
   discount_amount:     number | null   // desconto aplicado na última parcela ao quitar antecipado
+  // Lembrete (migration 2026-04-24) — avisa X dias antes da data da despesa.
+  reminder_days_before: number | null
   deleted_at:          string | null
   created_at:          string
 }
@@ -164,6 +168,12 @@ export interface FixedCost {
   discount_amount:       number | null
   // Pagamento mensal recorrente (migration 018)
   last_paid_date:        string | null  // YYYY-MM-DD — último pagamento mensal
+  // Lembrete (migration 2026-04-24) — avisa X dias antes do vencimento.
+  // null = sem lembrete. 0..60 = dias antes (CHECK constraint no banco).
+  reminder_days_before:  number | null
+  // Nota por parcela (migration 2026-04-24) — usado quando is_installment=true
+  // para anotar detalhe específico DESTA parcela (ex: "dobrou de R$500 para R$750").
+  installment_note:      string | null
   deleted_at:            string | null
   created_at:            string
 }
