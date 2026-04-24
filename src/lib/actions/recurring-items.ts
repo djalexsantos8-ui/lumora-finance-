@@ -249,10 +249,14 @@ export async function updateRecurringCostItem(
   itemId: string,
   recurringId: string,
   fields: {
-    description?: string
-    category?:    string
-    quantity?:    number | string
-    unit_value?:  number | string
+    description?:  string
+    category?:     string
+    quantity?:     number | string
+    unit_value?:   number | string
+    status?:       'pending' | 'paid'
+    repasse_date?: string | null
+    paid_at?:      string | null
+    notes?:        string | null
   }
 ): Promise<RecurringCostItemActionResult> {
   const supabase = await createClient()
@@ -265,9 +269,23 @@ export async function updateRecurringCostItem(
     if (!d) return { success: false, message: 'Descrição obrigatória.' }
     payload.description = d
   }
-  if (fields.category   !== undefined) payload.category   = fields.category || 'other'
-  if (fields.quantity   !== undefined) payload.quantity   = Math.max(0.01, parseDecimal(fields.quantity))
-  if (fields.unit_value !== undefined) payload.unit_value = parseDecimal(fields.unit_value)
+  if (fields.category     !== undefined) payload.category     = fields.category || 'other'
+  if (fields.quantity     !== undefined) payload.quantity     = Math.max(0.01, parseDecimal(fields.quantity))
+  if (fields.unit_value   !== undefined) payload.unit_value   = parseDecimal(fields.unit_value)
+  if (fields.status       !== undefined) {
+    payload.status = fields.status
+    // Side-effect: marcar pago preenche paid_at; desfazer zera.
+    if (fields.status === 'paid') {
+      payload.paid_at = fields.paid_at ?? new Date().toISOString().slice(0, 10)
+    } else {
+      payload.paid_at = null
+    }
+  }
+  if (fields.repasse_date !== undefined) payload.repasse_date = fields.repasse_date
+  if (fields.paid_at      !== undefined && fields.status === undefined) {
+    payload.paid_at = fields.paid_at
+  }
+  if (fields.notes        !== undefined) payload.notes        = fields.notes
 
   if (Object.keys(payload).length === 0) {
     return { success: false, message: 'Nada para atualizar.' }

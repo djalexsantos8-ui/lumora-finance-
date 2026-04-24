@@ -86,6 +86,8 @@ export interface RecurringItem {
   created_at:   string
 }
 
+export type RecurringRepasseStatus = 'pending' | 'paid'
+
 export interface RecurringCostItem {
   id:              string
   recurring_id:    string
@@ -99,6 +101,16 @@ export interface RecurringCostItem {
   show_in_pdf:     boolean
   deleted_at:      string | null
   created_at:      string
+
+  // ── Fase 3 (2026-04-24) — repasses com status, data e comprovante ───────
+  status:              RecurringRepasseStatus
+  repasse_date:        string | null
+  paid_at:             string | null
+  proof_storage_path:  string | null
+  proof_file_name:     string | null
+  proof_mime_type:     string | null
+  proof_size_bytes:    number | null
+  notes:               string | null
 }
 
 export type RecurringItemActionResult =

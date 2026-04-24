@@ -1370,20 +1370,29 @@ function RecurringCostItemsSection({
                 </div>
               ) : (
                 <div
-                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                  className={`rounded-lg px-1 py-1 transition-all duration-500 ${
                     isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
                   }`}
-                  onClick={() => startEdit(it)}
                 >
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
-                  <span className="text-sm text-white truncate">{it.description}</span>
-                  <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
-                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
-                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
-                  <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
-                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
-                    <TrashIcon />
-                  </button>
+                  <div
+                    className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group cursor-pointer"
+                    onClick={() => startEdit(it)}
+                  >
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
+                    <span className="text-sm text-white truncate">{it.description}</span>
+                    <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
+                    <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
+                    <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
+                    <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
+                      className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                      <TrashIcon />
+                    </button>
+                  </div>
+                  <RepasseMetaRow
+                    item={it}
+                    recurringId={recurringId}
+                    onUpdated={(updated) => onChange(items.map(i => i.id === updated.id ? updated : i))}
+                  />
                 </div>
               )}
             </div>
@@ -1479,6 +1488,90 @@ function RecurringCostItemsSection({
           <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
           <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── RepasseMetaRow: status + datas por repasse ──────────────────────────────
+
+function RepasseMetaRow({
+  item,
+  recurringId,
+  onUpdated,
+}: {
+  item:        RecurringCostItem
+  recurringId: string
+  onUpdated:   (next: RecurringCostItem) => void
+}) {
+  const [isPending, startTransition] = useTransition()
+  const isPaid = item.status === 'paid'
+
+  function toggleStatus(e: React.MouseEvent) {
+    e.stopPropagation()
+    startTransition(async () => {
+      const res = await updateRecurringCostItem(item.id, recurringId, {
+        status: isPaid ? 'pending' : 'paid',
+      })
+      if (!res.success) { toast.error(res.message); return }
+      if (res.data) onUpdated(res.data)
+    })
+  }
+
+  function updateDate(field: 'repasse_date' | 'paid_at', value: string) {
+    startTransition(async () => {
+      const res = await updateRecurringCostItem(item.id, recurringId, {
+        [field]: value || null,
+      })
+      if (!res.success) { toast.error(res.message); return }
+      if (res.data) onUpdated(res.data)
+    })
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 flex-wrap pl-[88px] pt-1 pb-0.5"
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Status chip */}
+      <button
+        type="button"
+        onClick={toggleStatus}
+        disabled={isPending}
+        title={isPaid ? 'Clique para marcar como pendente' : 'Clique para marcar como pago'}
+        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors disabled:opacity-50 ${
+          isPaid
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+            : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
+        }`}
+      >
+        {isPaid ? '✓ Pago' : '● Pendente'}
+      </button>
+
+      {/* Data de repasse (vencimento) */}
+      <label className="flex items-center gap-1 text-[10px] text-[#525252]">
+        vence
+        <input
+          type="date"
+          value={item.repasse_date ?? ''}
+          onChange={e => updateDate('repasse_date', e.target.value)}
+          disabled={isPending}
+          className="bg-[#1c1c1c] border border-[#2a2a2a] rounded px-1.5 py-0.5 text-[10px] text-[#a3a3a3] focus:outline-none focus:border-[#D4A853]/40 [color-scheme:dark]"
+        />
+      </label>
+
+      {/* Data de pagamento (se pago) */}
+      {isPaid && (
+        <label className="flex items-center gap-1 text-[10px] text-[#525252]">
+          pago em
+          <input
+            type="date"
+            value={item.paid_at ?? ''}
+            onChange={e => updateDate('paid_at', e.target.value)}
+            disabled={isPending}
+            className="bg-[#1c1c1c] border border-[#2a2a2a] rounded px-1.5 py-0.5 text-[10px] text-emerald-400 focus:outline-none focus:border-emerald-500/40 [color-scheme:dark]"
+          />
+        </label>
       )}
     </div>
   )
