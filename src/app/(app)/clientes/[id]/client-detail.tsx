@@ -160,6 +160,34 @@ export function ClientDetail({
     }
   }, [budgets, orders, jobsById, jobsLegacy, recurrings, contracts])
 
+  // Resumo financeiro — agrega receita bruta por origem (pedidos + freelances).
+  // Não mistura moedas: tudo em BRL (se houver outras, ignora) para não
+  // mentir sobre conversão. Usuário vê total por origem com moeda real.
+  const finSummary = useMemo(() => {
+    function sumInCurrency<T extends { revenue_total?: number | null; currency?: string | null }>(
+      rows: T[],
+      currency: string
+    ) {
+      return rows
+        .filter(r => (r.currency ?? 'BRL') === currency)
+        .reduce((acc, r) => acc + Number(r.revenue_total || 0), 0)
+    }
+    const brlOrders    = sumInCurrency(orders, 'BRL')
+    const brlJobs      = sumInCurrency([...jobsById, ...jobsLegacy], 'BRL')
+    const brlRecurMonthly = recurrings
+      .filter(r => r.status === 'active' && (r.currency ?? 'BRL') === 'BRL')
+      .reduce((acc, r) => acc + Number(r.amount || 0), 0)
+    const brlTotal = brlOrders + brlJobs
+    return {
+      brlOrders,
+      brlJobs,
+      brlRecurMonthly,
+      brlTotal,
+      hasMultiCurrency: [...orders, ...jobsById, ...jobsLegacy, ...recurrings]
+        .some(r => ((r as { currency?: string | null }).currency ?? 'BRL') !== 'BRL'),
+    }
+  }, [orders, jobsById, jobsLegacy, recurrings])
+
   function showToast(kind: 'success' | 'error', message: string) {
     setToast({ kind, message })
     window.setTimeout(() => setToast(null), 3200)
@@ -328,6 +356,47 @@ export function ClientDetail({
           accent={kpis.signedContracts > 0 ? 'emerald' : undefined}
         />
       </div>
+
+      {/* ── Resumo financeiro ────────────────────────────────────────────── */}
+      {(finSummary.brlTotal > 0 || finSummary.brlRecurMonthly > 0) && (
+        <section className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-white">Resumo financeiro</h2>
+            {finSummary.hasMultiCurrency && (
+              <span
+                title="Este cliente tem lançamentos em moedas diferentes. O resumo agrega apenas BRL para evitar conversão imprecisa."
+                className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full"
+              >
+                multi-moeda (mostrando só BRL)
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <FinCard
+              label="Total bruto"
+              value={formatMoney(finSummary.brlTotal, 'BRL')}
+              sub="pedidos + freelances"
+              accent="gold"
+            />
+            <FinCard
+              label="Pedidos"
+              value={formatMoney(finSummary.brlOrders, 'BRL')}
+              sub={`${orders.length} pedido${orders.length === 1 ? '' : 's'}`}
+            />
+            <FinCard
+              label="Freelances"
+              value={formatMoney(finSummary.brlJobs, 'BRL')}
+              sub={`${jobsById.length + jobsLegacy.length} freelance${(jobsById.length + jobsLegacy.length) === 1 ? '' : 's'}`}
+            />
+            <FinCard
+              label="Recorrente ativa"
+              value={finSummary.brlRecurMonthly > 0 ? `${formatMoney(finSummary.brlRecurMonthly, 'BRL')}/mês` : '—'}
+              sub={kpis.activeRecurring > 0 ? `${kpis.activeRecurring} contrato${kpis.activeRecurring === 1 ? '' : 's'}` : undefined}
+              accent={kpis.activeRecurring > 0 ? 'emerald' : undefined}
+            />
+          </div>
+        </section>
+      )}
 
       {/* ── Sinal: recorrência que voltou ────────────────────────────────── */}
       {kpis.hasRecurringComeback && (
@@ -662,6 +731,25 @@ function Kpi({
       <div className={`text-xl font-bold tabular-nums ${accentCls}`}>
         {value.toLocaleString('pt-BR')}
       </div>
+      {sub && <div className="text-[10px] text-[#525252] mt-0.5">{sub}</div>}
+    </div>
+  )
+}
+
+function FinCard({
+  label, value, sub, accent,
+}: {
+  label: string; value: string; sub?: string; accent?: 'emerald' | 'red' | 'gold'
+}) {
+  const accentCls =
+    accent === 'emerald' ? 'text-emerald-400' :
+    accent === 'red'     ? 'text-red-400' :
+    accent === 'gold'    ? 'text-[#D4A853]' :
+    'text-white'
+  return (
+    <div className="rounded-xl border border-[#1f1f1f] bg-[#0f0f0f] p-3">
+      <div className="text-[10px] uppercase tracking-wider text-[#737373]">{label}</div>
+      <div className={`text-base font-bold tabular-nums mt-1 ${accentCls}`}>{value}</div>
       {sub && <div className="text-[10px] text-[#525252] mt-0.5">{sub}</div>}
     </div>
   )
