@@ -51,6 +51,35 @@ function isPaidThisMonth(lastPaidDate: string | null | undefined): boolean {
   return y === now.getFullYear() && m === (now.getMonth() + 1)
 }
 
+/**
+ * Parser monetário robusto para pt-BR e en-US.
+ * Aceita: "1000", "1000.50", "1000,50", "1.000,50", "1,000.50", "R$ 1.500,00".
+ * Retorna 0 para qualquer input inválido.
+ */
+function parseMoney(raw: string): number {
+  if (!raw) return 0
+  // Remove tudo que não for dígito, vírgula, ponto ou menos
+  const cleaned = raw.replace(/[^\d.,-]/g, '').trim()
+  if (!cleaned) return 0
+  const lastComma = cleaned.lastIndexOf(',')
+  const lastDot   = cleaned.lastIndexOf('.')
+  let normalized: string
+  if (lastComma === -1 && lastDot === -1) {
+    normalized = cleaned
+  } else if (lastComma > lastDot) {
+    // vírgula = decimal (pt-BR). Pontos são milhar.
+    normalized = cleaned.replace(/\./g, '').replace(',', '.')
+  } else {
+    // ponto = decimal (en-US). Vírgulas são milhar.
+    normalized = cleaned.replace(/,/g, '')
+  }
+  const n = parseFloat(normalized)
+  return Number.isFinite(n) ? n : 0
+}
+
+const CURRENCIES = ['BRL', 'USD', 'EUR'] as const
+type CurrencyCode = typeof CURRENCIES[number]
+
 /** Gera preview de datas para parcelamento */
 function previewDates(startDate: string, n: number): string[] {
   const [y, m, d] = startDate.split('-').map(Number)
@@ -103,9 +132,10 @@ export function FixedCostsClient({ initialItems }: Props) {
   const [formType, setFormType] = useState<'recurring' | 'installment'>('recurring')
 
   // Form — campos comuns
-  const [fCat,   setFCat]   = useState<FixedCostCategory>('software')
+  const [fCat,   setFCat]   = useState<FixedCostCategory>('housing')
   const [fDesc,  setFDesc]  = useState('')
   const [fAmt,   setFAmt]   = useState('')
+  const [fCurr,  setFCurr]  = useState<CurrencyCode>('BRL')
   const [fDate,  setFDate]  = useState(today())
   const [fDed,   setFDed]   = useState(false)
   const [fNotes, setFNotes] = useState('')
@@ -155,14 +185,14 @@ export function FixedCostsClient({ initialItems }: Props) {
 
   // ── Form helpers ──────────────────────────────────────────────────────────
 
-  const parsedAmt = parseFloat(fAmt.replace(',', '.')) || 0
+  const parsedAmt = parseMoney(fAmt)
   const parsedN   = parseInt(fInstallments, 10) || 1
 
   const amtPer   = fAmtMode === 'per'   ? parsedAmt : parsedAmt / parsedN
   const amtTotal = fAmtMode === 'total' ? parsedAmt : parsedAmt * parsedN
 
   function resetForm() {
-    setFCat('software'); setFDesc(''); setFAmt(''); setFDate(today())
+    setFCat('housing'); setFDesc(''); setFAmt(''); setFCurr('BRL'); setFDate(today())
     setFDed(false); setFNotes(''); setFInstallments('12'); setFAmtMode('per')
     setShowForm(false)
   }
@@ -178,6 +208,7 @@ export function FixedCostsClient({ initialItems }: Props) {
           description:   fDesc,
           category:      fCat,
           amount:        parsedAmt,
+          currency:      fCurr,
           start_date:    fDate,
           is_deductible: fDed,
           notes:         fNotes || undefined,
@@ -196,7 +227,7 @@ export function FixedCostsClient({ initialItems }: Props) {
           category:      fCat,
           amount_per:    Math.round(amtPer * 100) / 100,
           installments:  parsedN,
-          currency:      'BRL',
+          currency:      fCurr,
           start_date:    fDate,
           is_deductible: fDed,
           notes:         fNotes || undefined,
@@ -316,7 +347,7 @@ export function FixedCostsClient({ initialItems }: Props) {
     const res = await updateFixedCost(editItem.id, {
       description: editDesc,
       category:    editCat,
-      amount:      parseFloat(editAmt.replace(',', '.')) || editItem.amount,
+      amount:      parseMoney(editAmt) || editItem.amount,
       billing_day: (parseInt(editDay, 10) || editItem.billing_day) ?? undefined,
       start_date:  editStart || null,
     })
@@ -544,10 +575,21 @@ export function FixedCostsClient({ initialItems }: Props) {
               /* ── Recorrente: valor simples ──────────────────────────────── */
               <div>
                 <label className={labelCls}>Valor mensal</label>
-                <input type="text" inputMode="decimal" placeholder="0,00"
-                  value={fAmt} onChange={e => setFAmt(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-                  disabled={isPending} className={`${inputCls} text-right`} />
+                <div className="flex gap-2">
+                  <select
+                    value={fCurr}
+                    onChange={e => setFCurr(e.target.value as CurrencyCode)}
+                    disabled={isPending}
+                    aria-label="Moeda"
+                    className={`${inputCls} w-[88px] shrink-0`}
+                  >
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <input type="text" inputMode="decimal" placeholder="0,00"
+                    value={fAmt} onChange={e => setFAmt(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+                    disabled={isPending} className={`${inputCls} text-right flex-1`} />
+                </div>
               </div>
             ) : (
               /* ── Parcelado: valor + N + preview ─────────────────────────── */
@@ -568,15 +610,26 @@ export function FixedCostsClient({ initialItems }: Props) {
                       Usar {fAmtMode === 'per' ? 'total' : 'por parcela'}
                     </button>
                   </div>
-                  <input type="text" inputMode="decimal" placeholder="0,00"
-                    value={fAmt} onChange={e => setFAmt(e.target.value)}
-                    disabled={isPending} className={`${inputCls} text-right`} />
+                  <div className="flex gap-2">
+                    <select
+                      value={fCurr}
+                      onChange={e => setFCurr(e.target.value as CurrencyCode)}
+                      disabled={isPending}
+                      aria-label="Moeda"
+                      className={`${inputCls} w-[88px] shrink-0`}
+                    >
+                      {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <input type="text" inputMode="decimal" placeholder="0,00"
+                      value={fAmt} onChange={e => setFAmt(e.target.value)}
+                      disabled={isPending} className={`${inputCls} text-right flex-1`} />
+                  </div>
                 </div>
 
                 {/* Preview */}
                 {parsedAmt > 0 && parsedN >= 2 && fDate && (
                   <div className="sm:col-span-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-3">
-                    <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-2">PREVIEW — {parsedN}x de {formatCurrency(amtPer, 'BRL')} = {formatCurrency(amtTotal, 'BRL')}</p>
+                    <p className="text-[10px] font-semibold text-[#525252] tracking-widest mb-2">PREVIEW — {parsedN}x de {formatCurrency(amtPer, fCurr)} = {formatCurrency(amtTotal, fCurr)}</p>
                     <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                       {previewDates(fDate, parsedN).map((d, i) => (
                         <span key={i} className="text-[10px] px-2 py-0.5 bg-[#141414] border border-[#2a2a2a] rounded text-[#a3a3a3]">
@@ -1104,6 +1157,10 @@ const FIXED_CATEGORY_COLORS: Record<FixedCostCategory, string> = {
   transport:    'bg-teal-500/10 text-teal-400',
   taxes:        'bg-red-500/10 text-red-400',
   services:     'bg-emerald-500/10 text-emerald-400',
+  marketing:    'bg-pink-500/10 text-pink-400',
+  // Legados (aliases do DB enum antigo)
+  rent:         'bg-orange-500/10 text-orange-400',   // mesma cor de housing
+  service:      'bg-emerald-500/10 text-emerald-400', // mesma cor de services
   other:        'bg-[#1c1c1c] text-[#525252]',
 }
 

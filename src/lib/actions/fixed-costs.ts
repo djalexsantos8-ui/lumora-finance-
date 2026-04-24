@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { getWorkspaceId } from '@/lib/utils/workspace'
 import type { FixedCostCategory, FixedCostActionResult, FixedCost } from '@/types/expense'
+import { normalizeFixedCostCategory } from '@/types/expense'
 
 // ─── CREATE RECORRENTE ────────────────────────────────────────────────────────
 // Cria UM registro que se repete todo mês enquanto is_active = true.
@@ -42,9 +43,9 @@ export async function createRecurringCost(fields: {
     created_by:     user.id,
     name:           fields.description.trim(),
     description:    fields.description.trim(),
-    category:       fields.category,
+    category:       normalizeFixedCostCategory(fields.category),
     amount:         Math.round(fields.amount * 100) / 100,
-    currency:       fields.currency ?? 'BRL',
+    currency:       (fields.currency ?? 'BRL').toUpperCase(),
     billing_day:    billingDay,
     is_active:      true,
     is_deductible:  fields.is_deductible,
@@ -107,7 +108,7 @@ export async function createInstallmentCost(fields: {
   const parentId   = randomUUID()
   const billingDay = parseInt(fields.start_date.split('-')[2], 10)
   const [y, m]     = fields.start_date.split('-').map(Number)
-  const currency   = fields.currency ?? 'BRL'
+  const currency   = (fields.currency ?? 'BRL').toUpperCase()
   const now        = new Date().toISOString()
 
   const rows = Array.from({ length: fields.installments }, (_, i) => {
@@ -121,7 +122,7 @@ export async function createInstallmentCost(fields: {
       created_by:            user.id,
       name:                  fields.description.trim(),
       description:           fields.description.trim(),
-      category:              fields.category,
+      category:              normalizeFixedCostCategory(fields.category),
       amount:                Math.round(fields.amount_per * 100) / 100,
       currency,
       billing_day:           billingDay,
@@ -187,9 +188,9 @@ export async function createFixedCost(fields: {
       created_by:     user.id,
       name:           fields.description.trim(),
       description:    fields.description.trim(),
-      category:       fields.category,
+      category:       normalizeFixedCostCategory(fields.category),
       amount:         Math.round(fields.amount * 100) / 100,
-      currency:       fields.currency ?? 'BRL',
+      currency:       (fields.currency ?? 'BRL').toUpperCase(),
       billing_day:    billingDay,
       is_active:      fields.is_active ?? true,
       is_deductible:  fields.is_deductible,
@@ -508,7 +509,7 @@ export async function updateFixedCost(
   const payload: Record<string, unknown> = {}
   if (fields.description !== undefined) payload.description = fields.description.trim()
   if (fields.description !== undefined) payload.name        = fields.description.trim()
-  if (fields.category    !== undefined) payload.category    = fields.category
+  if (fields.category    !== undefined) payload.category    = normalizeFixedCostCategory(fields.category)
   if (fields.amount      !== undefined) payload.amount      = Math.round(fields.amount * 100) / 100
   if (fields.billing_day !== undefined) payload.billing_day = Math.max(1, Math.min(31, fields.billing_day))
   if (fields.start_date  !== undefined) payload.start_date  = fields.start_date

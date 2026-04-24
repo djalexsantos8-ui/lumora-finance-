@@ -23,6 +23,10 @@ export const EXPENSE_CATEGORIES = Object.entries(
 
 // ─── Categoria de custo fixo ──────────────────────────────────────────────────
 
+// Valores canônicos aceitos pelo enum fixed_cost_category_enum do banco.
+// Inclui os aliases legados `rent` e `service` (singular) pra não quebrar
+// rows históricas. `marketing` é aceito como mesmo bucket de "outros" até
+// termos uma categoria dedicada no produto.
 export type FixedCostCategory =
   | 'software'
   | 'subscription'
@@ -34,25 +38,52 @@ export type FixedCostCategory =
   | 'transport'
   | 'taxes'
   | 'services'
+  | 'marketing'
+  | 'rent'       // legado (DB enum) — UI mostra como "Moradia"
+  | 'service'    // legado (DB enum) — UI mostra como "Serviços"
   | 'other'
 
+// Set canônico do ENUM do banco — fonte de verdade pra validação server-side.
+export const FIXED_COST_DB_ENUM_VALUES: readonly FixedCostCategory[] = [
+  'software','rent','equipment','service','other',
+  'housing','transport','subscription','internet','phone',
+  'workspace','taxes','services','marketing',
+] as const
+
+// Categorias expostas no SELECT (ordem UX). `rent`/`service` ficam fora
+// — são só pra compatibilidade na LEITURA de rows antigas.
 export const FIXED_COST_CATEGORY_LABELS: Record<FixedCostCategory, string> = {
+  housing:      'Moradia',
+  transport:    'Transporte',
   software:     'Software',
   subscription: 'Assinaturas',
   internet:     'Internet',
   phone:        'Telefonia',
   equipment:    'Equipamentos',
   workspace:    'Espaço',
-  housing:      'Moradia',
-  transport:    'Transporte',
+  marketing:    'Marketing',
   taxes:        'Impostos',
   services:     'Serviços',
   other:        'Outros',
+  // Legados — não aparecem no select, só renderizam corretamente se vierem do banco.
+  rent:         'Moradia',
+  service:      'Serviços',
 }
 
-export const FIXED_COST_CATEGORIES = Object.entries(
-  FIXED_COST_CATEGORY_LABELS
-) as [FixedCostCategory, string][]
+// Lista exposta no SELECT (sem legados duplicados).
+export const FIXED_COST_CATEGORIES = (
+  Object.entries(FIXED_COST_CATEGORY_LABELS) as [FixedCostCategory, string][]
+).filter(([k]) => k !== 'rent' && k !== 'service')
+
+// Normalizador: garante que o valor enviado ao banco bate com o enum.
+// Fallback seguro: 'other'. Evita crashar onboarding se o enum divergir do frontend.
+export function normalizeFixedCostCategory(raw: unknown): FixedCostCategory {
+  if (typeof raw !== 'string') return 'other'
+  const v = raw.trim().toLowerCase() as FixedCostCategory
+  return (FIXED_COST_DB_ENUM_VALUES as readonly string[]).includes(v)
+    ? v
+    : 'other'
+}
 
 // ─── Despesa variável ─────────────────────────────────────────────────────────
 
