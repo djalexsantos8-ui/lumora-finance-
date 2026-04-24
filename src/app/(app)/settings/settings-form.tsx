@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { upsertWorkspaceSettings } from '@/lib/actions/workspace-settings'
 import { maskCNPJ, maskCPF, maskPhoneBR, maskCEP, maskUF } from '@/lib/utils/masks'
-import { getMyAIQuota, getMyAIBalance } from '@/lib/ai/actions'
+import { getMyAIQuota, getMyAIBalance, getMyAICreditHistory, type AICreditHistoryRow } from '@/lib/ai/actions'
 import type { AIQuota, AIBalance } from '@/lib/ai/quota'
 import type { WorkspaceSettings } from '@/types/workspace-settings'
 
@@ -112,14 +112,25 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
   const [loadingQuota, setLoadingQuota] = useState(false)
   const [quotaError, setQuotaError]   = useState<string | null>(null)
 
+  // Deploy H.2 (2026-04-24) — FASE 4 "OpenAI usage UI".
+  // Histórico de eventos de crédito (consume / grant / purchase) do workspace.
+  // Carregado em paralelo com a quota quando a aba Créditos abre.
+  const [history, setHistory]             = useState<AICreditHistoryRow[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
   async function fetchQuota() {
     setLoadingQuota(true)
+    setLoadingHistory(true)
     setQuotaError(null)
     try {
       // Deploy H (2026-04-23): buscamos o breakdown (granted/purchased/included).
       // Se a migration ainda não rodou em prod, getMyAIBalance retorna
       // granted=0/purchased=0 e o included vira o quota antigo (fallback).
-      const balRes = await getMyAIBalance()
+      // Paralelo com o histórico pra minimizar round-trip.
+      const [balRes, histRes] = await Promise.all([
+        getMyAIBalance(),
+        getMyAICreditHistory(50),
+      ])
       if (balRes.success) {
         const b = balRes.balance
         setBalance(b)
@@ -135,10 +146,13 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
         if (res.success) setQuota(res.quota)
         else setQuotaError(balRes.message)
       }
+      if (histRes.success) setHistory(histRes.events)
+      else setHistory([])
     } catch {
       setQuotaError('Não foi possível carregar a quota agora.')
     } finally {
       setLoadingQuota(false)
+      setLoadingHistory(false)
     }
   }
 
@@ -605,6 +619,91 @@ export default function SettingsForm({ settings, workspaceId }: Props) {
                   </p>
                 </div>
               )}
+
+              {/* ─ Histórico de uso (Deploy H.2 2026-04-24 — FASE 4) ─────────
+                  Lista os últimos eventos de IA (consume/grant/purchase) com
+                  motivo + timestamp. RLS filtra automaticamente por workspace.
+                  Degrada silencioso se a tabela ainda não existir em prod. */}
+              <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-semibold text-[#a3a3a3] tracking-wider uppercase">
+                    Histórico de uso
+                  </h3>
+                  {!loadingHistory && history.length > 0 && (
+                    <span className="text-[10px] text-[#525252] tabular-nums">
+                      {history.length} evento{history.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
+
+                {loadingHistory ? (
+                  <div className="space-y-2">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="h-10 bg-[#1c1c1c] rounded-lg animate-pulse" />
+                    ))}
+                  </div>
+                ) : history.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-xs text-[#737373]">
+                      Nenhum uso registrado ainda.
+                    </p>
+                    <p className="text-[11px] text-[#525252] mt-1">
+                      Use ✨ Gerar com IA em um orçamento ou pedido pra começar.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-[#1f1f1f]">
+                    {history.map(ev => {
+                      const isConsume  = ev.kind === 'consume'  || ev.origin === 'consumption'
+                      const isGrant    = ev.kind === 'grant'    || ev.origin === 'granted'
+                      const isPurchase = ev.kind === 'purchase' || ev.origin === 'purchased'
+                      const badgeLabel =
+                        isConsume  ? 'Uso' :
+                        isGrant    ? 'Cortesia' :
+                        isPurchase ? 'Compra' :
+                        ev.kind
+                      const badgeClass =
+                        isConsume  ? 'text-[#D4A853] bg-[#D4A853]/10 border-[#D4A853]/20' :
+                        isGrant    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                        isPurchase ? 'text-sky-400 bg-sky-500/10 border-sky-500/20' :
+                        'text-[#a3a3a3] bg-[#1c1c1c] border-[#2a2a2a]'
+                      const amountClass =
+                        ev.amount < 0 ? 'text-[#D4A853]' : 'text-emerald-400'
+                      const amountSign  = ev.amount > 0 ? '+' : ''
+                      let formattedDate = ev.created_at
+                      try {
+                        formattedDate = new Date(ev.created_at).toLocaleString('pt-BR', {
+                          day:    '2-digit',
+                          month:  '2-digit',
+                          year:   '2-digit',
+                          hour:   '2-digit',
+                          minute: '2-digit',
+                        })
+                      } catch {
+                        /* fallback para string original */
+                      }
+                      return (
+                        <li key={ev.id} className="py-2.5 flex items-start gap-3">
+                          <span className={`text-[9px] font-semibold tracking-wider border px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${badgeClass}`}>
+                            {badgeLabel}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-[#d4d4d4] truncate">
+                              {ev.reason || (isConsume ? 'Geração com IA' : '—')}
+                            </p>
+                            <p className="text-[10px] text-[#525252] mt-0.5 tabular-nums">
+                              {formattedDate}
+                            </p>
+                          </div>
+                          <span className={`text-xs font-semibold tabular-nums shrink-0 ${amountClass}`}>
+                            {amountSign}{ev.amount}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
 
               {/* Explicação do que conta como crédito */}
               <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-6">
