@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ClientCombobox } from '@/components/clients/client-combobox'
@@ -19,12 +19,24 @@ import {
   updateInvoiceStatus,
   deleteInvoice,
 } from '@/lib/actions/recurring-invoices'
+import {
+  addRecurringItem,
+  updateRecurringItem,
+  deleteRecurringItem,
+  addRecurringCostItem,
+  updateRecurringCostItem,
+  deleteRecurringCostItem,
+} from '@/lib/actions/recurring-items'
 import type {
   RecurringRevenue,
   RecurringStatus,
   RecurringFrequency,
   RecurringRevenueInvoice,
   RecurringInvoiceStatus,
+  RecurringItem,
+  RecurringCostItem,
+  RecurringItemCategory,
+  RecurringCostCategory,
 } from '@/types/recurring-revenue'
 import { RecurringStatusBadge } from '../recurring-list'
 import { toast } from 'sonner'
@@ -37,6 +49,60 @@ interface Props {
   initialInvoices?: RecurringRevenueInvoice[]
   /** Contratos já vinculados (Deploy pente-fino 2026-04-23) */
   linkedContracts?: Contract[]
+  /** Itens (serviços do contrato) — Fase 5 / 2026-04-23 */
+  initialItems?: RecurringItem[]
+  /** Itens de custo (repasses ao cliente) — Fase 5 / 2026-04-23 */
+  initialCostItems?: RecurringCostItem[]
+  itemsTableMissing?: boolean
+  costsTableMissing?: boolean
+}
+
+// ─── Categorias (paridade com Pedidos) ───────────────────────────────────────
+
+const ITEM_CATEGORIES: { value: RecurringItemCategory; label: string }[] = [
+  { value: 'service',   label: 'Serviço'    },
+  { value: 'product',   label: 'Produto'    },
+  { value: 'team',      label: 'Equipe'     },
+  { value: 'equipment', label: 'Equipamento'},
+  { value: 'other',     label: 'Outro'      },
+]
+
+const COST_CATEGORIES: { value: RecurringCostCategory; label: string }[] = [
+  { value: 'equipment_rental', label: 'Aluguel de equipamento' },
+  { value: 'team',             label: 'Equipe'                 },
+  { value: 'travel',           label: 'Deslocamento'           },
+  { value: 'accommodation',    label: 'Hospedagem'             },
+  { value: 'food',             label: 'Alimentação'            },
+  { value: 'software',         label: 'Software'               },
+  { value: 'other',            label: 'Outro'                  },
+]
+
+// ─── Helpers de estilo inline (paridade order-editor) ────────────────────────
+
+const inputSm =
+  'w-full bg-transparent border border-[#2a2a2a] focus:border-[#D4A853] ' +
+  'focus:outline-none text-white text-sm rounded-md px-2 py-1 transition-colors'
+
+const labelCls =
+  'text-[9px] font-semibold uppercase tracking-wider text-[#525252]'
+
+function TrashIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+    </svg>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg className="w-3.5 h-3.5 animate-spin text-[#D4A853]" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  )
 }
 
 const FREQUENCY_OPTIONS: { value: RecurringFrequency; label: string }[] = [
@@ -52,10 +118,25 @@ const STATUS_OPTIONS: { value: RecurringStatus; label: string }[] = [
   { value: 'cancelled', label: 'Cancelado' },
 ]
 
-export default function RecurringEditor({ item, initialInvoices = [], linkedContracts = [] }: Props) {
+export default function RecurringEditor({
+  item,
+  initialInvoices = [],
+  linkedContracts = [],
+  initialItems = [],
+  initialCostItems = [],
+  itemsTableMissing = false,
+  costsTableMissing = false,
+}: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  // ── Itens (serviços do contrato) + custo (repasses ao cliente) — Fase 5 / 2026-04-23
+  const [items, setItems]         = useState<RecurringItem[]>(initialItems)
+  const [costItems, setCostItems] = useState<RecurringCostItem[]>(initialCostItems)
+
+  const itemsTotal     = items.reduce((s, i) => s + Number(i.total_value || 0), 0)
+  const costItemsTotal = costItems.reduce((s, i) => s + Number(i.total_value || 0), 0)
 
   const [form, setForm] = useState({
     title:               item.title,
@@ -432,18 +513,49 @@ export default function RecurringEditor({ item, initialInvoices = [], linkedCont
           </div>
         </div>
 
-        {/* Resumo */}
-        <div className="flex items-center justify-between pt-4 border-t border-[#2a2a2a]">
-          <div className="text-xs text-[#525252]">
-            Valor por período:{' '}
-            <span className="text-white font-semibold">
-              {formatCurrency(Number(form.amount), form.currency)}
+        {/* Resumo — soma viva: base + Σserviços + Σrepasses */}
+        <div className="pt-4 border-t border-[#2a2a2a] space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#525252]">Mensalidade base</span>
+            <span className="text-[#a3a3a3] tabular-nums">
+              {formatCurrency(Number(form.amount) || 0, form.currency)}
             </span>
           </div>
-          {savedAt && !error && (
-            <span className="text-xs text-emerald-400">Salvo às {savedAt}</span>
+          {items.length > 0 && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#525252]">
+                Serviços do contrato ({items.length})
+              </span>
+              <span className="text-[#a3a3a3] tabular-nums">
+                {formatCurrency(itemsTotal, form.currency)}
+              </span>
+            </div>
           )}
-          {error && <span className="text-xs text-red-400">{error}</span>}
+          {costItems.length > 0 && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[#525252]">
+                Repasses ao cliente ({costItems.length})
+              </span>
+              <span className="text-[#a3a3a3] tabular-nums">
+                {formatCurrency(costItemsTotal, form.currency)}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2 border-t border-[#1c1c1c]">
+            <span className="text-xs text-[#525252]">Total por período</span>
+            <span className="text-sm font-bold text-white tabular-nums">
+              {formatCurrency(
+                (Number(form.amount) || 0) + itemsTotal + costItemsTotal,
+                form.currency,
+              )}
+            </span>
+          </div>
+          <div className="flex items-center justify-end gap-2 min-h-[16px]">
+            {savedAt && !error && (
+              <span className="text-xs text-emerald-400">Salvo às {savedAt}</span>
+            )}
+            {error && <span className="text-xs text-red-400">{error}</span>}
+          </div>
         </div>
 
         {/* Ações */}
@@ -466,6 +578,42 @@ export default function RecurringEditor({ item, initialInvoices = [], linkedCont
           </button>
         </div>
       </div>
+
+      {/* ═══ Serviços do contrato (Fase 5 / 2026-04-23) ═══════════════════
+          Espelha ItemsSection do Pedidos. Cada serviço soma no total mensal
+          em tempo real. Não rola pro invoicing — total = amount + Σitems. */}
+      {itemsTableMissing ? (
+        <div className="mt-6 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+          Seção de serviços depende de migration pendente
+          (<span className="font-mono">20260423070000_recurring_revenue_items.sql</span>).
+        </div>
+      ) : (
+        <RecurringItemsSection
+          recurringId={item.id}
+          currency={form.currency}
+          items={items}
+          total={itemsTotal}
+          onChange={setItems}
+        />
+      )}
+
+      {/* ═══ Repasses ao cliente (Fase 5 / 2026-04-23) ═════════════════════
+          Itens cobrados do cliente e repassados a terceiros. Entram no total
+          mensal (o cliente paga), mas não reduzem lucro real. */}
+      {costsTableMissing ? (
+        <div className="mt-2 text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
+          Seção de repasses depende de migration pendente
+          (<span className="font-mono">20260423070000_recurring_revenue_items.sql</span>).
+        </div>
+      ) : (
+        <RecurringCostItemsSection
+          recurringId={item.id}
+          currency={form.currency}
+          items={costItems}
+          total={costItemsTotal}
+          onChange={setCostItems}
+        />
+      )}
 
       {/* ═══ Histórico de cobranças (Fase 4 / 2026-04-22) ══════════════════
           Cada cobrança é gerada a partir da recorrência, com snapshot do
@@ -746,6 +894,591 @@ function InvoicesSection({
             )
           })}
         </ul>
+      )}
+    </div>
+  )
+}
+
+// ─── RecurringItemsSection (Serviços do contrato) ─────────────────────────
+// Espelha ItemsSection do order-editor. Inline rows, edição por click,
+// add inline com blur/enter. Soma viva via `total` + `onChange`.
+
+function RecurringItemsSection({
+  recurringId,
+  currency,
+  items,
+  total,
+  onChange,
+}: {
+  recurringId: string
+  currency:    string
+  items:       RecurringItem[]
+  total:       number
+  onChange:    (next: RecurringItem[]) => void
+}) {
+  const [adding,       setAdding]       = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newDesc,      setNewDesc]      = useState('')
+  const [newCat,       setNewCat]       = useState<RecurringItemCategory | ''>('')
+  const [newQty,       setNewQty]       = useState('1')
+  const [newUnit,      setNewUnit]      = useState('')
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
+  const [editingId,    setEditingId]    = useState<string | null>(null)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editCat,      setEditCat]      = useState<RecurringItemCategory | ''>('')
+  const [editQty,      setEditQty]      = useState('')
+  const [editUnit,     setEditUnit]     = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
+  const [, startTransitionDelete] = useTransition()
+
+  function cancelAdd() {
+    setAdding(false); setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
+  }
+
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
+    setIsSubmitting(true)
+    const res = await addRecurringItem(recurringId, {
+      description: newDesc.trim(),
+      quantity:    newQty,
+      unit_value:  newUnit,
+      category:    newCat || null,
+    })
+    setIsSubmitting(false)
+    if (!res.success) { toast.error(res.message); return false }
+    if (res.data) {
+      onChange([...items, res.data])
+      setNewlyAddedId(res.data.id)
+      setTimeout(() => setNewlyAddedId(null), 1200)
+    }
+    setNewDesc(''); setNewCat(''); setNewQty('1'); setNewUnit('')
+    setAdding(false)
+    return true
+  }
+
+  function handleHeaderButtonClick() {
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
+  }
+
+  function startEdit(it: RecurringItem) {
+    setEditingId(it.id)
+    setEditDesc(it.description)
+    setEditCat((it.category ?? '') as RecurringItemCategory | '')
+    setEditQty(String(it.quantity))
+    setEditUnit(String(it.unit_value))
+  }
+
+  async function submitEdit(id: string) {
+    const current = items.find(i => i.id === id)
+    if (!current) { setEditingId(null); return }
+    const res = await updateRecurringItem(id, recurringId, {
+      description: editDesc,
+      quantity:    editQty,
+      unit_value:  editUnit,
+      category:    editCat ? (editCat as RecurringItemCategory) : null,
+    })
+    if (!res.success) { toast.error(res.message); setEditingId(null); return }
+    if (res.data) {
+      onChange(items.map(i => i.id === id ? res.data! : i))
+    }
+    setEditingId(null)
+  }
+
+  function handleDelete(it: RecurringItem) {
+    const optimistic = items.filter(i => i.id !== it.id)
+    onChange(optimistic)
+    startTransitionDelete(async () => {
+      const res = await deleteRecurringItem(it.id, recurringId)
+      if (!res.success) { onChange(items); toast.error(res.message) }
+    })
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 mt-6">
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <h3 className="text-sm font-semibold text-white">Serviços do contrato</h3>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} ${items.length === 1 ? 'item' : 'itens'} · ${formatCurrency(total, currency)}`
+              : 'o que compõe a mensalidade (edição, reels, fotos, reuniões…)'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar serviço
+        </button>
+      </div>
+
+      {(items.length > 0 || adding) && (
+        <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
+          <span className={labelCls}>CATEGORIA</span>
+          <span className={labelCls}>DESCRIÇÃO</span>
+          <span className={`${labelCls} text-right`}>QTD</span>
+          <span className={`${labelCls} text-right`}>UNIT.</span>
+          <span className={`${labelCls} text-right`}>TOTAL</span>
+          <span />
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {items.map(it => {
+          const isNew = it.id === newlyAddedId
+          const catLabel = it.category ? ITEM_CATEGORIES.find(c => c.value === it.category)?.label : null
+          return (
+            <div key={it.id}>
+              {editingId === it.id ? (
+                <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select
+                    value={editCat}
+                    onChange={e => setEditCat(e.target.value as RecurringItemCategory | '')}
+                    className={inputSm}
+                  >
+                    <option value="" className="bg-[#141414]">—</option>
+                    {ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={`${inputSm} text-right`} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(it)}
+                >
+                  {catLabel ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
+                  ) : (
+                    <span className="text-[10px] text-[#3a3a3a]">—</span>
+                  )}
+                  <span className="text-sm text-white truncate">{it.description}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {adding && (
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as RecurringItemCategory | '')}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              >
+                <option value="" className="bg-[#141414]">—</option>
+                {ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Descrição do serviço"
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newUnit}
+                onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {items.length === 0 && !adding && (
+        <p className="text-xs text-[#525252] text-center py-6">Nenhum serviço adicionado ainda.</p>
+      )}
+
+      {items.length > 0 && (
+        <div className="flex justify-end mt-3 pt-3 border-t border-[#1c1c1c]">
+          <span className="text-sm font-bold text-white">{formatCurrency(total, currency)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── RecurringCostItemsSection (Repasses ao cliente) ──────────────────────
+
+function RecurringCostItemsSection({
+  recurringId,
+  currency,
+  items,
+  total,
+  onChange,
+}: {
+  recurringId: string
+  currency:    string
+  items:       RecurringCostItem[]
+  total:       number
+  onChange:    (next: RecurringCostItem[]) => void
+}) {
+  const [adding,       setAdding]       = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newDesc,      setNewDesc]      = useState('')
+  const [newCat,       setNewCat]       = useState<RecurringCostCategory>('other')
+  const [newQty,       setNewQty]       = useState('1')
+  const [newUnit,      setNewUnit]      = useState('')
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null)
+  const [editingId,    setEditingId]    = useState<string | null>(null)
+  const [editDesc,     setEditDesc]     = useState('')
+  const [editCat,      setEditCat]      = useState<RecurringCostCategory>('other')
+  const [editQty,      setEditQty]      = useState('')
+  const [editUnit,     setEditUnit]     = useState('')
+  const addRowRef  = useRef<HTMLDivElement>(null)
+  const addDescRef = useRef<HTMLInputElement>(null)
+  const [, startTransitionDelete] = useTransition()
+
+  function cancelAdd() {
+    setAdding(false); setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
+  }
+
+  async function submitAdd(): Promise<boolean> {
+    if (isSubmitting) return false
+    if (!newDesc.trim()) { cancelAdd(); return false }
+    setIsSubmitting(true)
+    const res = await addRecurringCostItem(recurringId, {
+      description: newDesc.trim(),
+      category:    newCat,
+      quantity:    newQty,
+      unit_value:  newUnit,
+    })
+    setIsSubmitting(false)
+    if (!res.success) { toast.error(res.message); return false }
+    if (res.data) {
+      onChange([...items, res.data])
+      setNewlyAddedId(res.data.id)
+      setTimeout(() => setNewlyAddedId(null), 1200)
+    }
+    setNewDesc(''); setNewCat('other'); setNewQty('1'); setNewUnit('')
+    setAdding(false)
+    return true
+  }
+
+  function handleHeaderButtonClick() {
+    if (adding) { addDescRef.current?.focus(); return }
+    setAdding(true)
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter')  { e.preventDefault(); submitAdd() }
+    if (e.key === 'Escape') { cancelAdd() }
+  }
+
+  function handleAddBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (isSubmitting) return
+    const next = e.relatedTarget as Node | null
+    if (addRowRef.current && next && addRowRef.current.contains(next)) return
+    submitAdd()
+  }
+
+  function startEdit(it: RecurringCostItem) {
+    setEditingId(it.id)
+    setEditDesc(it.description)
+    setEditCat((it.category ?? 'other') as RecurringCostCategory)
+    setEditQty(String(it.quantity))
+    setEditUnit(String(it.unit_value))
+  }
+
+  async function submitEdit(id: string) {
+    const current = items.find(i => i.id === id)
+    if (!current) { setEditingId(null); return }
+    const res = await updateRecurringCostItem(id, recurringId, {
+      description: editDesc,
+      category:    editCat,
+      quantity:    editQty,
+      unit_value:  editUnit,
+    })
+    if (!res.success) { toast.error(res.message); setEditingId(null); return }
+    if (res.data) {
+      onChange(items.map(i => i.id === id ? res.data! : i))
+    }
+    setEditingId(null)
+  }
+
+  function handleDelete(it: RecurringCostItem) {
+    const optimistic = items.filter(i => i.id !== it.id)
+    onChange(optimistic)
+    startTransitionDelete(async () => {
+      const res = await deleteRecurringCostItem(it.id, recurringId)
+      if (!res.success) { onChange(items); toast.error(res.message) }
+    })
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-2xl p-5 mt-4">
+      <div className="flex items-start justify-between mb-1">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-sm font-semibold text-white">Repasses ao cliente</h3>
+            <span
+              title="Itens que você paga mas repassa ao cliente. Entram no total mensal, mas não reduzem seu lucro."
+              className="w-4 h-4 rounded-full bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] text-[9px] font-bold flex items-center justify-center cursor-help hover:bg-[#262626] transition-colors shrink-0 select-none"
+            >?</span>
+          </div>
+          <p className="text-[10px] text-[#525252] mt-0.5">
+            {items.length > 0
+              ? `${items.length} ${items.length === 1 ? 'repasse' : 'repasses'} · ${formatCurrency(total, currency)}`
+              : 'aluguel de equipamento, software mensal, diária de assistente…'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onMouseDown={e => e.preventDefault()}
+          onClick={handleHeaderButtonClick}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[#D4A853] hover:text-[#E8C47A] transition-colors px-2.5 py-1.5 rounded-lg border border-[#D4A853]/20 hover:border-[#D4A853]/40 shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Adicionar repasse
+        </button>
+      </div>
+
+      {(items.length > 0 || adding) && (
+        <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 mb-1 px-1 mt-4">
+          <span className={labelCls}>CATEGORIA</span>
+          <span className={labelCls}>DESCRIÇÃO</span>
+          <span className={`${labelCls} text-right`}>QTD</span>
+          <span className={`${labelCls} text-right`}>UNIT.</span>
+          <span className={`${labelCls} text-right`}>TOTAL</span>
+          <span />
+        </div>
+      )}
+
+      <div className="space-y-1">
+        {items.map(it => {
+          const isNew = it.id === newlyAddedId
+          const catLabel = COST_CATEGORIES.find(c => c.value === it.category)?.label ?? it.category ?? '—'
+          return (
+            <div key={it.id}>
+              {editingId === it.id ? (
+                <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center bg-[#1a1a1a] rounded-lg px-1 py-1">
+                  <select value={editCat} onChange={e => setEditCat(e.target.value as RecurringCostCategory)} className={inputSm}>
+                    {COST_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+                  </select>
+                  <input autoFocus value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                    onBlur={() => submitEdit(it.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className={inputSm} />
+                  <input value={editQty} onChange={e => setEditQty(e.target.value)}
+                    onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
+                    className={`${inputSm} text-right`} />
+                  <input value={editUnit} onChange={e => setEditUnit(e.target.value)}
+                    onBlur={() => submitEdit(it.id)} onKeyDown={e => { if (e.key === 'Enter') submitEdit(it.id) }}
+                    className={`${inputSm} text-right`} />
+                  <span className="text-xs text-right text-[#525252]">
+                    {formatCurrency((parseFloat(editQty) || 1) * (parseFloat(editUnit.replace(',', '.')) || 0), currency)}
+                  </span>
+                  <span />
+                </div>
+              ) : (
+                <div
+                  className={`grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center group rounded-lg px-1 py-1 cursor-pointer transition-all duration-500 ${
+                    isNew ? 'bg-[#D4A853]/10 border border-[#D4A853]/20' : 'hover:bg-[#1c1c1c] border border-transparent'
+                  }`}
+                  onClick={() => startEdit(it)}
+                >
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#1c1c1c] border border-[#2a2a2a] text-[#525252] truncate">{catLabel}</span>
+                  <span className="text-sm text-white truncate">{it.description}</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{Number(it.quantity)}×</span>
+                  <span className="text-xs text-[#a3a3a3] text-right">{formatCurrency(Number(it.unit_value), currency)}</span>
+                  <span className="text-xs font-semibold text-white text-right">{formatCurrency(Number(it.total_value), currency)}</span>
+                  <button onClick={e => { e.stopPropagation(); handleDelete(it) }}
+                    className="opacity-0 group-hover:opacity-100 text-[#525252] hover:text-red-400 transition-all p-0.5">
+                    <TrashIcon />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {adding && (
+          <div
+            ref={addRowRef}
+            tabIndex={-1}
+            onBlur={handleAddBlur}
+            className="bg-[#1c1c1c] rounded-lg px-2 py-2 border border-[#D4A853]/20 outline-none"
+          >
+            <div className="grid grid-cols-[80px_1fr_56px_84px_84px_28px] gap-2 items-center">
+              <select
+                value={newCat}
+                onChange={e => setNewCat(e.target.value as RecurringCostCategory)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              >
+                {COST_CATEGORIES.map(c => <option key={c.value} value={c.value} className="bg-[#141414]">{c.label}</option>)}
+              </select>
+              <input
+                ref={addDescRef}
+                autoFocus
+                placeholder="Ex: Software mensal, diária de assistente…"
+                value={newDesc}
+                onChange={e => setNewDesc(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={inputSm}
+              />
+              <input
+                placeholder="1"
+                value={newQty}
+                onChange={e => setNewQty(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <input
+                placeholder="0,00"
+                value={newUnit}
+                onChange={e => setNewUnit(e.target.value)}
+                onKeyDown={handleAddKeyDown}
+                disabled={isSubmitting}
+                className={`${inputSm} text-right`}
+              />
+              <span className="text-xs text-right text-[#525252]">
+                {formatCurrency((parseFloat(newQty) || 1) * (parseFloat(newUnit.replace(',', '.')) || 0), currency)}
+              </span>
+              <span />
+            </div>
+            <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-[#262626]">
+              {isSubmitting && <Spinner />}
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => submitAdd()}
+                disabled={isSubmitting || !newDesc.trim()}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#D4A853] hover:bg-[#E8C47A] disabled:opacity-50 disabled:cursor-not-allowed text-[#0a0a0a] px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Adicionar
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => e.preventDefault()}
+                onClick={cancelAdd}
+                disabled={isSubmitting}
+                aria-label="Descartar linha"
+                title="Descartar"
+                className="text-[#737373] hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-[#1f1f1f] disabled:opacity-40"
+              >
+                <TrashIcon />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {items.length === 0 && !adding && (
+        <p className="text-xs text-[#525252] text-center py-6">
+          Nenhum repasse registrado. Software mensal, aluguel de equipamento, diária de assistente…
+        </p>
+      )}
+
+      {items.length > 0 && (
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1c1c1c]">
+          <span className="text-[10px] text-[#525252]">cobrado do cliente · não reduz seu lucro</span>
+          <span className="text-sm font-bold text-[#a3a3a3]">{formatCurrency(total, currency)}</span>
+        </div>
       )}
     </div>
   )

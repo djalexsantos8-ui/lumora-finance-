@@ -3,6 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import RecurringEditor from './recurring-editor'
 import { listContractsByOriginQuery } from '@/lib/queries/contracts'
 import { listInvoicesByRecurring } from '@/lib/actions/recurring-invoices'
+import {
+  listRecurringItems,
+  listRecurringCostItems,
+} from '@/lib/actions/recurring-items'
 import type { RecurringRevenue } from '@/types/recurring-revenue'
 
 // Hardening 2026-04-23 — evita RSC stale em cache na edge causar sumiço
@@ -44,9 +48,11 @@ export default async function RecurringDetailPage({
 
   if (!data) notFound()
 
-  const [linkedContracts, invoices] = await Promise.all([
+  const [linkedContracts, invoices, itemsRes, costItemsRes] = await Promise.all([
     listContractsByOriginQuery('recurring', id),
     listInvoicesByRecurring(id),
+    listRecurringItems(id),
+    listRecurringCostItems(id),
   ])
 
   // Pente fino 2026-04-23: ContractEntryPoint agora é renderizado DENTRO
@@ -56,6 +62,10 @@ export default async function RecurringDetailPage({
       item={data as RecurringRevenue}
       initialInvoices={invoices}
       linkedContracts={linkedContracts}
+      initialItems={itemsRes.items}
+      initialCostItems={costItemsRes.items}
+      itemsTableMissing={itemsRes.tableMissing}
+      costsTableMissing={costItemsRes.tableMissing}
     />
   )
 }
