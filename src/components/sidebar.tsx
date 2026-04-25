@@ -304,22 +304,35 @@ export default function Sidebar({ userEmail, isAdmin = false }: SidebarProps) {
           </div>
         )}
 
-        {/* Botão Sair — discreto, logo abaixo do email. Server action: encerra
-            sessão Supabase + redireciona pra /login. Ícone sempre visível
-            (modo collapsed exibe só o ícone). */}
-        <form action={signOut} className="px-3 pt-1">
-          <button
-            type="submit"
-            title="Sair da conta"
-            className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-start gap-2'} px-2 py-1.5 rounded-lg text-[#737373] hover:text-red-400 hover:bg-red-500/5 transition-colors text-xs`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            {!collapsed && <span>Sair da conta</span>}
-          </button>
-        </form>
+        {/* Botão Sair — discreto, logo abaixo do email. Ícone sempre visível
+            (modo collapsed exibe só o ícone).
+            Implementação:
+              · Chama o server action `signOut()` que encerra a sessão Supabase.
+              · Em vez de fazer `redirect('/login')` no server (que provoca
+                "Erro inesperado" no RSC stream do Next 16 — o (app)/layout
+                re-renderiza sem cookies, throws, antes do redirect propagar),
+                navegamos no client via window.location pra HARD NAVIGATION.
+              · Fallback de segurança: rota /login mesmo se algo travar. */}
+        <button
+          type="button"
+          title="Sair da conta"
+          onClick={async () => {
+            try {
+              await signOut()
+            } catch {
+              // server action throws NEXT_REDIRECT internally; ignoramos
+            } finally {
+              window.location.href = '/login'
+            }
+          }}
+          className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-start gap-2'} px-2 py-1.5 mx-3 rounded-lg text-[#737373] hover:text-red-400 hover:bg-red-500/5 transition-colors text-xs`}
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          {!collapsed && <span>Sair da conta</span>}
+        </button>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
