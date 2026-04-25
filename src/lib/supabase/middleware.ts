@@ -3,6 +3,28 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 // Cliente Supabase para uso exclusivo no middleware Next.js
 export async function updateSession(request: NextRequest) {
+  // ─── Canonical domain redirect (Deploy H.5 2026-04-25) ─────────────────────
+  // Tudo que vier no domínio antigo `lumora-finance.vercel.app` é redirecio-
+  // nado 301 pra `https://lumorafinance.com.br${pathname}${search}`. Motivo:
+  //   · Branding (a vitrine é o domínio próprio)
+  //   · GSI / Google OAuth — autorizamos JS Origins só nos domínios próprios.
+  //     Se o usuário entrar pelo .vercel.app, o login com Google quebra com
+  //     `Erro 400: origin_mismatch`.
+  // Pulamos /api/* e /_next/* pra não quebrar webhooks/healthchecks.
+  const host = request.headers.get('host') ?? ''
+  const path = request.nextUrl.pathname
+  if (
+    host.includes('lumora-finance.vercel.app') &&
+    !path.startsWith('/api/') &&
+    !path.startsWith('/_next/')
+  ) {
+    const url = new URL(request.url)
+    url.host = 'lumorafinance.com.br'
+    url.protocol = 'https:'
+    url.port = ''
+    return NextResponse.redirect(url.toString(), 301)
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(

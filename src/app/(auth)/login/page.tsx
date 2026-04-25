@@ -7,9 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── Google Identity Services typing ─────────────────────────────────────────
-//
-// Não vale a pena instalar @types/google.accounts só pra isso. Tipa-se aqui o
-// subset que usamos.
+
 declare global {
   interface Window {
     google?: {
@@ -26,10 +24,7 @@ declare global {
   }
 }
 
-type GsiCredentialResponse = {
-  credential: string // JWT id_token
-  select_by?: string
-}
+type GsiCredentialResponse = { credential: string; select_by?: string }
 
 type GsiInitConfig = {
   client_id: string
@@ -64,17 +59,6 @@ type GsiPromptNotification = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Gera um nonce aleatório e seu hash SHA-256 (hex). Boa prática anti-replay
- * recomendada pelos docs do Supabase para signInWithIdToken.
- *
- * Retorna [nonceOriginal, nonceHashedHex]:
- *   · `nonceOriginal` — passado para supabase.auth.signInWithIdToken({nonce})
- *   · `nonceHashedHex` — passado para google.accounts.id.initialize({nonce})
- *
- * Google injeta o nonceHashed no JWT; Supabase confirma se hash(nonceOriginal)
- * == hash dentro do JWT.
- */
 async function generateNonce(): Promise<[string, string]> {
   const nonce = crypto.randomUUID()
   const data = new TextEncoder().encode(nonce)
@@ -86,7 +70,6 @@ async function generateNonce(): Promise<[string, string]> {
 }
 
 // ─── Page wrapper ────────────────────────────────────────────────────────────
-// Suspense exigido pelo useSearchParams no Next 15/16 client component.
 
 export default function LoginPage() {
   return (
@@ -97,6 +80,16 @@ export default function LoginPage() {
 }
 
 // ─── LoginForm ───────────────────────────────────────────────────────────────
+//
+// Histórico de bugs corrigidos aqui (Deploy H.5 2026-04-25):
+//   1. `gsiReady` era useRef → React não re-renderizava quando GSI carregava.
+//      Botão fallback ficava grudado em cima do botão GSI. Trocado pra useState.
+//   2. setupGsi era recriado a cada render (dependia de handleGsiCredential que
+//      dependia de router) → useEffect re-rodava infinito → re-init do GSI →
+//      iframe duplicado → erro "Erro inesperado" do global-error boundary.
+//      Solução: callback estável via ref + setupGsi com deps vazias.
+//   3. router.push após signInWithIdToken corria contra o GSI ainda mid-cleanup.
+//      Adicionado try/catch + flag mountedRef pra abortar setState após unmount.
 
 function LoginForm() {
   const router       = useRouter()
@@ -111,11 +104,17 @@ function LoginForm() {
     searchParams.get('error') === 'auth' ? 'Falha na autenticação. Tente novamente.' : ''
   )
 
-  // Refs pra GSI: armazenamos nonce + hash gerados, e flag de prontidão.
-  const nonceRef     = useRef<string | null>(null)
-  const hashedRef    = useRef<string | null>(null)
-  const gsiReadyRef  = useRef(false)
+  // useState aqui (não useRef!) pra disparar re-render quando GSI carrega.
+  const [gsiReady, setGsiReady] = useState(false)
+
+  // Refs estáveis pra evitar re-init do GSI a cada render
+  const nonceRef           = useRef<string | null>(null)
+  const setupDoneRef       = useRef(false)
+  const mountedRef         = useRef(true)
   const buttonContainerRef = useRef<HTMLDivElement>(null)
+  // Stable callback ref — evita que setupGsi dependa de funções que mudam
+  // identidade (router, etc)
+  const credentialCallbackRef = useRef<(r: GsiCredentialResponse) => void>(() => {})
 
   // ─── Email/senha ───────────────────────────────────────────────────────────
   async function handleLogin(e: React.FormEvent) {
@@ -135,104 +134,120 @@ function LoginForm() {
 
   // ─── Google Identity Services callback ─────────────────────────────────────
   //
-  // Executa quando o usuário escolhe a conta no GSI (one-tap ou botão render-
-  // ed). `response.credential` é o id_token (JWT) emitido pelo Google.
-  // Passamos ele direto pro Supabase com o nonce original — Supabase valida o
-  // hash do nonce no JWT contra hash(nonce) que enviamos.
-  //
-  // Vantagem desse fluxo vs signInWithOAuth:
-  //   · Google mostra "Continuar para lumorafinance.com.br" (origem JS) em vez
-  //     de "...supabase.co" — porque não há redirect_uri intermediário.
-  //   · Não passa por /api/auth/callback (sem code exchange).
-  const handleGsiCredential = useCallback(async (response: GsiCredentialResponse) => {
-    setGoogleLoading(true)
-    setError('')
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.signInWithIdToken({
-        provider: 'google',
-        token: response.credential,
-        nonce: nonceRef.current ?? undefined,
-      })
-      if (error) {
-        setError(`Não foi possível entrar com Google: ${error.message}`)
+  // Cuidados:
+  //   · só chama setState se o componente ainda está montado (mountedRef).
+  //   · qualquer throw dentro do callback do Google quebra o page tree (Next
+  //     router não captura erros de listeners externos), então embrulha tudo
+  //     em try/catch e degrada via setError.
+  useEffect(() => {
+    credentialCallbackRef.current = async (response: GsiCredentialResponse) => {
+      if (!mountedRef.current) return
+      setGoogleLoading(true)
+      setError('')
+      try {
+        const supabase = createClient()
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: response.credential,
+          nonce: nonceRef.current ?? undefined,
+        })
+        if (!mountedRef.current) return
+        if (error) {
+          setError(`Não foi possível entrar com Google: ${error.message}`)
+          setGoogleLoading(false)
+          return
+        }
+        // Primeiro refresh para invalidar cache server-side, depois push
+        router.refresh()
+        router.push('/dashboard')
+      } catch (e) {
+        if (!mountedRef.current) return
+        setError('Erro inesperado no login com Google. Tente novamente.')
         setGoogleLoading(false)
-        return
+        // eslint-disable-next-line no-console
+        console.error('[login] GSI credential error', e)
       }
-      router.push('/dashboard')
-      router.refresh()
-    } catch (e) {
-      setError('Erro inesperado no login com Google.')
-      setGoogleLoading(false)
     }
   }, [router])
 
-  // ─── Inicialização do GSI ──────────────────────────────────────────────────
-  //
-  // Roda quando o script https://accounts.google.com/gsi/client carrega +
-  // quando o componente monta. Setup:
-  //   1. gera nonce + hash
-  //   2. inicializa accounts.id com client_id, callback, nonce hashed
-  //   3. renderiza botão oficial Google no container ref
-  //
-  // Se NEXT_PUBLIC_GOOGLE_CLIENT_ID não estiver setada, abortamos silencioso e
-  // mantemos o botão fallback (que usa o fluxo OAuth antigo via Supabase).
+  // ─── Setup GSI — roda UMA VEZ quando o script carrega ──────────────────────
   const setupGsi = useCallback(async () => {
-    if (gsiReadyRef.current) return
-    if (!window.google?.accounts?.id) return
+    if (setupDoneRef.current) return
+    if (typeof window === 'undefined' || !window.google?.accounts?.id) return
+
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
     if (!clientId) {
-      console.warn('[login] NEXT_PUBLIC_GOOGLE_CLIENT_ID não configurada — usando fluxo OAuth antigo.')
+      // eslint-disable-next-line no-console
+      console.warn('[login] NEXT_PUBLIC_GOOGLE_CLIENT_ID não configurada — fallback para signInWithOAuth.')
       return
     }
-    const [nonce, hashed] = await generateNonce()
-    nonceRef.current  = nonce
-    hashedRef.current = hashed
 
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: handleGsiCredential,
-      nonce: hashed,
-      use_fedcm_for_prompt: true,
-      auto_select: false,
-      context: 'signin',
-    })
-    if (buttonContainerRef.current) {
-      // Limpa qualquer render anterior (em caso de re-inicialização)
-      buttonContainerRef.current.innerHTML = ''
-      window.google.accounts.id.renderButton(buttonContainerRef.current, {
-        type: 'standard',
-        theme: 'filled_black',
-        size: 'large',
-        text: 'continue_with',
-        shape: 'rectangular',
-        logo_alignment: 'left',
-        width: 380,
-        locale: 'pt-BR',
+    try {
+      const [nonce, hashed] = await generateNonce()
+      if (!mountedRef.current) return
+      nonceRef.current = nonce
+
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (r) => credentialCallbackRef.current(r),
+        nonce: hashed,
+        use_fedcm_for_prompt: true,
+        auto_select: false,
+        context: 'signin',
+        ux_mode: 'popup',
       })
-    }
-    gsiReadyRef.current = true
-  }, [handleGsiCredential])
 
+      const container = buttonContainerRef.current
+      if (container && mountedRef.current) {
+        container.innerHTML = ''
+        window.google.accounts.id.renderButton(container, {
+          type: 'standard',
+          theme: 'filled_black',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: 380,
+          locale: 'pt-BR',
+        })
+      }
+
+      setupDoneRef.current = true
+      if (mountedRef.current) setGsiReady(true)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('[login] GSI setup error', e)
+      // Não setError — deixa o fallback button visível e usável
+    }
+  }, [])
+
+  // Roda setup ao mount + retry curto caso o script ainda esteja carregando.
   useEffect(() => {
-    // Tenta inicializar imediatamente caso o script já tenha carregado
+    mountedRef.current = true
     void setupGsi()
-    // E poll por 3s caso o script ainda esteja carregando
+
     let attempts = 0
-    const id = setInterval(() => {
-      if (gsiReadyRef.current || attempts > 30) {
-        clearInterval(id)
+    const id = window.setInterval(() => {
+      if (setupDoneRef.current || attempts > 30) {
+        window.clearInterval(id)
         return
       }
       attempts++
       void setupGsi()
     }, 100)
-    return () => clearInterval(id)
+
+    return () => {
+      mountedRef.current = false
+      window.clearInterval(id)
+      // Best-effort cleanup — Google library tolera chamadas após unmount, mas
+      // queremos parar qualquer auto-prompt pendente.
+      try {
+        window.google?.accounts.id.cancel()
+      } catch { /* noop */ }
+    }
   }, [setupGsi])
 
-  // ─── Fallback: fluxo OAuth antigo via Supabase ─────────────────────────────
-  // Mantido como fallback caso GSI falhe (script bloqueado, env var ausente,
-  // navegador legado etc). Aparência: botão custom estilizado.
+  // ─── Fallback OAuth flow (signInWithOAuth via Supabase) ────────────────────
   async function handleGoogleFallback() {
     setGoogleLoading(true)
     setError('')
@@ -252,8 +267,6 @@ function LoginForm() {
 
   return (
     <>
-      {/* Carrega o GSI client. afterInteractive = depois do mount mas antes do
-          paint final, ideal pra esse uso. */}
       <Script
         src="https://accounts.google.com/gsi/client"
         strategy="afterInteractive"
@@ -263,16 +276,18 @@ function LoginForm() {
       <h2 className="text-xl font-semibold text-white mb-1">Bem-vindo de volta</h2>
       <p className="text-[#a3a3a3] text-sm mb-6">Entre na sua conta para continuar</p>
 
-      {/* Container onde GSI renderiza o botão oficial Google. Quando o script
-          carrega, ele substitui o conteúdo deste div. */}
-      <div ref={buttonContainerRef} className="w-full flex justify-center min-h-[42px]">
-        {/* Fallback button enquanto GSI não carrega ou se NEXT_PUBLIC_GOOGLE_
-            CLIENT_ID não estiver setado. Mantém UX usável mesmo offline-first. */}
-        {!gsiReadyRef.current && (
+      {/* Container onde GSI renderiza o botão oficial Google. Quando GSI fica
+          ready, o fallback abaixo desaparece e o iframe Google ocupa o espaço. */}
+      <div className="w-full flex justify-center min-h-[44px]" ref={buttonContainerRef}>
+        {!gsiReady && !googleLoading && (
+          // Fallback funcional enquanto o GSI carrega (ou se nunca carregar).
+          // Quando clicado antes do GSI estar pronto, cai no signInWithOAuth
+          // antigo (que vai mostrar "supabase.co" no consent — só pra não
+          // travar o usuário).
           <button
             type="button"
             onClick={handleGoogleFallback}
-            disabled={googleLoading || loading}
+            disabled={loading}
             aria-label="Continuar com Google"
             className="w-full flex items-center justify-center gap-3 bg-white hover:bg-[#f5f5f5] disabled:opacity-60 disabled:cursor-not-allowed text-[#1a1a1a] font-medium rounded-lg px-4 py-2.5 text-sm transition-colors border border-[#2a2a2a]"
           >
@@ -282,7 +297,7 @@ function LoginForm() {
               <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
               <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
             </svg>
-            {googleLoading ? 'Abrindo Google…' : 'Continuar com Google'}
+            Continuar com Google
           </button>
         )}
       </div>
