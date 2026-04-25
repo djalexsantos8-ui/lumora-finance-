@@ -153,7 +153,7 @@ function buildEmailHtml(params: {
 
     <!-- CTA -->
     <div style="text-align:center;margin-top:32px;">
-      <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lumora.finance'}/notifications"
+      <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lumorafinance.com.br'}/notifications"
         style="display:inline-block;background:#D4A853;color:#0a0a0a;font-size:13px;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;">
         Ver todas as notificações
       </a>
@@ -162,7 +162,7 @@ function buildEmailHtml(params: {
     <!-- Footer -->
     <p style="font-size:11px;color:#3a3a3a;text-align:center;margin-top:32px;">
       Lumora Finance · Este email é enviado automaticamente todo dia às 8h.<br>
-      Você pode gerenciar preferências em <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lumora.finance'}/settings" style="color:#525252;">Configurações</a>.
+      Você pode gerenciar preferências em <a href="${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lumorafinance.com.br'}/settings" style="color:#525252;">Configurações</a>.
     </p>
   </div>
 </body>
