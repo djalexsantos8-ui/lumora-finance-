@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { calcBudgetTotals, calcItemTotals, fmtBRL, type BudgetItemV2 } from '@/lib/v2/budget-calc'
+import { calcBudgetTotals, calcItemTotals, fmtBRL, rentMetaFromPct, type BudgetItemV2 } from '@/lib/v2/budget-calc'
 import { addItem, removeItem, saveBudget, updateItem } from './actions'
 
 /**
@@ -276,13 +276,15 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
                   <th className="px-2 py-2 text-right w-28">Custo unit.</th>
                   <th className="px-2 py-2 text-right w-28">Valor unit.</th>
                   <th className="px-2 py-2 text-right w-24">Total</th>
+                  <th className="px-2 py-2 text-right w-24">Sobra</th>
+                  <th className="px-2 py-2 text-right w-20">Rent.</th>
                   <th className="px-2 py-2 text-right w-8"></th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[#525252]">
+                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#525252]">
                       Nenhum item ainda. Clica em &quot;+ Adicionar item&quot; abaixo.
                     </td>
                   </tr>
@@ -373,6 +375,14 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
               <Row k="Total" v={fmtBRL(totals.total)} bold />
             </dl>
           </div>
+
+          <RentabilidadeBlock
+            custoBase={totals.totalCost}
+            valorCobrado={totals.total}
+            lucroBruto={totals.grossProfit}
+            margemPct={totals.grossMarginPct}
+            markupPct={totals.markupPct}
+          />
         </div>
       </div>
     </div>
@@ -482,6 +492,34 @@ function ItemRowEditor({
         {fmtBRL(Number(item.total ?? 0))}
       </td>
       <td className="px-2 py-2 text-right">
+        {(() => {
+          const total      = Number(item.total ?? 0)
+          const totalCost  = Number(item.total_cost ?? 0)
+          const sobra      = total - totalCost
+          return (
+            <span className={sobra >= 0 ? 'text-emerald-400 text-sm font-mono' : 'text-red-400 text-sm font-mono'}>
+              {fmtBRL(sobra)}
+            </span>
+          )
+        })()}
+      </td>
+      <td className="px-2 py-2 text-right">
+        {(() => {
+          const total = Number(item.total ?? 0)
+          const sobra = total - Number(item.total_cost ?? 0)
+          const pct   = total > 0 ? (sobra / total) * 100 : 0
+          const meta  = rentMetaFromPct(pct)
+          return (
+            <span
+              title={`${meta.emoji} ${meta.label}`}
+              className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold ${meta.badgeClass}`}
+            >
+              {pct.toFixed(0)}%
+            </span>
+          )
+        })()}
+      </td>
+      <td className="px-2 py-2 text-right">
         <button
           type="button"
           onClick={onRemove}
@@ -492,5 +530,79 @@ function ItemRowEditor({
         </button>
       </td>
     </tr>
+  )
+}
+
+function RentabilidadeBlock({
+  custoBase, valorCobrado, lucroBruto, margemPct, markupPct,
+}: {
+  custoBase:    number
+  valorCobrado: number
+  lucroBruto:   number
+  margemPct:    number
+  markupPct:    number
+}) {
+  const meta = rentMetaFromPct(margemPct)
+  const barWidth = Math.min(Math.max(margemPct, 0), 100)
+
+  return (
+    <div className={`rounded-xl border-2 p-5 ${meta.borderClass} ${meta.bgClass}`}>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-white">Rentabilidade</h3>
+        <span className={`text-xs font-semibold ${meta.textClass}`}>
+          {meta.emoji} {meta.label}
+        </span>
+      </div>
+
+      <dl className="space-y-2 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-[#737373]">Custo base</dt>
+          <dd className="font-mono text-amber-400">{fmtBRL(custoBase)}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-[#a3a3a3]">Valor cobrado</dt>
+          <dd className="font-mono text-blue-400">{fmtBRL(valorCobrado)}</dd>
+        </div>
+        <div className="my-1 border-t border-[#2a2a2a]" />
+        <div className="flex justify-between">
+          <dt className="text-[#a3a3a3]">Lucro bruto</dt>
+          <dd className={`font-mono font-bold ${meta.textClass}`}>{fmtBRL(lucroBruto)}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-[#a3a3a3]">Margem líquida</dt>
+          <dd className={`font-mono font-bold ${meta.textClass}`}>{margemPct.toFixed(1)}%</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-[#737373]">Markup</dt>
+          <dd className="font-mono text-violet-400">{markupPct.toFixed(1)}%</dd>
+        </div>
+      </dl>
+
+      <div className="mt-4">
+        <div className="h-2 overflow-hidden rounded-full bg-[#1a1a1a]">
+          <div
+            className={`h-full transition-all ${meta.barClass}`}
+            style={{ width: `${barWidth}%` }}
+          />
+        </div>
+        <div className="mt-1 flex justify-between text-[10px] text-[#737373]">
+          <span>0%</span>
+          <span className={`font-bold ${meta.textClass}`}>{margemPct.toFixed(1)}%</span>
+          <span>100%</span>
+        </div>
+      </div>
+
+      {margemPct < 30 && (
+        <div className="mt-4 rounded border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-300">
+          💡 Margem apertada. Considere aumentar o valor ou reduzir o custo dos itens
+          marcados em vermelho — você ainda dá tempo de ajustar antes de enviar.
+        </div>
+      )}
+      {margemPct >= 50 && (
+        <div className="mt-4 rounded border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-300">
+          ✓ Margem saudável. Você está ganhando bem neste orçamento.
+        </div>
+      )}
+    </div>
   )
 }

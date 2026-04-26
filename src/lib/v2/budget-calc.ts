@@ -99,3 +99,63 @@ export function fmtBRLShort(n: number): string {
   if (Math.abs(n) >= 1_000)     return `R$ ${(n / 1_000).toFixed(1)}k`
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
 }
+
+// ─── EPIC-15: tone semáforo de rentabilidade ────────────────────────────────
+// Padrão de cores Lumora:
+//   ≥ 50%  → 🟢 Excelente (emerald)
+//   30-50% → 🟡 Razoável  (amber)
+//   < 30%  → 🔴 Apertado  (red)
+
+export type RentTone = 'good' | 'mid' | 'bad'
+
+export interface RentMeta {
+  tone:        RentTone
+  emoji:       string
+  label:       string
+  /** Classes Tailwind estáticas (safe pra purge). */
+  badgeClass:  string
+  textClass:   string
+  borderClass: string
+  bgClass:     string
+  barClass:    string
+}
+
+const META: Record<RentTone, RentMeta> = {
+  good: {
+    tone:        'good',
+    emoji:       '🟢',
+    label:       'Excelente',
+    badgeClass:  'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+    textClass:   'text-emerald-400',
+    borderClass: 'border-emerald-500/30',
+    bgClass:     'bg-emerald-500/5',
+    barClass:    'bg-gradient-to-r from-emerald-500 to-emerald-400',
+  },
+  mid: {
+    tone:        'mid',
+    emoji:       '🟡',
+    label:       'Razoável',
+    badgeClass:  'bg-amber-500/10 text-amber-300 border-amber-500/30',
+    textClass:   'text-amber-400',
+    borderClass: 'border-amber-500/30',
+    bgClass:     'bg-amber-500/5',
+    barClass:    'bg-gradient-to-r from-amber-500 to-amber-400',
+  },
+  bad: {
+    tone:        'bad',
+    emoji:       '🔴',
+    label:       'Apertado',
+    badgeClass:  'bg-red-500/10 text-red-300 border-red-500/30',
+    textClass:   'text-red-400',
+    borderClass: 'border-red-500/30',
+    bgClass:     'bg-red-500/5',
+    barClass:    'bg-gradient-to-r from-red-500 to-red-400',
+  },
+}
+
+export function rentMetaFromPct(pct: number): RentMeta {
+  if (pct >= 50) return META.good
+  if (pct >= 30) return META.mid
+  return META.bad
+}
+
