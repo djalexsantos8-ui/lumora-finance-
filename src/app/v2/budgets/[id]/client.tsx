@@ -1,0 +1,496 @@
+'use client'
+
+import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { calcBudgetTotals, calcItemTotals, fmtBRL, type BudgetItemV2 } from '@/lib/v2/budget-calc'
+import { addItem, removeItem, saveBudget, updateItem } from './actions'
+
+/**
+ * Editor de Orçamento V2 — coração da Phase 2.
+ *
+ * 4 KPIs em tempo real (Custo / Valor / Margem / Markup), tabela de itens
+ * editáveis com debounce 600ms, painel de configurações (margin/tax/discount).
+ *
+ * Cálculo client-side espelha a trigger SQL — depois do save, o server
+ * component refaz o load e os totais ficam canônicos.
+ */
+
+interface BudgetRow {
+  id:                  string
+  workspace_id:        string
+  number:              string
+  name:                string
+  client_id:           string | null
+  status:              string
+  start_date:          string | null
+  end_date:            string | null
+  location:            string | null
+  margin_percent:      number | string
+  tax_percent:         number | string
+  discount_amount:     number | string
+  payment_terms:       string | null
+  validity_days:       number | null
+  delivery_days:       number | null
+  revisions_included:  number | null
+  notes_internal:      string | null
+  notes_client:        string | null
+  subtotal:            number | string
+  total_cost:          number | string
+  margin_amount:       number | string
+  tax_amount:          number | string
+  total:               number | string
+}
+
+interface ItemRow extends BudgetItemV2 {
+  id:           string
+  budget_id:    string
+  workspace_id: string
+  description:  string
+  category:     string
+  unit:         string
+  days:         number
+  people:       number
+  quantity:     number
+  sort_order:   number
+}
+
+interface ClientOption { id: string; name: string }
+
+interface Props {
+  budget:        BudgetRow
+  initialItems:  ItemRow[]
+  clients:       ClientOption[]
+}
+
+const num = (v: unknown): number => {
+  if (v === null || v === undefined || v === '') return 0
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+export default function BudgetEditorClient({ budget: initialBudget, initialItems, clients }: Props) {
+  const [budget, setBudget]   = useState<BudgetRow>(initialBudget)
+  const [items, setItems]     = useState<ItemRow[]>(initialItems)
+  const [pending, startTx]    = useTransition()
+  const [savedFlash, setFlash] = useState<string | null>(null)
+
+  const totals = useMemo(() => calcBudgetTotals(items, budget), [items, budget])
+
+  // ── Save com debounce do header/settings ──────────────────────────────────
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function scheduleHeaderSave(next: BudgetRow) {
+    setBudget(next)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      startTx(async () => {
+        const r = await saveBudget({
+          id:                  next.id,
+          name:                next.name,
+          client_id:           next.client_id,
+          start_date:          next.start_date,
+          end_date:            next.end_date,
+          location:            next.location,
+          status:              next.status,
+          margin_percent:      num(next.margin_percent),
+          tax_percent:         num(next.tax_percent),
+          discount_amount:     num(next.discount_amount),
+          payment_terms:       next.payment_terms,
+          validity_days:       next.validity_days,
+          delivery_days:       next.delivery_days,
+          revisions_included:  next.revisions_included,
+          notes_internal:      next.notes_internal,
+          notes_client:        next.notes_client,
+        })
+        if (r.ok) flash('Salvo')
+      })
+    }, 600)
+  }
+
+  // ── Save com debounce dos items ───────────────────────────────────────────
+  const itemTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  function scheduleItemSave(itemId: string, patch: Partial<ItemRow>) {
+    setItems((prev) => {
+      const next = prev.map((i) => {
+        if (i.id !== itemId) return i
+        const merged = { ...i, ...patch }
+        const { total, total_cost } = calcItemTotals(merged)
+        return { ...merged, total, total_cost }
+      })
+      return next
+    })
+
+    if (itemTimers.current[itemId]) clearTimeout(itemTimers.current[itemId])
+    itemTimers.current[itemId] = setTimeout(() => {
+      startTx(async () => {
+        const r = await updateItem(itemId, {
+          description: patch.description as string | undefined,
+          category:    patch.category    as string | undefined,
+          unit:        patch.unit        as string | undefined,
+          days:        patch.days        != null ? Number(patch.days)        : undefined,
+          people:      patch.people      != null ? Number(patch.people)      : undefined,
+          quantity:    patch.quantity    != null ? Number(patch.quantity)    : undefined,
+          unit_price:  patch.unit_price  != null ? Number(patch.unit_price)  : undefined,
+          unit_cost:   patch.unit_cost   != null ? Number(patch.unit_cost)   : undefined,
+        })
+        if (r.ok) flash('Item salvo')
+      })
+    }, 600)
+  }
+
+  function flash(msg: string) {
+    setFlash(msg)
+    setTimeout(() => setFlash(null), 1500)
+  }
+
+  // Cleanup timers no unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      Object.values(itemTimers.current).forEach((t) => clearTimeout(t))
+    }
+  }, [])
+
+  async function handleAddItem() {
+    startTx(async () => {
+      const r = await addItem(budget.id)
+      if (r.ok) {
+        // Refresh local list — busca o item recém-criado direto da action
+        setItems((prev) => [
+          ...prev,
+          {
+            id:           r.id ?? `tmp-${Date.now()}`,
+            budget_id:    budget.id,
+            workspace_id: budget.workspace_id,
+            description:  'Novo item',
+            category:     'Geral',
+            unit:         'unidade',
+            days:         1,
+            people:       1,
+            quantity:     1,
+            unit_price:   0,
+            unit_cost:    0,
+            total:        0,
+            total_cost:   0,
+            sort_order:   prev.length,
+          },
+        ])
+        flash('Item adicionado')
+      }
+    })
+  }
+
+  async function handleRemoveItem(itemId: string) {
+    startTx(async () => {
+      const r = await removeItem(itemId, budget.id)
+      if (r.ok) {
+        setItems((prev) => prev.filter((i) => i.id !== itemId))
+        flash('Item removido')
+      }
+    })
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-6 text-white">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <Link href="/v2/budgets" className="text-sm text-[#a3a3a3] hover:text-white">
+          ← Voltar
+        </Link>
+        <div className="flex items-center gap-3 text-xs text-[#737373]">
+          <span className="font-mono">{budget.number}</span>
+          {savedFlash && <span className="text-emerald-400">✓ {savedFlash}</span>}
+          {pending && !savedFlash && <span>Salvando…</span>}
+        </div>
+      </div>
+
+      {/* Nome do projeto + cliente */}
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+            Nome do projeto
+          </label>
+          <input
+            type="text"
+            value={budget.name ?? ''}
+            onChange={(e) => scheduleHeaderSave({ ...budget, name: e.target.value })}
+            placeholder="Casamento João & Maria — 15/06"
+            className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-2 text-lg font-semibold text-white focus:border-[#D4A853] focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+            Cliente
+          </label>
+          <select
+            value={budget.client_id ?? ''}
+            onChange={(e) => scheduleHeaderSave({ ...budget, client_id: e.target.value || null })}
+            className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-2 text-sm text-white focus:border-[#D4A853] focus:outline-none"
+          >
+            <option value="">— sem cliente —</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* KPIs em tempo real */}
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi
+          label="Custo Base"
+          value={fmtBRL(totals.totalCost)}
+          hint="O que VOCÊ paga pelos itens"
+          color="text-amber-400"
+        />
+        <Kpi
+          label="Valor ao Cliente"
+          value={fmtBRL(totals.total)}
+          hint="Subtotal + margem + impostos − desconto"
+          color="text-blue-400"
+        />
+        <Kpi
+          label="Margem Bruta"
+          value={fmtBRL(totals.grossProfit)}
+          hint={`${totals.grossMarginPct.toFixed(1)}% do valor cliente`}
+          color={totals.grossProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}
+        />
+        <Kpi
+          label="Markup"
+          value={`${totals.markupPct.toFixed(1)}%`}
+          hint="Lucro vs custo"
+          color="text-violet-400"
+        />
+      </div>
+
+      {/* Layout 2 colunas: items + sidebar settings */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Items */}
+        <div className="lg:col-span-2">
+          <div className="overflow-hidden rounded-xl border border-[#1f1f1f] bg-[#0d0d0d]">
+            <table className="w-full text-sm">
+              <thead className="border-b border-[#1f1f1f] bg-[#111] text-xs uppercase tracking-wider text-[#737373]">
+                <tr>
+                  <th className="px-2 py-2 text-left">Item</th>
+                  <th className="px-2 py-2 text-right w-16">Dias</th>
+                  <th className="px-2 py-2 text-right w-16">Pess.</th>
+                  <th className="px-2 py-2 text-right w-28">Custo unit.</th>
+                  <th className="px-2 py-2 text-right w-28">Valor unit.</th>
+                  <th className="px-2 py-2 text-right w-24">Total</th>
+                  <th className="px-2 py-2 text-right w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-[#525252]">
+                      Nenhum item ainda. Clica em &quot;+ Adicionar item&quot; abaixo.
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item) => (
+                    <ItemRowEditor
+                      key={item.id}
+                      item={item}
+                      onChange={(patch) => scheduleItemSave(item.id, patch)}
+                      onRemove={() => handleRemoveItem(item.id)}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+            <div className="border-t border-[#1f1f1f] p-3">
+              <button
+                type="button"
+                onClick={handleAddItem}
+                disabled={pending}
+                className="text-sm text-[#D4A853] hover:text-[#e0b95f] disabled:opacity-50"
+              >
+                + Adicionar item
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar — settings + totals */}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#a3a3a3]">
+              Configurações
+            </h3>
+
+            <div className="space-y-3">
+              <NumberField
+                label="Margem (%)"
+                value={num(budget.margin_percent)}
+                onChange={(v) => scheduleHeaderSave({ ...budget, margin_percent: v })}
+                step="0.1"
+              />
+              <NumberField
+                label="Imposto (%)"
+                value={num(budget.tax_percent)}
+                onChange={(v) => scheduleHeaderSave({ ...budget, tax_percent: v })}
+                step="0.1"
+              />
+              <NumberField
+                label="Desconto (R$)"
+                value={num(budget.discount_amount)}
+                onChange={(v) => scheduleHeaderSave({ ...budget, discount_amount: v })}
+                step="1"
+              />
+              <div>
+                <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+                  Status
+                </label>
+                <select
+                  value={budget.status}
+                  onChange={(e) => scheduleHeaderSave({ ...budget, status: e.target.value })}
+                  className="w-full rounded-md border border-[#2a2a2a] bg-[#111] px-2 py-1.5 text-sm text-white focus:border-[#D4A853] focus:outline-none"
+                >
+                  <option value="draft">Rascunho</option>
+                  <option value="sent">Enviado</option>
+                  <option value="approved">Aprovado</option>
+                  <option value="rejected">Recusado</option>
+                  <option value="converted">Virou job</option>
+                  <option value="expired">Vencido</option>
+                  <option value="archived">Arquivado</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#a3a3a3]">
+              Resumo
+            </h3>
+            <dl className="space-y-2 text-sm">
+              <Row k="Subtotal" v={fmtBRL(totals.subtotal)} />
+              <Row k={`Margem (${num(budget.margin_percent).toFixed(1)}%)`} v={fmtBRL(totals.marginAmount)} />
+              <Row k={`Imposto (${num(budget.tax_percent).toFixed(1)}%)`} v={fmtBRL(totals.taxAmount)} />
+              {totals.discountAmount > 0 && (
+                <Row k="Desconto" v={`− ${fmtBRL(totals.discountAmount)}`} />
+              )}
+              <div className="my-2 border-t border-[#1f1f1f]" />
+              <Row k="Total" v={fmtBRL(totals.total)} bold />
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Helpers UI ──────────────────────────────────────────────────────────────
+
+function Kpi({ label, value, hint, color }: { label: string; value: string; hint: string; color: string }) {
+  return (
+    <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+      <div className="mb-1 text-[10px] uppercase tracking-wider text-[#737373]">{label}</div>
+      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+      <div className="mt-1 text-[10px] text-[#525252]">{hint}</div>
+    </div>
+  )
+}
+
+function NumberField({
+  label, value, onChange, step,
+}: {
+  label:    string
+  value:    number
+  onChange: (n: number) => void
+  step?:    string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+        {label}
+      </label>
+      <input
+        type="number"
+        step={step ?? '0.01'}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full rounded-md border border-[#2a2a2a] bg-[#111] px-2 py-1.5 text-sm text-white focus:border-[#D4A853] focus:outline-none"
+      />
+    </div>
+  )
+}
+
+function Row({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className={`${bold ? 'font-semibold text-white' : 'text-[#a3a3a3]'}`}>{k}</dt>
+      <dd className={`${bold ? 'text-lg font-bold text-[#D4A853]' : 'text-white'}`}>{v}</dd>
+    </div>
+  )
+}
+
+function ItemRowEditor({
+  item, onChange, onRemove,
+}: {
+  item:     ItemRow
+  onChange: (patch: Partial<ItemRow>) => void
+  onRemove: () => void
+}) {
+  return (
+    <tr className="border-b border-[#1f1f1f] last:border-0 hover:bg-[#111]">
+      <td className="px-2 py-2">
+        <input
+          type="text"
+          value={item.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+          placeholder="Direção, câmera, edição…"
+          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-white hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <input
+          type="number"
+          min={1}
+          value={item.days}
+          onChange={(e) => onChange({ days: Number(e.target.value) || 1 })}
+          className="w-14 rounded-md border border-transparent bg-transparent px-1 py-1 text-right text-sm text-white hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <input
+          type="number"
+          min={1}
+          value={item.people}
+          onChange={(e) => onChange({ people: Number(e.target.value) || 1 })}
+          className="w-14 rounded-md border border-transparent bg-transparent px-1 py-1 text-right text-sm text-white hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <input
+          type="number"
+          step="0.01"
+          value={Number(item.unit_cost ?? 0)}
+          onChange={(e) => onChange({ unit_cost: Number(e.target.value) })}
+          className="w-24 rounded-md border border-transparent bg-transparent px-1 py-1 text-right text-sm text-amber-400 hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+        />
+      </td>
+      <td className="px-2 py-2 text-right">
+        <input
+          type="number"
+          step="0.01"
+          value={Number(item.unit_price ?? 0)}
+          onChange={(e) => onChange({ unit_price: Number(e.target.value) })}
+          className="w-24 rounded-md border border-transparent bg-transparent px-1 py-1 text-right text-sm text-blue-400 hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+        />
+      </td>
+      <td className="px-2 py-2 text-right text-sm text-white">
+        {fmtBRL(Number(item.total ?? 0))}
+      </td>
+      <td className="px-2 py-2 text-right">
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Remover item"
+          className="text-[#525252] hover:text-red-400"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  )
+}
