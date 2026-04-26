@@ -53,6 +53,42 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // ─── V2 dogfooding gate (EPIC-12) ──────────────────────────────────────────
+  // Rotas /v2/* só pra admins enquanto V2 está em construção.
+  // Quando feature flag `v2_public_release=true`, libera pra todos.
+  // Defesa em profundidade: app/v2/layout.tsx ainda valida server-side.
+  if (pathname.startsWith('/v2/') || pathname === '/v2') {
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    // Check feature flag pública primeiro (cache 60s)
+    const { data: publicFlag } = await supabase
+      .from('feature_flags_global')
+      .select('enabled')
+      .eq('flag_key', 'v2_public_release')
+      .maybeSingle()
+
+    if (!publicFlag?.enabled) {
+      // Modo dogfooding: precisa admin_grant ativo
+      const nowIso = new Date().toISOString()
+      const { data: grant } = await supabase
+        .from('admin_grants')
+        .select('id')
+        .eq('user_id', user.id)
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .limit(1)
+        .maybeSingle()
+
+      if (!grant) {
+        const url = new URL('/', request.url)
+        url.searchParams.set('v2_blocked', '1')
+        return NextResponse.redirect(url)
+      }
+    }
+    // V2 allowed: passa adiante
+  }
+
   // ─── Auth callback bypass (Deploy H.4 2026-04-24) ──────────────────────────
   // A rota `/api/auth/*` (OAuth callback, password recovery) TEM que passar
   // direto sem qualquer redirect de auth/subscription. Caso contrário:
