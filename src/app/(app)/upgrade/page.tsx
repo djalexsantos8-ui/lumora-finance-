@@ -1,12 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import CheckoutButton from './checkout-button'
 import { PLANS, TRIAL_DAYS } from '@/lib/stripe/pricing'
 import { FooterCopyright } from '@/components/layout/footer-copyright'
+import { getGate } from '@/lib/billing/has-feature'
 
 export const dynamic = 'force-dynamic'
 
-type UpgradeSearchParams = Promise<{ reason?: string }>
+type UpgradeSearchParams = Promise<{
+  reason?:  string
+  feature?: string
+  from?:    string
+}>
 
 export default async function UpgradePage({
   searchParams,
@@ -18,8 +24,78 @@ export default async function UpgradePage({
 
   if (!user) redirect('/login')
 
-  const params = await searchParams
-  const reason = params.reason ?? ''
+  const params  = await searchParams
+  const reason  = params.reason ?? ''
+  const feature = params.feature ?? ''
+  const from    = params.from ?? '/dashboard'
+
+  // ─── EPIC-11: Paywall direcionado por feature ────────────────────────────
+  // Quando vem com ?feature=X (redirect do middleware), renderiza copy
+  // contextualizado em vez do upgrade genérico V1.
+  if (feature) {
+    const gate = await getGate(feature)
+    if (gate) {
+      return (
+        <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-6">
+          <div className="w-full max-w-2xl">
+            <Link
+              href={from}
+              className="inline-flex items-center gap-2 text-sm text-[#a3a3a3] hover:text-white mb-8"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Voltar
+            </Link>
+
+            <div className="rounded-2xl border border-[#D4A853]/30 bg-gradient-to-br from-[#0d0d0d] to-[#1a1a0d] p-8">
+              <div className="text-5xl mb-4">{gate.icon}</div>
+              <h1 className="text-2xl font-bold text-white mb-2">
+                {gate.display_name} é parte do plano Enterprise
+              </h1>
+              <p className="text-[#a3a3a3] text-base leading-relaxed mb-1">
+                {gate.description}
+              </p>
+              <p className="text-[#D4A853] text-sm font-medium mt-4">
+                {gate.upgrade_pitch}
+              </p>
+
+              <div className="mt-8 pt-6 border-t border-[#1a1a1a] flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-[#525252]">Enterprise</div>
+                  <div className="text-2xl font-bold text-white">
+                    R$ 99
+                    <span className="text-sm font-normal text-[#a3a3a3]">/mês</span>
+                  </div>
+                  <div className="text-[10px] text-[#525252] mt-1">
+                    7 dias de trial · cancele a qualquer momento
+                  </div>
+                </div>
+                <Link
+                  href={`/escolher-plano?plan=enterprise&from=${encodeURIComponent(from)}`}
+                  className="inline-flex items-center justify-center bg-[#D4A853] hover:bg-[#e0b95f] text-black font-semibold px-6 py-3 rounded-md transition-colors"
+                >
+                  Fazer upgrade →
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-6 text-center">
+              <Link
+                href="/escolher-plano"
+                className="text-xs text-[#525252] hover:text-[#a3a3a3]"
+              >
+                Ou ver todos os planos →
+              </Link>
+            </div>
+
+            <FooterCopyright variant="auth" />
+          </div>
+        </div>
+      )
+    }
+    // gate não encontrado → cai no fluxo legacy V1
+  }
 
   const { data: subscription } = await supabase
     .from('subscriptions')

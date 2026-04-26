@@ -133,6 +133,35 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
+  // ─── EPIC-11: Paywall direcionado por feature ─────────────────────────────
+  // Antes do guard genérico de subscription, intercepta rotas premium e
+  // redireciona pra `/upgrade?feature=X&from=Y` se workspace V2 não tem o
+  // plano necessário. V1 puro (sem subscriptions_v2) NÃO sofre paywall —
+  // mantém comportamento legacy. Trial = acesso total.
+  if (user && !isPublicRoute && !isBypassRoute) {
+    const featureKey = matchFeatureRoute(pathname)
+    if (featureKey) {
+      const { data: subV2 } = await supabase
+        .from('subscriptions_v2')
+        .select('plan, status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      // Só aplica gate se há subscription V2. V1 puro segue para subscription guard abaixo.
+      if (subV2) {
+        const allowed = await isFeatureAllowed(supabase, subV2, featureKey)
+        if (!allowed) {
+          const url = new URL('/upgrade', request.url)
+          url.searchParams.set('feature', featureKey)
+          url.searchParams.set('from', pathname)
+          return NextResponse.redirect(url)
+        }
+      }
+    }
+  }
+
   // Access guard: verifica admin_grant OU subscription ativa
   if (user && !isPublicRoute && !isBypassRoute) {
 
@@ -186,4 +215,55 @@ export async function updateSession(request: NextRequest) {
   }
 
   return supabaseResponse
+}
+
+// ─── EPIC-11 helpers ─────────────────────────────────────────────────────────
+// Mapeamento de prefixo de URL → feature_key (consultado em feature_gates).
+// Quando uma dessas rotas vira realidade, o middleware automaticamente bloqueia.
+const FEATURE_ROUTES: Record<string, string> = {
+  '/crm':           'crm',
+  '/marketing':     'marketing',
+  '/agenda':        'agenda',
+  '/sua-produtora': 'sua_produtora',
+}
+
+const PLAN_RANK_MW: Record<string, number> = { creator: 1, enterprise: 2 }
+
+function matchFeatureRoute(path: string): string | null {
+  for (const [prefix, key] of Object.entries(FEATURE_ROUTES)) {
+    if (path === prefix || path.startsWith(prefix + '/')) return key
+  }
+  return null
+}
+
+/**
+ * Versão middleware-compatible da regra de hasFeature. Lê feature_gates direto
+ * via supabase client (sem unstable_cache — Edge runtime). Pequeno custo extra
+ * compensado por: (a) só roda em rotas premium, (b) não há outra opção em Edge.
+ */
+async function isFeatureAllowed(
+  supabase: ReturnType<typeof createServerClient>,
+  sub: { plan: string | null; status: string | null },
+  featureKey: string
+): Promise<boolean> {
+  if (sub.status === 'trialing') return true
+  if (
+    sub.status === 'past_due' ||
+    sub.status === 'unpaid' ||
+    sub.status === 'canceled' ||
+    sub.status === 'incomplete_expired'
+  ) {
+    return false
+  }
+  if (sub.status !== 'active' || !sub.plan) return false
+
+  const { data: gate } = await supabase
+    .from('feature_gates')
+    .select('min_plan')
+    .eq('feature_key', featureKey)
+    .maybeSingle()
+  if (!gate) return true
+
+  const minPlan = (gate as { min_plan: string }).min_plan
+  return (PLAN_RANK_MW[sub.plan] ?? 0) >= (PLAN_RANK_MW[minPlan] ?? 99)
 }
