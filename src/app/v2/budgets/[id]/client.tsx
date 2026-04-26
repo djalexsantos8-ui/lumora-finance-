@@ -42,12 +42,14 @@ interface BudgetRow {
 }
 
 interface ItemRow extends BudgetItemV2 {
-  id:           string
-  budget_id:    string
-  workspace_id: string
-  description:  string
-  category:     string
-  unit:         string
+  id:                  string
+  budget_id:           string
+  workspace_id:        string
+  description:         string
+  description_visible: string | null
+  is_encargo:          boolean
+  category:            string
+  unit:                string
   days:         number
   people:       number
   quantity:     number
@@ -123,14 +125,16 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
     itemTimers.current[itemId] = setTimeout(() => {
       startTx(async () => {
         const r = await updateItem(itemId, {
-          description: patch.description as string | undefined,
-          category:    patch.category    as string | undefined,
-          unit:        patch.unit        as string | undefined,
-          days:        patch.days        != null ? Number(patch.days)        : undefined,
-          people:      patch.people      != null ? Number(patch.people)      : undefined,
-          quantity:    patch.quantity    != null ? Number(patch.quantity)    : undefined,
-          unit_price:  patch.unit_price  != null ? Number(patch.unit_price)  : undefined,
-          unit_cost:   patch.unit_cost   != null ? Number(patch.unit_cost)   : undefined,
+          description:         patch.description         as string | undefined,
+          description_visible: patch.description_visible as string | null | undefined,
+          is_encargo:          patch.is_encargo          as boolean | undefined,
+          category:             patch.category    as string | undefined,
+          unit:                 patch.unit        as string | undefined,
+          days:                 patch.days        != null ? Number(patch.days)        : undefined,
+          people:               patch.people      != null ? Number(patch.people)      : undefined,
+          quantity:             patch.quantity    != null ? Number(patch.quantity)    : undefined,
+          unit_price:           patch.unit_price  != null ? Number(patch.unit_price)  : undefined,
+          unit_cost:            patch.unit_cost   != null ? Number(patch.unit_cost)   : undefined,
         })
         if (r.ok) flash('Item salvo')
       })
@@ -158,20 +162,22 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
         setItems((prev) => [
           ...prev,
           {
-            id:           r.id ?? `tmp-${Date.now()}`,
-            budget_id:    budget.id,
-            workspace_id: budget.workspace_id,
-            description:  'Novo item',
-            category:     'Geral',
-            unit:         'unidade',
-            days:         1,
-            people:       1,
-            quantity:     1,
-            unit_price:   0,
-            unit_cost:    0,
-            total:        0,
-            total_cost:   0,
-            sort_order:   prev.length,
+            id:                  r.id ?? `tmp-${Date.now()}`,
+            budget_id:           budget.id,
+            workspace_id:        budget.workspace_id,
+            description:         'Novo item',
+            description_visible: null,
+            is_encargo:          false,
+            category:             'Geral',
+            unit:                 'unidade',
+            days:                 1,
+            people:               1,
+            quantity:             1,
+            unit_price:           0,
+            unit_cost:            0,
+            total:                0,
+            total_cost:           0,
+            sort_order:           prev.length,
           },
         ])
         flash('Item adicionado')
@@ -200,6 +206,14 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
           <span className="font-mono">{budget.number}</span>
           {savedFlash && <span className="text-emerald-400">✓ {savedFlash}</span>}
           {pending && !savedFlash && <span>Salvando…</span>}
+          <a
+            href={`/api/v2/budgets/${budget.id}/pdf?download=1`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-2 inline-flex items-center gap-1.5 rounded-md border border-[#D4A853]/30 bg-[#D4A853]/5 px-3 py-1.5 text-xs font-semibold text-[#D4A853] hover:bg-[#D4A853]/10"
+          >
+            📄 PDF cliente
+          </a>
         </div>
       </div>
 
@@ -442,15 +456,33 @@ function ItemRowEditor({
   onRemove: () => void
 }) {
   return (
-    <tr className="border-b border-[#1f1f1f] last:border-0 hover:bg-[#111]">
+    <tr className={`border-b border-[#1f1f1f] last:border-0 hover:bg-[#111] ${item.is_encargo ? 'bg-[#0d0d0d]/60' : ''}`}>
       <td className="px-2 py-2">
-        <input
-          type="text"
-          value={item.description}
-          onChange={(e) => onChange({ description: e.target.value })}
-          placeholder="Direção, câmera, edição…"
-          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-white hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
-        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ is_encargo: !item.is_encargo } as Partial<ItemRow>)}
+            title={
+              item.is_encargo
+                ? 'Item invisível no PDF cliente — soma como encargo. Clique para reverter.'
+                : 'Tratar como encargo (não aparece detalhado no PDF cliente).'
+            }
+            className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold ${
+              item.is_encargo
+                ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
+                : 'border-[#2a2a2a] bg-transparent text-[#525252] hover:border-violet-500/30 hover:text-violet-400'
+            }`}
+          >
+            {item.is_encargo ? '💎 enc.' : 'enc.'}
+          </button>
+          <input
+            type="text"
+            value={item.description}
+            onChange={(e) => onChange({ description: e.target.value })}
+            placeholder="Direção, câmera, edição…"
+            className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm text-white hover:border-[#2a2a2a] focus:border-[#D4A853] focus:outline-none"
+          />
+        </div>
       </td>
       <td className="px-2 py-2 text-right">
         <input

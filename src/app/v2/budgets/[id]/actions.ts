@@ -96,15 +96,17 @@ export async function addItem(budgetId: string): Promise<ActionResult & { id?: s
 }
 
 interface UpdateItemPatch {
-  description?: string
-  category?:    string
-  unit?:        string
-  days?:        number
-  people?:      number
-  quantity?:    number
-  unit_price?:  number
-  unit_cost?:   number
-  sort_order?:  number
+  description?:         string
+  description_visible?: string | null
+  is_encargo?:          boolean
+  category?:            string
+  unit?:                string
+  days?:                number
+  people?:              number
+  quantity?:            number
+  unit_price?:          number
+  unit_cost?:           number
+  sort_order?:          number
 }
 
 export async function updateItem(

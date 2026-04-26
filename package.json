@@ -14,7 +14,7 @@
     "deploy": "npm run build && git add -A && (git diff --cached --quiet || git commit -m \"deploy: $(date +'%Y-%m-%d %H:%M')\") && git push origin main && echo '\\n✓ Push feito. Vercel vai buildar em ~60s → https://vercel.com/dashboard'"
   },
   "dependencies": {
-    "@react-pdf/renderer": "^4.3.3",
+    "@react-pdf/renderer": "^4.5.1",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.1",
     "browser-image-compression": "^2.0.2",
