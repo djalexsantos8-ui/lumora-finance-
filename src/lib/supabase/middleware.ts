@@ -108,11 +108,12 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Rotas públicas (não exigem login)
-  const publicRoutes = ['/login', '/signup', '/forgot-password']
+  // /aceitar-convite/* permite landing pública com login redirect interno
+  const publicRoutes = ['/login', '/signup', '/forgot-password', '/aceitar-convite']
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route))
 
   // Rotas excluídas do subscription guard (acessíveis mesmo com acesso bloqueado)
-  const bypassRoutes = ['/upgrade', '/api/stripe', '/api/auth']
+  const bypassRoutes = ['/upgrade', '/api/stripe', '/api/auth', '/aceitar-convite']
   const isBypassRoute = bypassRoutes.some(route => pathname.startsWith(route))
 
   // Rota raiz redireciona para login ou dashboard
@@ -129,7 +130,8 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Usuário logado tentando acessar rota de auth
-  if (user && isPublicRoute) {
+  // (mas /aceitar-convite/* deve passar mesmo logado pra renderizar o aceite)
+  if (user && isPublicRoute && !pathname.startsWith('/aceitar-convite')) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 

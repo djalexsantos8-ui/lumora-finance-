@@ -277,10 +277,11 @@ export default async function V2DashboardPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-[#D4A853]/70">
           Atalhos
         </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Shortcut href="/v2/budgets/new"  emoji="➕" label="Novo orçamento"     hint="Cria orçamento V2 com tipo + cliente" />
           <Shortcut href="/v2/budgets"      emoji="📋" label="Orçamentos"          hint={`${recentBudgets.length} no histórico`} />
           <Shortcut href="/v2/freelancers"  emoji="👥" label="Freelancers"         hint="Sua rede de confiança" />
+          <Shortcut href="/v2/equipe"       emoji="🤝" label="Equipe"               hint="Convidar membros pro workspace" />
           <Shortcut href="/dashboard"       emoji="🏠" label="Voltar pra V1"       hint="Dashboard V1 em produção" />
         </div>
       </section>
