@@ -381,6 +381,103 @@ export async function saveBudgetVersion(
   return { ok: true, versionNumber: nextNumber, id: data.id }
 }
 
+// ─── EPIC-23: Datas de filmagem ─────────────────────────────────────────────
+
+export interface ShootingDateRow {
+  id:               string
+  date_start:       string
+  date_end:         string | null
+  time_start:       string | null
+  time_end:         string | null
+  label:            string | null
+  local_descricao:  string | null
+  local_endereco:   string | null
+  notes:            string | null
+  order_idx:        number
+}
+
+export async function listShootingDates(budgetId: string): Promise<ShootingDateRow[]> {
+  const sb = await createClient()
+  const { data } = await sb
+    .from('shooting_dates_v2')
+    .select('id, date_start, date_end, time_start, time_end, label, local_descricao, local_endereco, notes, order_idx')
+    .eq('budget_id', budgetId)
+    .order('order_idx', { ascending: true })
+    .order('date_start', { ascending: true })
+  return (data ?? []) as ShootingDateRow[]
+}
+
+export async function addShootingDate(input: {
+  budgetId:         string
+  date_start:       string
+  date_end?:        string | null
+  time_start?:      string | null
+  time_end?:        string | null
+  label?:           string | null
+  local_descricao?: string | null
+}): Promise<ActionResult & { id?: string }> {
+  const sb = await createClient()
+
+  const { data: budget } = await sb
+    .from('budgets_v2')
+    .select('workspace_id')
+    .eq('id', input.budgetId)
+    .maybeSingle()
+  if (!budget) return { ok: false, error: 'budget_not_found' }
+
+  const { count } = await sb
+    .from('shooting_dates_v2')
+    .select('id', { count: 'exact', head: true })
+    .eq('budget_id', input.budgetId)
+
+  const { data, error } = await sb
+    .from('shooting_dates_v2')
+    .insert({
+      budget_id:        input.budgetId,
+      workspace_id:     budget.workspace_id,
+      date_start:       input.date_start,
+      date_end:         input.date_end ?? null,
+      time_start:       input.time_start ?? null,
+      time_end:         input.time_end ?? null,
+      label:            input.label ?? null,
+      local_descricao:  input.local_descricao ?? null,
+      order_idx:        count ?? 0,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'insert_failed' }
+  revalidatePath(`/v2/budgets/${input.budgetId}`)
+  return { ok: true, id: data.id }
+}
+
+export async function updateShootingDate(
+  dateId: string,
+  patch: Partial<Omit<ShootingDateRow, 'id'>>
+): Promise<ActionResult> {
+  const sb = await createClient()
+  const { error, data } = await sb
+    .from('shooting_dates_v2')
+    .update(patch as Record<string, unknown>)
+    .eq('id', dateId)
+    .select('budget_id')
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (data?.budget_id) revalidatePath(`/v2/budgets/${data.budget_id}`)
+  return { ok: true }
+}
+
+export async function removeShootingDate(
+  dateId: string,
+  budgetId: string
+): Promise<ActionResult> {
+  const sb = await createClient()
+  const { error } = await sb.from('shooting_dates_v2').delete().eq('id', dateId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/v2/budgets/${budgetId}`)
+  return { ok: true }
+}
+
 export async function restoreVersionAsCurrent(
   versionId: string
 ): Promise<ActionResult> {

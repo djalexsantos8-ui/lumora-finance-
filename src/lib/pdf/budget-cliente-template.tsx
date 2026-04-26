@@ -55,11 +55,22 @@ interface ItemForPdf {
   is_encargo:          boolean
 }
 
+export interface ShootingDateForPdf {
+  date_start:       string
+  date_end:         string | null
+  time_start:       string | null
+  time_end:         string | null
+  label:            string | null
+  local_descricao:  string | null
+  order_idx:        number
+}
+
 export interface BudgetClientePdfProps {
   workspaceName:  string
   budget:         BudgetForPdf
   items:          ItemForPdf[]
   client:         ClienteOption | null
+  shootingDates?: ShootingDateForPdf[]
 }
 
 const styles = StyleSheet.create({
@@ -106,6 +117,12 @@ const styles = StyleSheet.create({
   letterH:       { fontSize: 12, fontWeight: 700, color: '#0a0a0a', marginTop: 8, marginBottom: 4 },
   letterPara:    { fontSize: 10, color: '#0a0a0a', lineHeight: 1.5, marginBottom: 6 },
 
+  datesSection:  { marginBottom: 14 },
+  dateRow:       { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  dateMain:      { fontSize: 10, fontWeight: 700, color: '#0a0a0a' },
+  dateLabel:     { fontSize: 9, color: '#525252', marginTop: 2 },
+  dateLocal:     { fontSize: 9, color: '#737373', marginTop: 2 },
+
   footer:      {
     position: 'absolute', bottom: 24, left: 40, right: 40,
     fontSize: 8, color: '#a3a3a3', textAlign: 'center',
@@ -121,11 +138,23 @@ const fmtDate = (iso: string | null) => {
   try { return new Date(iso).toLocaleDateString('pt-BR') } catch { return iso }
 }
 
+function formatDateLine(d: ShootingDateForPdf): string {
+  const start = fmtDate(d.date_start)
+  const end   = d.date_end && d.date_end !== d.date_start ? fmtDate(d.date_end) : null
+  const dateStr = end ? `${start} a ${end}` : start
+  if (d.time_start) {
+    const timeStr = d.time_end ? `${d.time_start.slice(0,5)}–${d.time_end.slice(0,5)}` : d.time_start.slice(0,5)
+    return `${dateStr} · ${timeStr}`
+  }
+  return dateStr
+}
+
 export function BudgetClientePdf({
   workspaceName,
   budget,
   items,
   client,
+  shootingDates,
 }: BudgetClientePdfProps): ReactElement {
   const visibleItems = items.filter((i) => !i.is_encargo)
   const encargoItems = items.filter((i) => i.is_encargo)
@@ -200,6 +229,22 @@ export function BudgetClientePdf({
               prazo_entrega:   budget.delivery_days
                 ? `${budget.delivery_days} dias após aprovação`
                 : null,
+            })}
+          </View>
+        ) : null}
+
+        {shootingDates && shootingDates.length > 0 ? (
+          <View style={styles.datesSection}>
+            <Text style={styles.sectionTitle}>Datas de filmagem</Text>
+            {shootingDates.map((d, idx) => {
+              const main = formatDateLine(d)
+              return (
+                <View key={idx} style={styles.dateRow} wrap={false}>
+                  <Text style={styles.dateMain}>{main}</Text>
+                  {d.label ? <Text style={styles.dateLabel}>{d.label}</Text> : null}
+                  {d.local_descricao ? <Text style={styles.dateLocal}>📍 {d.local_descricao}</Text> : null}
+                </View>
+              )
             })}
           </View>
         ) : null}

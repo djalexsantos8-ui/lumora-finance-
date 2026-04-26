@@ -26,7 +26,7 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const [budgetRes, itemsRes] = await Promise.all([
+  const [budgetRes, itemsRes, datesRes] = await Promise.all([
     supabase
       .from('budgets_v2')
       .select(`
@@ -44,6 +44,12 @@ export async function GET(
       .select('description, description_visible, category, unit, days, people, quantity, unit_price, total, is_encargo')
       .eq('budget_id', id)
       .order('sort_order', { ascending: true }),
+    supabase
+      .from('shooting_dates_v2')
+      .select('date_start, date_end, time_start, time_end, label, local_descricao, order_idx')
+      .eq('budget_id', id)
+      .order('order_idx', { ascending: true })
+      .order('date_start', { ascending: true }),
   ])
 
   if (!budgetRes.data) {
@@ -103,6 +109,15 @@ export async function GET(
         is_encargo:          Boolean(i.is_encargo),
       }))}
       client={clientRes.data ?? null}
+      shootingDates={(datesRes.data ?? []).map((d) => ({
+        date_start:       d.date_start,
+        date_end:         d.date_end,
+        time_start:       d.time_start,
+        time_end:         d.time_end,
+        label:            d.label,
+        local_descricao:  d.local_descricao,
+        order_idx:        Number(d.order_idx ?? 0),
+      }))}
     />
   )
 

@@ -14,7 +14,7 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
-  const [budgetRes, itemsRes, clientsRes, templatesRes, versionsRes, projectTypes] = await Promise.all([
+  const [budgetRes, itemsRes, clientsRes, templatesRes, versionsRes, projectTypes, datesRes] = await Promise.all([
     supabase.from('budgets_v2').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('budget_items_v2')
@@ -38,6 +38,12 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
       .order('version_number', { ascending: false })
       .limit(20),
     getProjectTypes(),
+    supabase
+      .from('shooting_dates_v2')
+      .select('id, date_start, date_end, time_start, time_end, label, local_descricao, local_endereco, notes, order_idx')
+      .eq('budget_id', id)
+      .order('order_idx', { ascending: true })
+      .order('date_start', { ascending: true }),
   ])
 
   if (!budgetRes.data) notFound()
@@ -68,6 +74,18 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
         created_at:        v.created_at,
       }))}
       projectTypes={projectTypes}
+      shootingDates={(datesRes.data ?? []) as Array<{
+        id:               string
+        date_start:       string
+        date_end:         string | null
+        time_start:       string | null
+        time_end:         string | null
+        label:            string | null
+        local_descricao:  string | null
+        local_endereco:   string | null
+        notes:            string | null
+        order_idx:        number
+      }>}
     />
   )
 }

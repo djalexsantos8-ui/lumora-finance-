@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { calcBudgetTotals, calcItemTotals, fmtBRL, rentMetaFromPct, type BudgetItemV2 } from '@/lib/v2/budget-calc'
 import { AVAILABLE_VARS } from '@/lib/budgets/letter-vars'
 import {
-  addItem, removeItem, restoreVersionAsCurrent, saveBudget, saveBudgetVersion,
-  saveLetter, saveLetterTemplate, updateItem,
+  addItem, addShootingDate, removeItem, removeShootingDate,
+  restoreVersionAsCurrent, saveBudget, saveBudgetVersion,
+  saveLetter, saveLetterTemplate, updateItem, updateShootingDate,
 } from './actions'
 
 /**
@@ -72,6 +73,19 @@ interface BudgetVersion {
   created_at:        string
 }
 
+interface ShootingDate {
+  id:               string
+  date_start:       string
+  date_end:         string | null
+  time_start:       string | null
+  time_end:         string | null
+  label:            string | null
+  local_descricao:  string | null
+  local_endereco:   string | null
+  notes:            string | null
+  order_idx:        number
+}
+
 interface ItemRow extends BudgetItemV2 {
   id:                  string
   budget_id:           string
@@ -96,6 +110,7 @@ interface Props {
   letterTemplates:  LetterTemplate[]
   versions:         BudgetVersion[]
   projectTypes:     ProjectTypeOption[]
+  shootingDates:    ShootingDate[]
 }
 
 const num = (v: unknown): number => {
@@ -106,14 +121,15 @@ const num = (v: unknown): number => {
 
 export default function BudgetEditorClient({
   budget: initialBudget, initialItems, clients, letterTemplates,
-  versions: initialVersions, projectTypes,
+  versions: initialVersions, projectTypes, shootingDates: initialDates,
 }: Props) {
   const [budget, setBudget]   = useState<BudgetRow>(initialBudget)
   const [items, setItems]     = useState<ItemRow[]>(initialItems)
-  const [tab, setTab]         = useState<'items' | 'carta'>('items')
+  const [tab, setTab]         = useState<'items' | 'carta' | 'datas'>('items')
   const [letterMd, setLetterMd] = useState<string>(initialBudget.letter_text_md ?? '')
   const [templates, setTemplates] = useState<LetterTemplate[]>(letterTemplates)
   const [versions, setVersions] = useState<BudgetVersion[]>(initialVersions)
+  const [dates, setDates]     = useState<ShootingDate[]>(initialDates)
   const [pending, startTx]    = useTransition()
   const [savedFlash, setFlash] = useState<string | null>(null)
 
@@ -288,6 +304,65 @@ export default function BudgetEditorClient({
     })
   }
 
+  // ── EPIC-23: handlers de datas de filmagem ────────────────────────────────
+  async function handleAddDate() {
+    // Default: hoje + 7 dias
+    const today = new Date()
+    today.setDate(today.getDate() + 7)
+    const iso = today.toISOString().slice(0, 10)
+    startTx(async () => {
+      const r = await addShootingDate({ budgetId: budget.id, date_start: iso })
+      if (!r.ok) {
+        alert(`Falha: ${r.error}`)
+        return
+      }
+      const newId = r.id ?? `tmp-${Date.now()}`
+      setDates((prev) => [
+        ...prev,
+        {
+          id:               newId,
+          date_start:       iso,
+          date_end:         null,
+          time_start:       null,
+          time_end:         null,
+          label:            null,
+          local_descricao:  null,
+          local_endereco:   null,
+          notes:            null,
+          order_idx:        prev.length,
+        },
+      ])
+      flash('Data adicionada')
+    })
+  }
+
+  function scheduleDateUpdate(dateId: string, patch: Partial<ShootingDate>) {
+    setDates((prev) => prev.map((d) => (d.id === dateId ? { ...d, ...patch } : d)))
+    // Reusa o saveTimer simplificado por id
+    const key = `date-${dateId}`
+    const t = (itemTimers.current as Record<string, ReturnType<typeof setTimeout>>)[key]
+    if (t) clearTimeout(t)
+    ;(itemTimers.current as Record<string, ReturnType<typeof setTimeout>>)[key] = setTimeout(() => {
+      startTx(async () => {
+        const r = await updateShootingDate(dateId, patch)
+        if (r.ok) flash('Data salva')
+      })
+    }, 600)
+  }
+
+  async function handleRemoveDate(dateId: string) {
+    if (!confirm('Remover essa data?')) return
+    startTx(async () => {
+      const r = await removeShootingDate(dateId, budget.id)
+      if (r.ok) {
+        setDates((prev) => prev.filter((d) => d.id !== dateId))
+        flash('Data removida')
+      } else {
+        alert(`Falha: ${r.error}`)
+      }
+    })
+  }
+
   // Cleanup timers no unmount
   useEffect(() => {
     return () => {
@@ -449,7 +524,7 @@ export default function BudgetEditorClient({
         />
       </div>
 
-      {/* Tabs Itens / Carta */}
+      {/* Tabs Itens / Carta / Datas */}
       <div className="mb-3 flex items-center gap-2 border-b border-[#1f1f1f]">
         <TabButton active={tab === 'items'} onClick={() => setTab('items')}>
           📋 Itens
@@ -457,13 +532,101 @@ export default function BudgetEditorClient({
         <TabButton active={tab === 'carta'} onClick={() => setTab('carta')}>
           ✉️ Carta
         </TabButton>
+        <TabButton active={tab === 'datas'} onClick={() => setTab('datas')}>
+          📅 Datas{dates.length > 0 ? ` (${dates.length})` : ''}
+        </TabButton>
       </div>
 
       {/* Layout 2 colunas: conteúdo principal + sidebar settings */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Coluna principal */}
         <div className="lg:col-span-2">
-        {tab === 'carta' ? (
+        {tab === 'datas' ? (
+          <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-[#a3a3a3]">
+                Datas de filmagem
+              </h3>
+              <button
+                type="button"
+                onClick={handleAddDate}
+                disabled={pending}
+                className="rounded-md border border-[#D4A853]/30 bg-[#D4A853]/5 px-3 py-1.5 text-xs font-semibold text-[#D4A853] hover:bg-[#D4A853]/10 disabled:opacity-50"
+              >
+                + Adicionar data
+              </button>
+            </div>
+
+            {dates.length === 0 ? (
+              <p className="text-xs text-[#525252]">
+                Nenhuma data ainda. Adicione as datas reais de captação — multi-dia
+                (do dia X ao Y), com horário e local. Tudo aparece organizado no
+                PDF cliente.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {dates.map((d, idx) => (
+                  <li
+                    key={d.id}
+                    className="rounded-lg border border-[#1f1f1f] bg-[#111] p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#737373]">
+                        Data #{idx + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDate(d.id)}
+                        title="Remover data"
+                        className="text-[10px] text-[#525252] hover:text-red-400"
+                      >
+                        ✕ remover
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      <DateField
+                        label="Início"
+                        value={d.date_start}
+                        onChange={(v) => scheduleDateUpdate(d.id, { date_start: v })}
+                      />
+                      <DateField
+                        label="Fim (opcional)"
+                        value={d.date_end ?? ''}
+                        onChange={(v) => scheduleDateUpdate(d.id, { date_end: v || null })}
+                      />
+                      <TimeField
+                        label="Hora início"
+                        value={d.time_start ?? ''}
+                        onChange={(v) => scheduleDateUpdate(d.id, { time_start: v || null })}
+                      />
+                      <TimeField
+                        label="Hora fim"
+                        value={d.time_end ?? ''}
+                        onChange={(v) => scheduleDateUpdate(d.id, { time_end: v || null })}
+                      />
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <TextField
+                        label="Etapa / Label"
+                        placeholder="Cerimônia, almoço, after…"
+                        value={d.label ?? ''}
+                        onChange={(v) => scheduleDateUpdate(d.id, { label: v || null })}
+                      />
+                      <TextField
+                        label="Local"
+                        placeholder="Hotel Fasano · Sala Veneza"
+                        value={d.local_descricao ?? ''}
+                        onChange={(v) => scheduleDateUpdate(d.id, { local_descricao: v || null })}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : tab === 'carta' ? (
           <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-[#a3a3a3]">
@@ -692,6 +855,74 @@ function Kpi({ label, value, hint, color }: { label: string; value: string; hint
       <div className="mb-1 text-[10px] uppercase tracking-wider text-[#737373]">{label}</div>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
       <div className="mt-1 text-[10px] text-[#525252]">{hint}</div>
+    </div>
+  )
+}
+
+function DateField({
+  label, value, onChange,
+}: {
+  label:    string
+  value:    string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+        {label}
+      </label>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-2 py-1.5 text-xs text-white focus:border-[#D4A853] focus:outline-none"
+      />
+    </div>
+  )
+}
+
+function TimeField({
+  label, value, onChange,
+}: {
+  label:    string
+  value:    string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+        {label}
+      </label>
+      <input
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-2 py-1.5 text-xs text-white focus:border-[#D4A853] focus:outline-none"
+      />
+    </div>
+  )
+}
+
+function TextField({
+  label, value, onChange, placeholder,
+}: {
+  label:        string
+  value:        string
+  onChange:     (v: string) => void
+  placeholder?: string
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-2 py-1.5 text-xs text-white placeholder-[#525252] focus:border-[#D4A853] focus:outline-none"
+      />
     </div>
   )
 }
