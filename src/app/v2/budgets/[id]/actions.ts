@@ -264,3 +264,149 @@ export async function deleteLetterTemplate(templateId: string): Promise<ActionRe
   if (error) return { ok: false, error: error.message }
   return { ok: true }
 }
+
+// ─── EPIC-18: Histórico de versões ──────────────────────────────────────────
+
+export interface BudgetVersionRow {
+  id:                string
+  version_number:    number
+  label:             string | null
+  total_value_cents: number
+  created_at:        string
+}
+
+export async function listBudgetVersions(budgetId: string): Promise<BudgetVersionRow[]> {
+  const sb = await createClient()
+  const { data } = await sb
+    .from('budget_versions_v2')
+    .select('id, version_number, label, total_value_cents, created_at')
+    .eq('budget_id', budgetId)
+    .order('version_number', { ascending: false })
+  return (data ?? []) as BudgetVersionRow[]
+}
+
+export async function saveBudgetVersion(
+  budgetId: string,
+  label?: string | null
+): Promise<ActionResult & { versionNumber?: number; id?: string }> {
+  const sb = await createClient()
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return { ok: false, error: 'unauthorized' }
+
+  // Carrega estado completo
+  const [budgetRes, itemsRes] = await Promise.all([
+    sb.from('budgets_v2').select('*').eq('id', budgetId).maybeSingle(),
+    sb.from('budget_items_v2').select('*').eq('budget_id', budgetId).order('sort_order'),
+  ])
+  if (!budgetRes.data) return { ok: false, error: 'budget_not_found' }
+  const budget = budgetRes.data
+  const items  = itemsRes.data ?? []
+
+  // Próximo number (race protegido por unique constraint)
+  const { data: lastVer } = await sb
+    .from('budget_versions_v2')
+    .select('version_number')
+    .eq('budget_id', budgetId)
+    .order('version_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextNumber = ((lastVer?.version_number as number | undefined) ?? 0) + 1
+
+  const totalCents = Math.round(Number(budget.total ?? 0) * 100)
+
+  const snapshot = {
+    snapshot_version:    1,
+    snapshot_at:         new Date().toISOString(),
+    budget: {
+      number:              budget.number,
+      name:                budget.name,
+      client_id:           budget.client_id,
+      agency_id:           budget.agency_id,
+      project_type:        budget.project_type,
+      status:              budget.status,
+      start_date:          budget.start_date,
+      end_date:            budget.end_date,
+      location:            budget.location,
+      margin_percent:      budget.margin_percent,
+      tax_percent:         budget.tax_percent,
+      discount_amount:     budget.discount_amount,
+      payment_terms:       budget.payment_terms,
+      validity_days:       budget.validity_days,
+      delivery_days:       budget.delivery_days,
+      revisions_included:  budget.revisions_included,
+      notes_internal:      budget.notes_internal,
+      notes_client:        budget.notes_client,
+      letter_text_md:      budget.letter_text_md,
+      subtotal:            budget.subtotal,
+      total_cost:          budget.total_cost,
+      margin_amount:       budget.margin_amount,
+      tax_amount:          budget.tax_amount,
+      total:               budget.total,
+    },
+    items: items.map((i) => ({
+      description:         i.description,
+      description_visible: i.description_visible,
+      category:            i.category,
+      unit:                i.unit,
+      days:                i.days,
+      people:              i.people,
+      quantity:            i.quantity,
+      unit_price:          i.unit_price,
+      unit_cost:           i.unit_cost,
+      total:               i.total,
+      total_cost:          i.total_cost,
+      sort_order:          i.sort_order,
+      is_encargo:          i.is_encargo,
+    })),
+  }
+
+  const { data, error } = await sb
+    .from('budget_versions_v2')
+    .insert({
+      budget_id:         budgetId,
+      workspace_id:      budget.workspace_id,
+      version_number:    nextNumber,
+      label:             label?.trim() || `Versão ${nextNumber}`,
+      snapshot,
+      total_value_cents: totalCents,
+      created_by:        user.id,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'insert_failed' }
+  revalidatePath(`/v2/budgets/${budgetId}`)
+  return { ok: true, versionNumber: nextNumber, id: data.id }
+}
+
+export async function restoreVersionAsCurrent(
+  versionId: string
+): Promise<ActionResult> {
+  const sb = await createClient()
+
+  const { data: version } = await sb
+    .from('budget_versions_v2')
+    .select('snapshot, budget_id, workspace_id')
+    .eq('id', versionId)
+    .maybeSingle()
+  if (!version) return { ok: false, error: 'version_not_found' }
+
+  const snap = version.snapshot as { budget: Record<string, unknown>; items: Record<string, unknown>[] }
+
+  // 1. Update header (NÃO mexe em number — é único por workspace)
+  const headerPayload = { ...snap.budget }
+  delete (headerPayload as { number?: unknown }).number
+  await sb.from('budgets_v2').update(headerPayload).eq('id', version.budget_id)
+
+  // 2. Replace items
+  await sb.from('budget_items_v2').delete().eq('budget_id', version.budget_id)
+  if (snap.items.length > 0) {
+    await sb.from('budget_items_v2').insert(
+      snap.items.map((i) => ({ ...i, budget_id: version.budget_id, workspace_id: version.workspace_id }))
+    )
+  }
+
+  revalidatePath(`/v2/budgets/${version.budget_id}`)
+  return { ok: true }
+}

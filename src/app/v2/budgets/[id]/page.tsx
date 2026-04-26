@@ -13,7 +13,7 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
-  const [budgetRes, itemsRes, clientsRes, templatesRes] = await Promise.all([
+  const [budgetRes, itemsRes, clientsRes, templatesRes, versionsRes] = await Promise.all([
     supabase.from('budgets_v2').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('budget_items_v2')
@@ -30,6 +30,12 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
       .select('id, name, text_md, is_default')
       .order('is_default', { ascending: false })
       .order('name', { ascending: true }),
+    supabase
+      .from('budget_versions_v2')
+      .select('id, version_number, label, total_value_cents, created_at')
+      .eq('budget_id', id)
+      .order('version_number', { ascending: false })
+      .limit(20),
   ])
 
   if (!budgetRes.data) notFound()
@@ -51,6 +57,13 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
         name:       t.name,
         text_md:    t.text_md,
         is_default: Boolean(t.is_default),
+      }))}
+      versions={(versionsRes.data ?? []).map((v) => ({
+        id:                v.id,
+        version_number:    v.version_number,
+        label:             v.label,
+        total_value_cents: Number(v.total_value_cents ?? 0),
+        created_at:        v.created_at,
       }))}
     />
   )

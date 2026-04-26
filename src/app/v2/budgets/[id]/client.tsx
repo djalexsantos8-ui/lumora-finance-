@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { calcBudgetTotals, calcItemTotals, fmtBRL, rentMetaFromPct, type BudgetItemV2 } from '@/lib/v2/budget-calc'
 import { AVAILABLE_VARS } from '@/lib/budgets/letter-vars'
 import {
-  addItem, removeItem, saveBudget, saveLetter, saveLetterTemplate, updateItem,
+  addItem, removeItem, restoreVersionAsCurrent, saveBudget, saveBudgetVersion,
+  saveLetter, saveLetterTemplate, updateItem,
 } from './actions'
 
 /**
@@ -52,6 +53,14 @@ interface LetterTemplate {
   is_default: boolean
 }
 
+interface BudgetVersion {
+  id:                string
+  version_number:    number
+  label:             string | null
+  total_value_cents: number
+  created_at:        string
+}
+
 interface ItemRow extends BudgetItemV2 {
   id:                  string
   budget_id:           string
@@ -74,6 +83,7 @@ interface Props {
   initialItems:     ItemRow[]
   clients:          ClientOption[]
   letterTemplates:  LetterTemplate[]
+  versions:         BudgetVersion[]
 }
 
 const num = (v: unknown): number => {
@@ -82,12 +92,15 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 
-export default function BudgetEditorClient({ budget: initialBudget, initialItems, clients, letterTemplates }: Props) {
+export default function BudgetEditorClient({
+  budget: initialBudget, initialItems, clients, letterTemplates, versions: initialVersions,
+}: Props) {
   const [budget, setBudget]   = useState<BudgetRow>(initialBudget)
   const [items, setItems]     = useState<ItemRow[]>(initialItems)
   const [tab, setTab]         = useState<'items' | 'carta'>('items')
   const [letterMd, setLetterMd] = useState<string>(initialBudget.letter_text_md ?? '')
   const [templates, setTemplates] = useState<LetterTemplate[]>(letterTemplates)
+  const [versions, setVersions] = useState<BudgetVersion[]>(initialVersions)
   const [pending, startTx]    = useTransition()
   const [savedFlash, setFlash] = useState<string | null>(null)
 
@@ -212,6 +225,50 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
         flash('Template salvo')
       } else {
         alert(`Falha: ${r.error}`)
+      }
+    })
+  }
+
+  // ── EPIC-18: handlers de versão ───────────────────────────────────────────
+  async function handleSaveVersion() {
+    const label = prompt(
+      'O que mudou nessa versão? (opcional)',
+      `Versão ${(versions[0]?.version_number ?? 0) + 1}`
+    )
+    if (label === null) return // cancel
+
+    startTx(async () => {
+      const r = await saveBudgetVersion(budget.id, label)
+      if (r.ok) {
+        setVersions((prev) => [
+          {
+            id:                r.id ?? `tmp-${Date.now()}`,
+            version_number:    r.versionNumber ?? (prev[0]?.version_number ?? 0) + 1,
+            label:             label || null,
+            total_value_cents: Math.round(num(budget.total) * 100),
+            created_at:        new Date().toISOString(),
+          },
+          ...prev,
+        ])
+        flash(`Versão ${r.versionNumber} salva`)
+      } else {
+        alert(`Falha ao salvar versão: ${r.error}`)
+      }
+    })
+  }
+
+  async function handleRestoreVersion(v: BudgetVersion) {
+    if (!confirm(`Restaurar versão ${v.version_number}? O estado atual será sobrescrito.\n\nA versão atual NÃO é salva automaticamente — clique em "Salvar versão" antes se quiser preservá-la.`)) {
+      return
+    }
+    startTx(async () => {
+      const r = await restoreVersionAsCurrent(v.id)
+      if (r.ok) {
+        flash(`Versão ${v.version_number} restaurada — recarregando…`)
+        // Refresh hard pra recarregar items + budget atualizados do server
+        setTimeout(() => window.location.reload(), 600)
+      } else {
+        alert(`Falha ao restaurar: ${r.error}`)
       }
     })
   }
@@ -547,6 +604,13 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
             margemPct={totals.grossMarginPct}
             markupPct={totals.markupPct}
           />
+
+          <VersionsBlock
+            versions={versions}
+            disabled={pending}
+            onSave={handleSaveVersion}
+            onRestore={handleRestoreVersion}
+          />
         </div>
       </div>
     </div>
@@ -735,6 +799,81 @@ function ItemRowEditor({
       </td>
     </tr>
   )
+}
+
+function VersionsBlock({
+  versions, disabled, onSave, onRestore,
+}: {
+  versions:  BudgetVersion[]
+  disabled:  boolean
+  onSave:    () => void
+  onRestore: (v: BudgetVersion) => void
+}) {
+  return (
+    <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-[#a3a3a3]">
+          Versões
+        </h3>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={disabled}
+          className="rounded-md border border-[#D4A853]/30 bg-[#D4A853]/5 px-2.5 py-1 text-[10px] font-semibold text-[#D4A853] hover:bg-[#D4A853]/10 disabled:opacity-50"
+        >
+          + Salvar versão
+        </button>
+      </div>
+
+      {versions.length === 0 ? (
+        <p className="text-xs text-[#525252]">
+          Nenhuma versão salva ainda. Salve uma versão antes de enviar pro cliente
+          — fica congelada como prova do que foi combinado.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {versions.map((v) => (
+            <li
+              key={v.id}
+              className="rounded-lg border border-[#1f1f1f] bg-[#111] p-2.5 hover:bg-[#161616]"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-white">
+                  v{v.version_number}
+                </span>
+                <span className="text-[10px] text-[#525252]">
+                  {fmtVerDate(v.created_at)}
+                </span>
+              </div>
+              {v.label ? (
+                <div className="mt-1 truncate text-[11px] text-[#a3a3a3]" title={v.label}>
+                  {v.label}
+                </div>
+              ) : null}
+              <div className="mt-1 font-mono text-[11px] text-[#D4A853]">
+                {fmtBRL(v.total_value_cents / 100)}
+              </div>
+              <button
+                type="button"
+                onClick={() => onRestore(v)}
+                disabled={disabled}
+                className="mt-2 text-[10px] text-[#737373] underline-offset-2 hover:text-[#D4A853] hover:underline disabled:opacity-50"
+              >
+                Restaurar como atual
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function fmtVerDate(iso: string): string {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  } catch { return iso }
 }
 
 function RentabilidadeBlock({
