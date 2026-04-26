@@ -15,11 +15,15 @@ type Task = {
   priority: 'P0' | 'P1' | 'P2' | 'P3'
   status: 'pending' | 'doing' | 'blocked' | 'validating' | 'done' | 'cancelled'
   result: string | null
+  result_notes: string | null
   blocker: string | null
   next_step: string | null
   notes: string | null
   parent_task_id: string | null
   auto_created: boolean
+  queued_for_claude: boolean
+  last_action_by: string | null
+  last_action_at: string | null
   started_at: string | null
   finished_at: string | null
   created_at: string
