@@ -2,20 +2,20 @@ import { APP_BRAND, APP_VERSION, APP_STAGE, copyrightYear } from '@/lib/app-vers
 
 /**
  * Copyright dinâmico reusável — ano sempre via runtime (SSR).
+ * Marca jurídica: APP_BRAND = "Lumora Solutions" (não "Lumora Finance").
  *
  * Variantes:
  *   - minimal: "© 2026 Lumora Solutions"
- *   - full:    "© 2026 Lumora Solutions · versão beta v2.45 · Termos · Privacidade"
- *   - email:   compactado pra Resend HTML templates (string concat)
- *   - pdf:     compactado pra react-pdf/renderer
+ *   - auth:    "© 2026 Lumora Solutions. Todos os direitos reservados." (centralizado, pra /login, /signup, /upgrade)
+ *   - full:    rodapé estendido com Termos · Privacidade · versão (pra landing/admin)
  *
  * Uso:
- *   <FooterCopyright variant="minimal" />
+ *   <FooterCopyright variant="auth" />
  *   <FooterCopyright variant="full" showVersion showLinks />
  */
 
 interface Props {
-  variant?: 'minimal' | 'full'
+  variant?: 'minimal' | 'auth' | 'full'
   showVersion?: boolean
   showLinks?: boolean
   className?: string
@@ -34,6 +34,14 @@ export function FooterCopyright({
       <span className={`text-xs text-[#525252] ${className}`}>
         © {year} {APP_BRAND}
       </span>
+    )
+  }
+
+  if (variant === 'auth') {
+    return (
+      <p className={`text-center text-[#525252] text-xs mt-6 ${className}`}>
+        © {year} {APP_BRAND}. Todos os direitos reservados.
+      </p>
     )
   }
 

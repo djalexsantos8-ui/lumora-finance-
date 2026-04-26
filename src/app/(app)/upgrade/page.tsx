@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import CheckoutButton from './checkout-button'
 import { PLANS, TRIAL_DAYS } from '@/lib/stripe/pricing'
+import { FooterCopyright } from '@/components/layout/footer-copyright'
 
 export const dynamic = 'force-dynamic'
 
@@ -195,9 +196,7 @@ export default async function UpgradePage({
           </p>
         </div>
 
-        <p className="text-center text-[#525252] text-xs mt-6">
-          © 2026 Lumora Finance. Todos os direitos reservados.
-        </p>
+        <FooterCopyright variant="auth" />
       </div>
     </div>
   )

@@ -1,3 +1,5 @@
+import { FooterCopyright } from '@/components/layout/footer-copyright'
+
 export default function AuthLayout({
   children,
 }: {
@@ -21,10 +23,8 @@ export default function AuthLayout({
           {children}
         </div>
 
-        {/* Footer */}
-        <p className="text-center text-[#525252] text-xs mt-6">
-          © 2026 Lumora Finance. Todos os direitos reservados.
-        </p>
+        {/* Footer — marca jurídica Lumora Solutions, ano dinâmico */}
+        <FooterCopyright variant="auth" />
       </div>
     </div>
   )
