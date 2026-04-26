@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import BudgetEditorClient from './client'
 import { DEFAULT_LETTER_MD } from '@/lib/budgets/letter-vars'
+import { getProjectTypes } from '@/lib/v2/project-types'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,7 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
   const { id } = await params
   const supabase = await createClient()
 
-  const [budgetRes, itemsRes, clientsRes, templatesRes, versionsRes] = await Promise.all([
+  const [budgetRes, itemsRes, clientsRes, templatesRes, versionsRes, projectTypes] = await Promise.all([
     supabase.from('budgets_v2').select('*').eq('id', id).maybeSingle(),
     supabase
       .from('budget_items_v2')
@@ -36,6 +37,7 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
       .eq('budget_id', id)
       .order('version_number', { ascending: false })
       .limit(20),
+    getProjectTypes(),
   ])
 
   if (!budgetRes.data) notFound()
@@ -65,6 +67,7 @@ export default async function BudgetEditorV2Page({ params }: PageProps) {
         total_value_cents: Number(v.total_value_cents ?? 0),
         created_at:        v.created_at,
       }))}
+      projectTypes={projectTypes}
     />
   )
 }

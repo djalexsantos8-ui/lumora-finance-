@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { fmtBRL } from '@/lib/v2/budget-calc'
+import { getProjectTypes, projectTypeDisplay } from '@/lib/v2/project-types'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,11 +13,14 @@ export const dynamic = 'force-dynamic'
 export default async function BudgetsV2ListPage() {
   const supabase = await createClient()
 
-  const { data: budgets } = await supabase
-    .from('budgets_v2')
-    .select('id, number, name, status, total, total_cost, start_date, created_at, client_id')
-    .order('created_at', { ascending: false })
-    .limit(100)
+  const [{ data: budgets }, projectTypes] = await Promise.all([
+    supabase
+      .from('budgets_v2')
+      .select('id, number, name, status, total, total_cost, start_date, created_at, client_id, project_type, project_type_other')
+      .order('created_at', { ascending: false })
+      .limit(100),
+    getProjectTypes(),
+  ])
 
   const list = budgets ?? []
 
@@ -59,6 +63,7 @@ export default async function BudgetsV2ListPage() {
               <tr>
                 <th className="px-4 py-3 text-left">Número</th>
                 <th className="px-4 py-3 text-left">Nome</th>
+                <th className="px-4 py-3 text-left">Tipo</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-right">Custo</th>
                 <th className="px-4 py-3 text-right">Valor</th>
@@ -71,6 +76,7 @@ export default async function BudgetsV2ListPage() {
                 const total  = Number(b.total ?? 0)
                 const margin = total - cost
                 const pct    = total > 0 ? (margin / total) * 100 : 0
+                const typeDisplay = projectTypeDisplay(b.project_type, b.project_type_other, projectTypes)
                 return (
                   <tr key={b.id} className="border-b border-[#1f1f1f] last:border-0 hover:bg-[#111]">
                     <td className="px-4 py-3">
@@ -85,6 +91,16 @@ export default async function BudgetsV2ListPage() {
                       <Link href={`/v2/budgets/${b.id}`} className="hover:underline">
                         {b.name || 'Sem nome'}
                       </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      {typeDisplay ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-[#a3a3a3]">
+                          <span>{typeDisplay.icon}</span>
+                          <span className="truncate max-w-[140px]">{typeDisplay.label}</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#525252]">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={b.status} />

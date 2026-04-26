@@ -26,6 +26,8 @@ interface BudgetRow {
   name:                string
   client_id:           string | null
   status:              string
+  project_type:        string | null
+  project_type_other:  string | null
   start_date:          string | null
   end_date:            string | null
   location:            string | null
@@ -44,6 +46,15 @@ interface BudgetRow {
   margin_amount:       number | string
   tax_amount:          number | string
   total:               number | string
+}
+
+interface ProjectTypeOption {
+  code:        string
+  label:       string
+  description: string
+  icon:        string
+  sort_order:  number
+  active:      boolean
 }
 
 interface LetterTemplate {
@@ -84,6 +95,7 @@ interface Props {
   clients:          ClientOption[]
   letterTemplates:  LetterTemplate[]
   versions:         BudgetVersion[]
+  projectTypes:     ProjectTypeOption[]
 }
 
 const num = (v: unknown): number => {
@@ -93,7 +105,8 @@ const num = (v: unknown): number => {
 }
 
 export default function BudgetEditorClient({
-  budget: initialBudget, initialItems, clients, letterTemplates, versions: initialVersions,
+  budget: initialBudget, initialItems, clients, letterTemplates,
+  versions: initialVersions, projectTypes,
 }: Props) {
   const [budget, setBudget]   = useState<BudgetRow>(initialBudget)
   const [items, setItems]     = useState<ItemRow[]>(initialItems)
@@ -117,6 +130,8 @@ export default function BudgetEditorClient({
           id:                  next.id,
           name:                next.name,
           client_id:           next.client_id,
+          project_type:        next.project_type,
+          project_type_other:  next.project_type_other,
           start_date:          next.start_date,
           end_date:            next.end_date,
           location:            next.location,
@@ -345,8 +360,8 @@ export default function BudgetEditorClient({
         </div>
       </div>
 
-      {/* Nome do projeto + cliente */}
-      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* Nome do projeto + cliente + tipo */}
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="md:col-span-2">
           <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
             Nome do projeto
@@ -373,6 +388,36 @@ export default function BudgetEditorClient({
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] uppercase tracking-wider text-[#737373]">
+            Tipo
+          </label>
+          <select
+            value={budget.project_type ?? ''}
+            onChange={(e) => scheduleHeaderSave({
+              ...budget,
+              project_type: e.target.value || null,
+              project_type_other: e.target.value === 'outro' ? budget.project_type_other : null,
+            })}
+            className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-2 text-sm text-white focus:border-[#D4A853] focus:outline-none"
+          >
+            <option value="">— sem tipo —</option>
+            {projectTypes.map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.icon} {t.label}
+              </option>
+            ))}
+          </select>
+          {budget.project_type === 'outro' && (
+            <input
+              type="text"
+              value={budget.project_type_other ?? ''}
+              onChange={(e) => scheduleHeaderSave({ ...budget, project_type_other: e.target.value })}
+              placeholder="Descreva o tipo"
+              className="mt-2 w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-1.5 text-xs text-[#a3a3a3] placeholder-[#525252] focus:border-[#D4A853] focus:outline-none"
+            />
+          )}
         </div>
       </div>
 

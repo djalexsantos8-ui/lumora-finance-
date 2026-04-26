@@ -20,6 +20,7 @@ interface SaveBudgetInput {
   client_id?:           string | null
   agency_id?:           string | null
   project_type?:        string | null
+  project_type_other?:  string | null
   start_date?:          string | null
   end_date?:            string | null
   location?:            string | null

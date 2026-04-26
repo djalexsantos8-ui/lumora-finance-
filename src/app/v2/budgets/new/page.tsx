@@ -1,22 +1,26 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getProjectTypes } from '@/lib/v2/project-types'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Form de criação rápida — pede só nome (e opcional cliente).
+ * Form de criação rápida — pede só nome (e opcional cliente + tipo).
  * Após criar, redireciona pro editor /v2/budgets/[id].
  */
 export default async function NewBudgetV2Page() {
   const supabase = await createClient()
 
-  const { data: clients } = await supabase
-    .from('clients')
-    .select('id, name')
-    .is('deleted_at', null)
-    .order('name')
-    .limit(200)
+  const [{ data: clients }, projectTypes] = await Promise.all([
+    supabase
+      .from('clients')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('name')
+      .limit(200),
+    getProjectTypes(),
+  ])
 
   async function createBudget(formData: FormData) {
     'use server'
@@ -24,8 +28,10 @@ export default async function NewBudgetV2Page() {
     const { data: { user } } = await sb.auth.getUser()
     if (!user) redirect('/login')
 
-    const name      = String(formData.get('name') ?? '').trim() || 'Novo orçamento'
-    const clientId  = String(formData.get('client_id') ?? '') || null
+    const name        = String(formData.get('name') ?? '').trim() || 'Novo orçamento'
+    const clientId    = String(formData.get('client_id') ?? '') || null
+    const projectType = String(formData.get('project_type') ?? '') || null
+    const otherText   = String(formData.get('project_type_other') ?? '').trim() || null
 
     // Resolve workspace ativo do user
     const { data: member } = await sb
@@ -45,12 +51,14 @@ export default async function NewBudgetV2Page() {
     const { data: budget, error } = await sb
       .from('budgets_v2')
       .insert({
-        workspace_id: member.workspace_id,
-        number:       numberRes ?? 'ORC-2026-???',
+        workspace_id:        member.workspace_id,
+        number:              numberRes ?? 'ORC-2026-???',
         name,
-        client_id:    clientId,
-        status:       'draft',
-        created_by:   user.id,
+        client_id:           clientId,
+        project_type:        projectType,
+        project_type_other:  projectType === 'outro' ? otherText : null,
+        status:              'draft',
+        created_by:          user.id,
       })
       .select('id')
       .single()
@@ -103,6 +111,30 @@ export default async function NewBudgetV2Page() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-[#a3a3a3]">
+            Tipo de projeto <span className="text-[#525252]">(opcional)</span>
+          </label>
+          <select
+            name="project_type"
+            defaultValue=""
+            className="w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-2.5 text-sm text-white focus:border-[#D4A853] focus:outline-none"
+          >
+            <option value="">— escolha o tipo —</option>
+            {projectTypes.map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.icon} {t.label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            name="project_type_other"
+            placeholder='Se "Outro", descreva aqui'
+            className="mt-2 w-full rounded-md border border-[#2a2a2a] bg-[#0d0d0d] px-3 py-2 text-xs text-[#a3a3a3] placeholder-[#525252] focus:border-[#D4A853] focus:outline-none"
+          />
         </div>
 
         <button
