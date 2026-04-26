@@ -172,9 +172,16 @@ function groupContainsActive(group: NavGroup, pathname: string): boolean {
 interface SidebarProps {
   userEmail: string
   isAdmin?:  boolean
+  /**
+   * Indicador de plano/trial — Server Component renderizado pelo layout
+   * e passado como ReactNode pra evitar query duplicada no client.
+   * Recebe `collapsed` props via clone se necessário (atualmente só renderiza
+   * em modo expandido).
+   */
+  planIndicator?: React.ReactNode
 }
 
-export default function Sidebar({ userEmail, isAdmin = false }: SidebarProps) {
+export default function Sidebar({ userEmail, isAdmin = false, planIndicator }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
 
@@ -258,8 +265,13 @@ export default function Sidebar({ userEmail, isAdmin = false }: SidebarProps) {
         )}
       </nav>
 
-      {/* Bottom: settings + colapso */}
+      {/* Bottom: plan indicator + settings + colapso */}
       <div className="py-4 px-2 border-t border-[#1a1a1a] space-y-0.5">
+        {/* Plan indicator V2 — só renderiza se user tem subscription_v2 ativa.
+            Em modo collapsed o indicator se reduz a ícone via prop interna
+            (controlada pelo Server Component). */}
+        {!collapsed && planIndicator}
+
         {isAdmin && (
           <Link
             href="/admin"

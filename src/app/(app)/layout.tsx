@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/sidebar'
+import PlanIndicator from '@/components/sidebar/plan-indicator'
+import { getPlanStateForUser } from '@/lib/billing/plan-state'
 import AppFooter from '@/components/layout/app-footer'
 import FeedbackWidget from '@/components/feedback/feedback-widget'
 import OnboardingOverlay from '@/components/onboarding/onboarding-overlay'
@@ -146,9 +148,16 @@ export default async function AppLayout({
 
   const showOnboarding = !onboardingCompleted && Boolean(workspaceId)
 
+  // Plan state V2 — null se user só V1 (PlanIndicator também trata)
+  const planState = await getPlanStateForUser(user.id)
+
   return (
     <div className="flex h-screen bg-[#0a0a0a] overflow-hidden">
-      <Sidebar userEmail={user.email ?? ''} isAdmin={isAdmin} />
+      <Sidebar
+        userEmail={user.email ?? ''}
+        isAdmin={isAdmin}
+        planIndicator={<PlanIndicator state={planState} />}
+      />
       <main className="flex-1 overflow-y-auto flex flex-col">
         <OfflineBanner />
         <div className="flex-1">{children}</div>
