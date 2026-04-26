@@ -28,6 +28,8 @@ interface Task {
   queued_for_claude: boolean
   last_action_by: string | null
   last_action_at: string | null
+  obsidian_url: string | null
+  obsidian_report_url: string | null
   started_at: string | null
   finished_at: string | null
   created_at: string
@@ -416,7 +418,31 @@ function ActionButtons({
 
   return (
     <>
-      <div className={compact ? 'inline-flex gap-1' : 'flex gap-2 flex-wrap'}>
+      <div className={compact ? 'inline-flex gap-1 flex-wrap justify-end' : 'flex gap-2 flex-wrap'}>
+        {t.obsidian_url && (
+          <a
+            href={t.obsidian_url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            className={`${cls} bg-[#1e1e2a] text-[#a3a3a3] hover:bg-[#2a2a3a] hover:text-white border border-[#2a2a3a]`}
+            title="Abrir super-prompt no Obsidian"
+          >
+            📓 Prompt
+          </a>
+        )}
+        {t.obsidian_report_url && (
+          <a
+            href={t.obsidian_report_url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            className={`${cls} bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30`}
+            title="Abrir relatório técnico no Obsidian"
+          >
+            📑 Relatório
+          </a>
+        )}
         {t.status === 'pending' && (
           <button disabled={disabled} onClick={handle(() => startTask(t.id))}
             className={`${cls} bg-[#D4A853]/15 text-[#D4A853] hover:bg-[#D4A853]/25 border border-[#D4A853]/40`}>

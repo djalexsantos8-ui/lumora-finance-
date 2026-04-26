@@ -24,6 +24,8 @@ type Task = {
   queued_for_claude: boolean
   last_action_by: string | null
   last_action_at: string | null
+  obsidian_url: string | null
+  obsidian_report_url: string | null
   started_at: string | null
   finished_at: string | null
   created_at: string
