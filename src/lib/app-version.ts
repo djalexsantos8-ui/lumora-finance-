@@ -18,3 +18,23 @@ export const APP_STAGE = 'beta' as const
 /** String canônica para o footer: "Criado por Lumora Solutions · versão beta v2.45" */
 export const APP_FOOTER_LABEL =
   `Criado por ${APP_BRAND} · versão ${APP_STAGE} v${APP_VERSION}`
+
+/**
+ * Copyright dinâmico — ano sempre atual via runtime. Não hardcodar nunca.
+ * Use em footer público (PDF, email, página landing).
+ *
+ * Render server-side: SSR já retorna ano correto sem hydration mismatch.
+ * Em emails/PDFs (sem React), use `copyrightString()`.
+ */
+export function copyrightYear(): number {
+  return new Date().getFullYear()
+}
+
+export function copyrightString(brand: string = APP_BRAND): string {
+  return `© ${copyrightYear()} ${brand}`
+}
+
+/** Footer extendido com copyright + versão. */
+export function appFooterFullLabel(): string {
+  return `${copyrightString()} · ${APP_FOOTER_LABEL}`
+}
