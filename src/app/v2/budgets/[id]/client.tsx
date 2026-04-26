@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { calcBudgetTotals, calcItemTotals, fmtBRL, rentMetaFromPct, type BudgetItemV2 } from '@/lib/v2/budget-calc'
-import { addItem, removeItem, saveBudget, updateItem } from './actions'
+import { AVAILABLE_VARS } from '@/lib/budgets/letter-vars'
+import {
+  addItem, removeItem, saveBudget, saveLetter, saveLetterTemplate, updateItem,
+} from './actions'
 
 /**
  * Editor de Orçamento V2 — coração da Phase 2.
@@ -34,11 +37,19 @@ interface BudgetRow {
   revisions_included:  number | null
   notes_internal:      string | null
   notes_client:        string | null
+  letter_text_md:      string | null
   subtotal:            number | string
   total_cost:          number | string
   margin_amount:       number | string
   tax_amount:          number | string
   total:               number | string
+}
+
+interface LetterTemplate {
+  id:         string
+  name:       string
+  text_md:    string
+  is_default: boolean
 }
 
 interface ItemRow extends BudgetItemV2 {
@@ -59,9 +70,10 @@ interface ItemRow extends BudgetItemV2 {
 interface ClientOption { id: string; name: string }
 
 interface Props {
-  budget:        BudgetRow
-  initialItems:  ItemRow[]
-  clients:       ClientOption[]
+  budget:           BudgetRow
+  initialItems:     ItemRow[]
+  clients:          ClientOption[]
+  letterTemplates:  LetterTemplate[]
 }
 
 const num = (v: unknown): number => {
@@ -70,9 +82,12 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 
-export default function BudgetEditorClient({ budget: initialBudget, initialItems, clients }: Props) {
+export default function BudgetEditorClient({ budget: initialBudget, initialItems, clients, letterTemplates }: Props) {
   const [budget, setBudget]   = useState<BudgetRow>(initialBudget)
   const [items, setItems]     = useState<ItemRow[]>(initialItems)
+  const [tab, setTab]         = useState<'items' | 'carta'>('items')
+  const [letterMd, setLetterMd] = useState<string>(initialBudget.letter_text_md ?? '')
+  const [templates, setTemplates] = useState<LetterTemplate[]>(letterTemplates)
   const [pending, startTx]    = useTransition()
   const [savedFlash, setFlash] = useState<string | null>(null)
 
@@ -146,10 +161,66 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
     setTimeout(() => setFlash(null), 1500)
   }
 
+  // ── EPIC-17: save da carta com debounce ─────────────────────────────────
+  const letterTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function handleLetterChange(next: string) {
+    setLetterMd(next)
+    if (letterTimer.current) clearTimeout(letterTimer.current)
+    letterTimer.current = setTimeout(() => {
+      startTx(async () => {
+        const r = await saveLetter(budget.id, next)
+        if (r.ok) flash('Carta salva')
+      })
+    }, 800)
+  }
+
+  function insertVarAtCursor(varCode: string) {
+    setLetterMd((prev) => {
+      const next = prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + varCode
+      // dispara save
+      if (letterTimer.current) clearTimeout(letterTimer.current)
+      letterTimer.current = setTimeout(() => {
+        startTx(async () => {
+          await saveLetter(budget.id, next)
+          flash('Carta salva')
+        })
+      }, 800)
+      return next
+    })
+  }
+
+  async function handleLoadTemplate(tpl: LetterTemplate) {
+    if (!confirm(`Carregar template "${tpl.name}"? O texto atual será substituído.`)) return
+    setLetterMd(tpl.text_md)
+    startTx(async () => {
+      await saveLetter(budget.id, tpl.text_md)
+      flash(`Template "${tpl.name}" carregado`)
+    })
+  }
+
+  async function handleSaveAsTemplate() {
+    const name = prompt('Nome do template:', 'Padrão')
+    if (!name?.trim()) return
+    const isDefault = confirm('Tornar este template o padrão (carrega automaticamente em novos orçamentos)?')
+    startTx(async () => {
+      const r = await saveLetterTemplate({ name: name.trim(), text_md: letterMd, is_default: isDefault })
+      if (r.ok) {
+        setTemplates((prev) => [
+          { id: r.id ?? `tmp-${Date.now()}`, name: name.trim(), text_md: letterMd, is_default: isDefault },
+          ...(isDefault ? prev.map((p) => ({ ...p, is_default: false })) : prev),
+        ])
+        flash('Template salvo')
+      } else {
+        alert(`Falha: ${r.error}`)
+      }
+    })
+  }
+
   // Cleanup timers no unmount
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (letterTimer.current) clearTimeout(letterTimer.current)
       Object.values(itemTimers.current).forEach((t) => clearTimeout(t))
     }
   }, [])
@@ -276,10 +347,88 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
         />
       </div>
 
-      {/* Layout 2 colunas: items + sidebar settings */}
+      {/* Tabs Itens / Carta */}
+      <div className="mb-3 flex items-center gap-2 border-b border-[#1f1f1f]">
+        <TabButton active={tab === 'items'} onClick={() => setTab('items')}>
+          📋 Itens
+        </TabButton>
+        <TabButton active={tab === 'carta'} onClick={() => setTab('carta')}>
+          ✉️ Carta
+        </TabButton>
+      </div>
+
+      {/* Layout 2 colunas: conteúdo principal + sidebar settings */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Items */}
+        {/* Coluna principal */}
         <div className="lg:col-span-2">
+        {tab === 'carta' ? (
+          <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-[#a3a3a3]">
+                Carta de apresentação
+              </h3>
+              <div className="flex items-center gap-2">
+                {templates.length > 0 && (
+                  <select
+                    onChange={(e) => {
+                      const t = templates.find((x) => x.id === e.target.value)
+                      if (t) handleLoadTemplate(t)
+                      e.currentTarget.value = ''
+                    }}
+                    defaultValue=""
+                    className="rounded-md border border-[#2a2a2a] bg-[#111] px-2 py-1 text-xs text-white focus:border-[#D4A853] focus:outline-none"
+                  >
+                    <option value="" disabled>Carregar template…</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}{t.is_default ? ' (padrão)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSaveAsTemplate}
+                  disabled={pending}
+                  className="rounded-md border border-[#D4A853]/30 bg-[#D4A853]/5 px-3 py-1 text-xs font-semibold text-[#D4A853] hover:bg-[#D4A853]/10 disabled:opacity-50"
+                >
+                  Salvar como template
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              value={letterMd}
+              onChange={(e) => handleLetterChange(e.target.value)}
+              rows={18}
+              placeholder="## Apresentação&#10;Olá {{cliente_nome}}! Que prazer ver seu projeto..."
+              className="w-full rounded-md border border-[#2a2a2a] bg-[#111] p-3 font-mono text-sm leading-relaxed text-white focus:border-[#D4A853] focus:outline-none"
+            />
+
+            <div className="mt-3 border-t border-[#1f1f1f] pt-3">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#737373]">
+                Inserir variável
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {AVAILABLE_VARS.map((v) => (
+                  <button
+                    key={v.code}
+                    type="button"
+                    onClick={() => insertVarAtCursor(v.code)}
+                    title={v.label}
+                    className="rounded border border-[#2a2a2a] bg-[#111] px-1.5 py-0.5 text-[10px] font-mono text-[#D4A853] hover:bg-[#D4A853]/5"
+                  >
+                    {v.code}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-[#525252]">
+                Markdown suportado (## títulos, **negrito**, *itálico*).
+                Variáveis são substituídas no PDF cliente.
+              </p>
+            </div>
+          </div>
+        ) : (
           <div className="overflow-hidden rounded-xl border border-[#1f1f1f] bg-[#0d0d0d]">
             <table className="w-full text-sm">
               <thead className="border-b border-[#1f1f1f] bg-[#111] text-xs uppercase tracking-wider text-[#737373]">
@@ -325,6 +474,7 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
               </button>
             </div>
           </div>
+        )}
         </div>
 
         {/* Sidebar — settings + totals */}
@@ -404,6 +554,28 @@ export default function BudgetEditorClient({ budget: initialBudget, initialItems
 }
 
 // ── Helpers UI ──────────────────────────────────────────────────────────────
+
+function TabButton({
+  active, onClick, children,
+}: {
+  active:   boolean
+  onClick:  () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-t-md px-3 py-2 text-sm transition-colors ${
+        active
+          ? 'border-b-2 border-[#D4A853] text-white'
+          : 'text-[#737373] hover:text-white'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
 
 function Kpi({ label, value, hint, color }: { label: string; value: string; hint: string; color: string }) {
   return (

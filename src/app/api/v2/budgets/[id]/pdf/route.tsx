@@ -33,7 +33,8 @@ export async function GET(
         number, name, status, start_date, end_date, location,
         margin_percent, tax_percent, discount_amount,
         payment_terms, validity_days, delivery_days, revisions_included,
-        notes_client, subtotal, margin_amount, tax_amount, total,
+        notes_client, letter_text_md,
+        subtotal, margin_amount, tax_amount, total,
         created_at, client_id, workspace_id
       `)
       .eq('id', id)
@@ -82,6 +83,7 @@ export async function GET(
         delivery_days:       budget.delivery_days,
         revisions_included:  budget.revisions_included,
         notes_client:        budget.notes_client,
+        letter_text_md:      budget.letter_text_md,
         subtotal:            Number(budget.subtotal ?? 0),
         margin_amount:       Number(budget.margin_amount ?? 0),
         tax_amount:          Number(budget.tax_amount ?? 0),

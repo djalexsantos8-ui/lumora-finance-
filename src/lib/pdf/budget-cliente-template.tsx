@@ -1,5 +1,6 @@
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
 import type { ReactElement } from 'react'
+import { substituteLetterVars, type LetterVars } from '@/lib/budgets/letter-vars'
 
 /**
  * EPIC-16 — Template PDF cliente do orçamento V2.
@@ -33,6 +34,7 @@ interface BudgetForPdf {
   delivery_days:       number | null
   revisions_included:  number | null
   notes_client:        string | null
+  letter_text_md:      string | null
   subtotal:            number
   margin_amount:       number
   tax_amount:          number
@@ -99,6 +101,10 @@ const styles = StyleSheet.create({
 
   notes:       { marginTop: 18, padding: 10, backgroundColor: '#fafafa', borderRadius: 4 },
   notesText:   { fontSize: 9, color: '#525252', lineHeight: 1.5 },
+
+  letter:        { marginBottom: 18 },
+  letterH:       { fontSize: 12, fontWeight: 700, color: '#0a0a0a', marginTop: 8, marginBottom: 4 },
+  letterPara:    { fontSize: 10, color: '#0a0a0a', lineHeight: 1.5, marginBottom: 6 },
 
   footer:      {
     position: 'absolute', bottom: 24, left: 40, right: 40,
@@ -180,6 +186,23 @@ export function BudgetClientePdf({
             </View>
           ) : null}
         </View>
+
+        {budget.letter_text_md?.trim() ? (
+          <View style={styles.letter}>
+            {renderLetterMarkdown(budget.letter_text_md, {
+              cliente_nome:    client?.name ?? null,
+              projeto_nome:    budget.name ?? null,
+              numero:          budget.number ?? null,
+              produtora_nome:  workspaceName,
+              validade:        budget.validity_days
+                ? `${budget.validity_days} dias após emissão`
+                : null,
+              prazo_entrega:   budget.delivery_days
+                ? `${budget.delivery_days} dias após aprovação`
+                : null,
+            })}
+          </View>
+        ) : null}
 
         <Text style={styles.sectionTitle}>Itens do projeto</Text>
         <View style={styles.table}>
@@ -272,4 +295,42 @@ function statusLabel(s: string): string {
     archived:  'Arquivado',
   }
   return map[s] ?? s
+}
+
+/**
+ * Render Markdown simples → react-pdf primitives.
+ *
+ * Suportado: ## títulos (h2/h3 viram letterH), parágrafos, linhas em branco.
+ * Inline: **bold** e *italic* — não suportados na primeira iteração (texto literal).
+ * Iteração futura pode adicionar inline parsing ou migrar pra Tiptap → ProseMirror.
+ */
+function renderLetterMarkdown(md: string, vars: LetterVars): ReactElement[] {
+  const text = substituteLetterVars(md, vars).replace(/\r\n/g, '\n')
+  const lines = text.split('\n')
+  const out: ReactElement[] = []
+  const buffer: string[] = []
+  let key = 0
+
+  const flushPara = () => {
+    const para = buffer.join(' ').trim()
+    buffer.length = 0
+    if (para) {
+      out.push(<Text key={`p-${key++}`} style={styles.letterPara}>{para}</Text>)
+    }
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (line.startsWith('## ') || line.startsWith('### ')) {
+      flushPara()
+      const h = line.replace(/^#{2,3}\s+/, '')
+      out.push(<Text key={`h-${key++}`} style={styles.letterH}>{h}</Text>)
+    } else if (line === '') {
+      flushPara()
+    } else {
+      buffer.push(line)
+    }
+  }
+  flushPara()
+  return out
 }

@@ -181,3 +181,86 @@ export async function reorderItems(
   revalidatePath(`/v2/budgets/${budgetId}`)
   return { ok: true }
 }
+
+// ─── EPIC-17: Carta de orçamento ───────────────────────────────────────────
+
+export async function saveLetter(
+  budgetId: string,
+  textMd: string
+): Promise<ActionResult> {
+  const sb = await createClient()
+  const { error } = await sb
+    .from('budgets_v2')
+    .update({ letter_text_md: textMd })
+    .eq('id', budgetId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/v2/budgets/${budgetId}`)
+  return { ok: true }
+}
+
+export interface LetterTemplateRow {
+  id:         string
+  name:       string
+  text_md:    string
+  is_default: boolean
+}
+
+export async function listLetterTemplates(): Promise<LetterTemplateRow[]> {
+  const sb = await createClient()
+  const { data } = await sb
+    .from('letter_templates_v2')
+    .select('id, name, text_md, is_default')
+    .order('is_default', { ascending: false })
+    .order('name', { ascending: true })
+  return (data ?? []) as LetterTemplateRow[]
+}
+
+export async function saveLetterTemplate(input: {
+  name:        string
+  text_md:     string
+  is_default?: boolean
+}): Promise<ActionResult & { id?: string }> {
+  const sb = await createClient()
+  const { data: { user } } = await sb.auth.getUser()
+  if (!user) return { ok: false, error: 'unauthorized' }
+
+  // Resolve workspace ativo
+  const { data: member } = await sb
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+  if (!member) return { ok: false, error: 'no_workspace' }
+
+  // Se vai virar default, desmarca os outros primeiro (índice unique exige)
+  if (input.is_default) {
+    await sb
+      .from('letter_templates_v2')
+      .update({ is_default: false })
+      .eq('workspace_id', member.workspace_id)
+      .eq('is_default', true)
+  }
+
+  const { data, error } = await sb
+    .from('letter_templates_v2')
+    .insert({
+      workspace_id: member.workspace_id,
+      name:         input.name.trim() || 'Sem nome',
+      text_md:      input.text_md,
+      is_default:   Boolean(input.is_default),
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'insert_failed' }
+  return { ok: true, id: data.id }
+}
+
+export async function deleteLetterTemplate(templateId: string): Promise<ActionResult> {
+  const sb = await createClient()
+  const { error } = await sb.from('letter_templates_v2').delete().eq('id', templateId)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
