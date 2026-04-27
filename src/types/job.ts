@@ -197,6 +197,103 @@ export function getAmountDue(
   return Math.max(0, total - Number(job.amount_paid))
 }
 
+// ─── Status financeiro DERIVADO (separado do operacional jobs.status) ────────
+//
+// Regra (rodada R02-FIN-CONSISTENCY 2026-04-27):
+//   • Status operacional = jobs.status enum (in_progress | delivered |
+//     pending_payment | paid | cancelled). E a fase do TRABALHO. Nao tem
+//     relacao com dinheiro recebido.
+//   • Status financeiro = DERIVADO de revenue_total + cost_total + amount_paid
+//     + payment_due_date. E a verdade do dinheiro.
+//
+// Um job pode estar OPERACIONALMENTE 'paid' (concluido) e FINANCEIRAMENTE
+// 'unpaid' / 'partial' / 'overdue' ao mesmo tempo. As duas dimensoes sao
+// independentes e ambas devem aparecer na UI.
+//
+// Esta funcao e a unica fonte de verdade do status financeiro de um job —
+// usar em qualquer lugar que precise saber se "esta pago" do ponto de vista
+// do dinheiro recebido.
+
+export type JobFinancialStatus = 'sem_valor' | 'unpaid' | 'partial' | 'paid' | 'overdue'
+
+export interface JobFinancialBadge {
+  status:        JobFinancialStatus
+  label:         string  // PT-BR pra UI
+  description:   string  // tooltip / hint
+  /** Tailwind classes pre-computadas (estaticas, safe pra purge). */
+  badgeClass:    string
+  /** True quando saldo > 0 e pas a vencimento. */
+  overdue:       boolean
+  /** Saldo aberto em moeda do job (>= 0). */
+  amountDue:     number
+  /** Total devido (revenue + cost). */
+  totalDue:      number
+  /** Recebido. */
+  received:      number
+  /** Percentual recebido [0..100]. */
+  receivedPct:   number
+}
+
+export function jobFinancialBadge(
+  job: Pick<Job, 'amount_paid' | 'revenue_total' | 'cost_total' | 'total_value' | 'payment_due_date'>,
+  today: Date = new Date()
+): JobFinancialBadge {
+  const base     = Number(job.revenue_total) || Number(job.total_value) || 0
+  const totalDue = base + (Number(job.cost_total) || 0)
+  const received = Math.max(0, Number(job.amount_paid) || 0)
+  const amountDue = Math.max(0, totalDue - received)
+  const receivedPct = totalDue > 0 ? Math.round((received / totalDue) * 1000) / 10 : 0
+
+  // Caso 0: sem valor cadastrado (job rascunho)
+  if (totalDue <= 0) {
+    return {
+      status: 'sem_valor', label: 'Sem valor', description: 'Job sem valor financeiro registrado',
+      badgeClass: 'bg-[#1f1f1f] text-[#a3a3a3] border-[#2a2a2a]',
+      overdue: false, amountDue: 0, totalDue: 0, received: 0, receivedPct: 0,
+    }
+  }
+
+  // Caso A: quitado (recebeu igual ou mais que o total)
+  if (received >= totalDue) {
+    return {
+      status: 'paid', label: 'Quitado',
+      description: `Recebido R$ ${received.toFixed(2)} de R$ ${totalDue.toFixed(2)}`,
+      badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+      overdue: false, amountDue: 0, totalDue, received, receivedPct: 100,
+    }
+  }
+
+  // Caso B/C: vencido OU em aberto/parcial
+  const due = job.payment_due_date ? new Date(job.payment_due_date + 'T00:00:00Z') : null
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  const isOverdue = !!due && due.getTime() < todayUtc.getTime() && amountDue > 0
+
+  if (isOverdue) {
+    return {
+      status: 'overdue', label: 'Vencido',
+      description: `R$ ${amountDue.toFixed(2)} em aberto, venceu ${due!.toISOString().slice(0,10)}`,
+      badgeClass: 'bg-red-500/10 text-red-400 border-red-500/30',
+      overdue: true, amountDue, totalDue, received, receivedPct,
+    }
+  }
+
+  if (received > 0) {
+    return {
+      status: 'partial', label: `Parcial ${receivedPct.toFixed(0)}%`,
+      description: `Recebido R$ ${received.toFixed(2)} de R$ ${totalDue.toFixed(2)}`,
+      badgeClass: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      overdue: false, amountDue, totalDue, received, receivedPct,
+    }
+  }
+
+  return {
+    status: 'unpaid', label: 'Em aberto',
+    description: `Aguardando recebimento de R$ ${amountDue.toFixed(2)}`,
+    badgeClass: 'bg-[#1f1f1f] text-[#a3a3a3] border-[#2a2a2a]',
+    overdue: false, amountDue, totalDue, received, receivedPct,
+  }
+}
+
 // ─── Status de lembrete de cobrança ──────────────────────────────────────────
 //
 // Distinto de PaymentStatus (unpaid/partial/paid), que descreve o estado do

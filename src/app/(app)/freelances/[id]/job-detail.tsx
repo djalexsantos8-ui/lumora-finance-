@@ -11,7 +11,7 @@ import {
   addRevenueItem, updateRevenueItem, deleteRevenueItem,
   addCostItem,    updateCostItem,    deleteCostItem,
 } from '@/lib/actions/job-items'
-import { calcJobFinancials, getPaymentReminderStatus, JOB_COST_CATEGORY_LABELS } from '@/types/job'
+import { calcJobFinancials, getPaymentReminderStatus, jobFinancialBadge, JOB_COST_CATEGORY_LABELS } from '@/types/job'
 import type {
   Job, JobRevenueItem, JobCostItem, JobPayment,
   JobStatus, JobCategory, JobCostCategory, PaymentCondition,
@@ -670,7 +670,15 @@ export default function JobDetail({
 
             {/* Status stepper — posicionado logo abaixo do cliente, na coluna
                 esquerda, para dar protagonismo visual à decisão mais frequente
-                do usuário (mudar status) sem competir com PDF/SaveStatus. */}
+                do usuário (mudar status) sem competir com PDF/SaveStatus.
+
+                R02-FIN-CONSISTENCY: o stepper representa o status OPERACIONAL
+                (fase do trabalho — independe de dinheiro recebido). A pill ao
+                lado mostra o status FINANCEIRO derivado de
+                (revenue+cost) - amount_paid + payment_due_date. Os dois
+                conceitos sempre aparecem juntos pra evitar confusão (job pode
+                estar operacionalmente "Pago"/concluído e financeiramente em
+                aberto/vencido ao mesmo tempo). */}
             <div className="flex items-center gap-2 flex-wrap">
               {job.status === 'cancelled' ? (
                 <span className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${STATUS_MAP.cancelled.cls}`}>
@@ -683,6 +691,19 @@ export default function JobDetail({
                   onChange={handleStepperChange}
                 />
               )}
+              {/* Pill financeira derivada — NUNCA mente sobre dinheiro */}
+              {(() => {
+                const fb = jobFinancialBadge(job)
+                if (fb.status === 'sem_valor') return null
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md border ${fb.badgeClass}`}
+                    title={fb.description}
+                  >
+                    💰 {fb.label}
+                  </span>
+                )
+              })()}
               {/* Cancelar / reabrir — ação lateral de baixa visibilidade */}
               {job.status === 'cancelled' ? (
                 <button
