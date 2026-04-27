@@ -87,12 +87,9 @@ export default async function V2DashboardPage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
       <header>
-        <div className="text-xs uppercase tracking-wider text-[#D4A853]/70">
-          Lumora · {workspace.name}
-        </div>
-        <h1 className="mt-1 text-3xl font-bold text-white">Dashboard</h1>
-        <p className="mt-2 text-sm text-[#a3a3a3]">
-          Visão geral do seu negócio — atualizada a cada navegação.
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <p className="mt-1 text-sm text-[#a3a3a3]">
+          Visão geral do seu negócio — {workspace.name}.
         </p>
       </header>
 
@@ -339,19 +336,6 @@ export default async function V2DashboardPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-[#D4A853]/70">
-          Atalhos
-        </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Shortcut href="/v2/financeiro"  emoji="📊" label="Financeiro"     hint="DRE · Caixa · Forecast" />
-          <Shortcut href="/v2/budgets/new" emoji="➕" label="Novo orçamento" hint="V2 com tipo + cliente" />
-          <Shortcut href="/v2/budgets"     emoji="📋" label="Orçamentos"     hint={`${recentBudgets.length} no histórico`} />
-          <Shortcut href="/v2/freelancers" emoji="👥" label="Freelancers"    hint="Sua rede" />
-          <Shortcut href="/v2/equipe"      emoji="🤝" label="Equipe"         hint="Convidar membros" />
-          <Shortcut href="/dashboard"      emoji="🏠" label="V1"             hint="Voltar pra V1" />
-        </div>
-      </section>
     </div>
   )
 }
@@ -409,23 +393,3 @@ function StatusDot({ status }: { status: string }) {
   )
 }
 
-function Shortcut({
-  href, emoji, label, hint,
-}: {
-  href:  string
-  emoji: string
-  label: string
-  hint?: string
-}) {
-  return (
-    <Link href={href} className="rounded-xl border border-[#1a1a1a] bg-[#0d0d0d] p-3 transition-colors hover:bg-[#161616]">
-      <div className="flex items-center gap-2">
-        <span className="text-xl">{emoji}</span>
-        <div className="min-w-0">
-          <div className="text-xs font-medium text-white truncate">{label}</div>
-          {hint ? <div className="text-[10px] text-[#525252] truncate">{hint}</div> : null}
-        </div>
-      </div>
-    </Link>
-  )
-}

@@ -32,10 +32,6 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      <div className="mb-6">
-        <Link href="/v2" className="text-sm text-[#a3a3a3] hover:text-white">← Voltar pro dashboard</Link>
-      </div>
-
       <header className="mb-6">
         <h1 className="text-2xl font-bold text-white">Financeiro</h1>
         <p className="mt-1 text-sm text-[#737373]">

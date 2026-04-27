@@ -7,21 +7,21 @@ import { signOut } from '@/lib/actions/auth'
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
 
-interface NavItem {
+export interface NavItem {
   href: string
   label: string
   icon: React.ReactNode
   badge?: string
 }
 
-interface NavGroup {
+export interface NavGroup {
   id:    string
   label: string
   icon:  React.ReactNode
   items: NavItem[]
 }
 
-type NavEntry = { kind: 'item'; item: NavItem } | { kind: 'group'; group: NavGroup }
+export type NavEntry = { kind: 'item'; item: NavItem } | { kind: 'group'; group: NavGroup }
 
 // ─── ícones (SVG paths isolados pra reduzir ruído) ────────────────────────────
 
@@ -179,18 +179,33 @@ interface SidebarProps {
    * em modo expandido).
    */
   planIndicator?: React.ReactNode
+  /**
+   * Entries extras renderizadas em uma seção destacada acima do nav padrão.
+   * Usado em /v2/* pra mostrar items "preview" (Financeiro, Orçamentos V2,
+   * etc) com header Lumora dourado.
+   */
+  extraEntries?: NavEntry[]
+  /** Header label da seção extra (ex: "Lumora preview"). */
+  extraSectionLabel?: string
 }
 
-export default function Sidebar({ userEmail, isAdmin = false, planIndicator }: SidebarProps) {
+export default function Sidebar({
+  userEmail, isAdmin = false, planIndicator,
+  extraEntries, extraSectionLabel,
+}: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+
+  // Combina entries padrão V1 com extras V2 (se vierem). Extras renderizam
+  // ANTES do nav padrão pra dar destaque visual à seção preview.
+  const allEntries = extraEntries ? [...extraEntries, ...navEntries] : navEntries
 
   // Estado "quais grupos estão abertos". Inicializa expandindo o grupo que
   // contém a rota ativa — o usuário sempre vê o contexto dele sem precisar
   // clicar. Demais grupos começam fechados pra reduzir ruído visual.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {}
-    for (const entry of navEntries) {
+    for (const entry of allEntries) {
       if (entry.kind === 'group') {
         initial[entry.group.id] = groupContainsActive(entry.group, pathname)
       }
@@ -204,7 +219,7 @@ export default function Sidebar({ userEmail, isAdmin = false, planIndicator }: S
     setOpenGroups(prev => {
       const next = { ...prev }
       let changed = false
-      for (const entry of navEntries) {
+      for (const entry of allEntries) {
         if (entry.kind === 'group' && groupContainsActive(entry.group, pathname) && !prev[entry.group.id]) {
           next[entry.group.id] = true
           changed = true
@@ -212,7 +227,7 @@ export default function Sidebar({ userEmail, isAdmin = false, planIndicator }: S
       }
       return changed ? next : prev
     })
-  }, [pathname])
+  }, [pathname, allEntries])
 
   function toggleGroup(id: string) {
     setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }))
@@ -244,6 +259,37 @@ export default function Sidebar({ userEmail, isAdmin = false, planIndicator }: S
 
       {/* Nav principal */}
       <nav className="flex-1 py-4 space-y-0.5 px-2 overflow-y-auto">
+        {/* Seção extra (V2 preview) — renderizada antes do nav padrão */}
+        {extraEntries && extraEntries.length > 0 && (
+          <>
+            {!collapsed && extraSectionLabel && (
+              <div className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-[#D4A853]/70">
+                {extraSectionLabel}
+              </div>
+            )}
+            {extraEntries.map((entry, idx) =>
+              entry.kind === 'item' ? (
+                <SidebarLink
+                  key={'extra-' + entry.item.href}
+                  item={entry.item}
+                  active={isActive(entry.item.href)}
+                  collapsed={collapsed}
+                />
+              ) : (
+                <SidebarGroup
+                  key={'extra-' + entry.group.id + idx}
+                  group={entry.group}
+                  open={!!openGroups[entry.group.id]}
+                  collapsed={collapsed}
+                  isActive={isActive}
+                  onToggle={() => toggleGroup(entry.group.id)}
+                />
+              )
+            )}
+            <div className="my-3 border-t border-[#1a1a1a]" />
+          </>
+        )}
+
         {navEntries.map((entry, idx) =>
           entry.kind === 'item' ? (
             <SidebarLink
