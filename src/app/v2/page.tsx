@@ -3,7 +3,7 @@ import { requireWorkspace } from '@/lib/workspace/get-current-workspace'
 import { createClient } from '@/lib/supabase/server'
 import { fmtBRL } from '@/lib/v2/budget-calc'
 import { projectTypeDisplay, getProjectTypes } from '@/lib/v2/project-types'
-import { fetchFinSummary, fetchForecast, fmtShortDate, fonteLabel } from '@/lib/v2/financial'
+import { fetchFinSummary, fetchForecast, fmtShortDate, fonteLabel, forecastHref } from '@/lib/v2/financial'
 
 export const dynamic = 'force-dynamic'
 
@@ -208,25 +208,32 @@ export default async function V2DashboardPage() {
               {forecast30.slice(0, 6).map((f) => {
                 const fl = fonteLabel(f.fonte)
                 const tipoCls = f.tipo === 'a_receber' ? 'text-emerald-400' : 'text-red-400'
+                const href = forecastHref(f.fonte, f.ref_id)
                 return (
-                  <li key={`${f.fonte}-${f.ref_id}`} className="flex items-center justify-between gap-3 rounded-md p-2 -m-2 hover:bg-[#161616]">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span>{fl.icon}</span>
-                        <span className="truncate text-white">{f.ref_label}</span>
+                  <li key={`${f.fonte}-${f.ref_id}`}>
+                    <Link
+                      href={href}
+                      className="flex items-center justify-between gap-3 rounded-md p-2 -m-2 hover:bg-[#161616]"
+                      title={`Abrir ${fl.label}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span>{fl.icon}</span>
+                          <span className="truncate text-white">{f.ref_label}</span>
+                        </div>
+                        {f.cliente !== '—' ? (
+                          <div className="text-[10px] text-[#737373]">{f.cliente}</div>
+                        ) : null}
                       </div>
-                      {f.cliente !== '—' ? (
-                        <div className="text-[10px] text-[#737373]">{f.cliente}</div>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className={`text-sm font-mono ${tipoCls}`}>
-                        {f.tipo === 'a_pagar' ? '−' : '+'} {fmtBRL(f.valor)}
+                      <div className="shrink-0 text-right">
+                        <div className={`text-sm font-mono ${tipoCls}`}>
+                          {f.tipo === 'a_pagar' ? '−' : '+'} {fmtBRL(f.valor)}
+                        </div>
+                        <div className="text-[10px] text-[#525252]">
+                          {fmtShortDate(f.data)} ({f.dias_para_data === 0 ? 'hoje' : `${f.dias_para_data}d`})
+                        </div>
                       </div>
-                      <div className="text-[10px] text-[#525252]">
-                        {fmtShortDate(f.data)} ({f.dias_para_data === 0 ? 'hoje' : `${f.dias_para_data}d`})
-                      </div>
-                    </div>
+                    </Link>
                   </li>
                 )
               })}

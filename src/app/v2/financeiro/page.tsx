@@ -3,7 +3,7 @@ import { requireWorkspace } from '@/lib/workspace/get-current-workspace'
 import { fmtBRL } from '@/lib/v2/budget-calc'
 import {
   fetchCaixaRealizado, fetchDreCompetencia, fetchFinSummary, fetchForecast,
-  fmtMonthLabel, fmtShortDate, fonteLabel,
+  fmtMonthLabel, fmtShortDate, fonteLabel, forecastHref,
 } from '@/lib/v2/financial'
 
 export const dynamic = 'force-dynamic'
@@ -281,8 +281,14 @@ function ForecastList({
           {rows.map((r) => {
             const fl = fonteLabel(r.fonte)
             const overdue = r.dias_para_data < 0
+            const href = forecastHref(r.fonte, r.ref_id)
             return (
-              <li key={`${r.fonte}-${r.ref_id}`} className="flex items-center justify-between gap-3 rounded-md p-2 -m-2 hover:bg-[#161616]">
+              <li key={`${r.fonte}-${r.ref_id}`}>
+                <Link
+                  href={href}
+                  className="flex items-center justify-between gap-3 rounded-md p-2 -m-2 hover:bg-[#161616]"
+                  title={`Abrir ${fl.label}`}
+                >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-xs">
                     <span title={fl.label}>{fl.icon}</span>
@@ -298,6 +304,7 @@ function ForecastList({
                     {fmtShortDate(r.data)} · {r.dias_para_data === 0 ? 'hoje' : (overdue ? `vencido há ${Math.abs(r.dias_para_data)}d` : `em ${r.dias_para_data}d`)}
                   </div>
                 </div>
+                </Link>
               </li>
             )
           })}

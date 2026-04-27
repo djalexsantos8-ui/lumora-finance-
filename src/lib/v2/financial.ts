@@ -211,3 +211,26 @@ export function fonteLabel(fonte: ForecastFonte): { icon: string; label: string 
     case 'fixed_cost': return { icon: '🏠', label: 'Custo fixo' }
   }
 }
+
+/**
+ * R01-DASH-CARDS-NAVIGATE — mapeia (fonte, ref_id) → rota V1 correspondente.
+ *
+ * Mapeamento aplicado:
+ *   - job        → /freelances/[ref_id]            (V1: jobs vivem em /freelances)
+ *   - order      → /pedidos/[ref_id]               (V1: rota detalhe)
+ *   - recurring  → /receitas-recorrentes/[ref_id]  (ref_id já é a recurring_revenue_id, não invoice)
+ *   - expense    → /expenses                       (FALLBACK: V1 não tem /expenses/[id])
+ *   - fixed_cost → /fixed-costs                    (FALLBACK: V1 não tem /fixed-costs/[id])
+ *
+ * Sem rota detalhada existente em V1 pra expenses/fixed_costs — vai pra
+ * listagem. Quando V2 ganhar /expenses/[id] e /fixed-costs/[id], atualizar aqui.
+ */
+export function forecastHref(fonte: ForecastFonte, refId: string): string {
+  switch (fonte) {
+    case 'job':        return `/freelances/${refId}`
+    case 'order':      return `/pedidos/${refId}`
+    case 'recurring':  return `/receitas-recorrentes/${refId}`
+    case 'expense':    return '/expenses'
+    case 'fixed_cost': return '/fixed-costs'
+  }
+}
