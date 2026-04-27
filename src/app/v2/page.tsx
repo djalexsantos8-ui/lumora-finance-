@@ -114,6 +114,39 @@ export default async function V2DashboardPage() {
         </section>
       )}
 
+      {/* Call-out: visão narrativa "Seu mês em 30 segundos" (Dashboard V1) */}
+      <Link
+        href="/dashboard"
+        className="group flex flex-col gap-3 rounded-xl border-2 border-[#D4A853]/40 bg-gradient-to-br from-[#D4A853]/10 via-[#0d0d0d] to-[#0d0d0d] p-5 transition-all hover:border-[#D4A853]/70 hover:from-[#D4A853]/20 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+      >
+        <div className="flex items-start gap-4">
+          <div className="text-3xl">📖</div>
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[#D4A853]">
+              Quer entender o que esses números significam?
+            </div>
+            <div className="mt-1 text-lg font-bold text-white">
+              Seu mês em 30 segundos
+            </div>
+            <div className="mt-1 text-xs text-[#a3a3a3]">
+              Explicação humana sem jargão de contador.{' '}
+              <span className="text-[#D4A853]/80">
+                Inadimplência · Receita · Custos · Clientes · Diagnóstico
+              </span>
+              {' '}— cada aba responde uma pergunta prática do seu negócio.
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0">
+          <span className="inline-flex items-center gap-2 rounded-md bg-[#D4A853] px-4 py-2.5 text-sm font-semibold text-black transition-transform group-hover:translate-x-1">
+            Abrir explicação
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </span>
+        </div>
+      </Link>
+
       {/* 4 KPIs financeiros reais */}
       {summary ? (
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
