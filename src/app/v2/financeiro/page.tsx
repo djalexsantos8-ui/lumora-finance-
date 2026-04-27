@@ -54,7 +54,7 @@ export default async function FinanceiroPage({ searchParams }: PageProps) {
       <div className="mb-4 flex gap-2 border-b border-[#1f1f1f]">
         <TabLink current={tab} self="dre"      label="📊 DRE" />
         <TabLink current={tab} self="caixa"    label="💰 Caixa" />
-        <TabLink current={tab} self="forecast" label="🔭 Forecast" />
+        <TabLink current={tab} self="forecast" label="🔭 Previsão" />
       </div>
 
       {tab === 'dre' && <DreTab workspaceId={workspace.id} months={months} />}
@@ -188,7 +188,7 @@ async function ForecastTab({ workspaceId, horizon }: { workspaceId: string; hori
   return (
     <div className="space-y-6">
       <div className="rounded-md border border-[#1f1f1f] bg-[#0d0d0d]/40 p-3 text-xs text-[#a3a3a3]">
-        💡 <strong className="text-white">Forecast {horizon} dias:</strong> tudo que tem data marcada pra entrar (cobranças pendentes) ou sair (despesas e custos fixos não pagos) nos próximos {horizon} dias.
+        💡 <strong className="text-white">Previsão dos próximos {horizon} dias:</strong> tudo que tem data marcada pra entrar (cobranças pendentes) ou sair (despesas e custos fixos não pagos).
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
